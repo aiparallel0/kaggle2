@@ -107,10 +107,10 @@ def extract_crops(receipts: list[Receipt], fields: list[str]) -> list[Crop]:
             # SROIE: 4 corner points (x1,y1,x2,y2,x3,y3,x4,y4)
             xs = [coords[0], coords[2], coords[4], coords[6]]
             ys = [coords[1], coords[3], coords[5], coords[7]]
-            x1 = max(0, min(xs)) / w
-            y1 = max(0, min(ys)) / h
-            x2 = min(w, max(xs)) / w
-            y2 = min(h, max(ys)) / h
+            x1 = max(0.0, min(xs) / w)
+            y1 = max(0.0, min(ys) / h)
+            x2 = min(1.0, max(xs) / w)
+            y2 = min(1.0, max(ys) / h)
             label = _match_field(text, gt)
             if label and label.lower() in [f.lower() for f in fields]:
                 crops.append(Crop(
