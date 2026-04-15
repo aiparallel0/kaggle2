@@ -56,5 +56,5 @@ def save_assigner(model: AttentionAssigner, path: str) -> None:
 def load_assigner(path: str, hidden_dim: int = 64, n_fields: int = 4) -> AttentionAssigner:
     """Load assigner from saved state dict."""
     m = AttentionAssigner(hidden_dim=hidden_dim, n_fields=n_fields)
-    m.load_state_dict(torch.load(path, map_location="cpu"))
+    m.load_state_dict(torch.load(path, map_location="cpu", weights_only=True))
     return m
