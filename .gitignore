@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# mypy cache
+.mypy_cache/
+
+# ruff cache
+.ruff_cache/
+
+# Training outputs (large, not versioned)
+results/
+data/sroie_cache/
+
+# YOLO run artefacts
+runs/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# OS
+.DS_Store
+Thumbs.db
