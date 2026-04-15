@@ -123,9 +123,14 @@ def eval_pipeline(paths: PipelinePaths, test: list[Receipt]) -> Metrics:
                 tf = torch.cat(list(text_feats_list), dim=0).unsqueeze(0)
                 bf = torch.tensor(bbox_list, dtype=torch.float32).unsqueeze(0).to(device)
                 _, attn_w = assigner(tf, bf)  # attn_w: (1, n_fields, N_regions)
+                used: set[int] = set()
+                # Greedy: assign each field to its best unused region
                 for f_idx, field_name in enumerate(_FIELDS):
-                    weights = attn_w[0, f_idx]  # (N_regions,)
+                    weights = attn_w[0, f_idx].clone()  # (N_regions,)
+                    for u in used:
+                        weights[u] = -1e9
                     best_r = int(weights.argmax().item())
+                    used.add(best_r)
                     assigned[field_name] = region_texts[best_r]
             pred_fields = [Field(name=k, value=v) for k, v in assigned.items()]
             predictions.append(Prediction(receipt_id=rec.image_path.stem, fields=pred_fields))

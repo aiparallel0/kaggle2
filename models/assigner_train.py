@@ -56,16 +56,16 @@ def train_assigner(config: ExpConfig, data: AssignerData) -> str:
     assigner.train()
     for epoch in range(config.epochs_assigner):
         total_loss = 0.0
-        for i in range(0, n, 4):
-            batch_end = min(i + 4, n)
-            tf = torch.cat(embeddings[i:batch_end], dim=0).unsqueeze(0).to(device)
+        for i in range(n):
+            # Process one sample: single region as key-value for cross-attention
+            tf = embeddings[i].unsqueeze(0).to(device)  # (1, 1, 768)
             bf = torch.tensor(
-                bboxes[i:batch_end], dtype=torch.float32,
-            ).unsqueeze(0).to(device)
-            tgt = torch.tensor(labels[i:batch_end], device=device)
+                [bboxes[i]], dtype=torch.float32,
+            ).unsqueeze(0).to(device)  # (1, 1, 4)
+            tgt = torch.tensor([labels[i]], device=device)
             opt.zero_grad()
-            logits, _ = assigner(tf, bf)
-            loss = loss_fn(logits.expand(batch_end - i, -1), tgt)
+            logits, _ = assigner(tf, bf)  # (1, n_fields)
+            loss = loss_fn(logits, tgt)
             loss.backward()
             opt.step()
             total_loss += loss.item()
