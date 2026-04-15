@@ -10,10 +10,11 @@ from core.types import ExpConfig
 _REQUIRED = [
     "seed", "base_model", "trocr_model", "yolo_model", "image_size",
     "yolo_img_size", "max_length", "trocr_max_len", "epochs_donut",
-    "epochs_yolo", "epochs_trocr", "batch_size", "grad_accum", "lr",
-    "warmup_steps", "weight_decay", "label_smoothing", "precision",
-    "patience", "max_grad_norm", "fields", "new_tokens", "sroie_url",
-    "data_dir", "output_dir", "paper_template", "paper_output",
+    "epochs_yolo", "epochs_trocr", "epochs_assigner", "batch_size",
+    "grad_accum", "lr", "lr_decoder", "warmup_steps", "weight_decay",
+    "label_smoothing", "precision", "patience", "max_grad_norm",
+    "fields", "new_tokens", "sroie_url", "data_dir", "output_dir",
+    "paper_template", "paper_output",
 ]
 
 
@@ -51,9 +52,11 @@ def load_config(path: str, defaults: dict[str, Any] | None = None) -> ExpConfig:
         epochs_donut=int(raw["epochs_donut"]),
         epochs_yolo=int(raw["epochs_yolo"]),
         epochs_trocr=int(raw["epochs_trocr"]),
+        epochs_assigner=int(raw["epochs_assigner"]),
         batch_size=int(raw["batch_size"]),
         grad_accum=int(raw["grad_accum"]),
         lr=float(raw["lr"]),
+        lr_decoder=float(raw["lr_decoder"]),
         warmup_steps=int(raw["warmup_steps"]),
         weight_decay=float(raw["weight_decay"]),
         label_smoothing=float(raw["label_smoothing"]),

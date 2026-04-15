@@ -25,7 +25,7 @@ def _build_label(receipt: Receipt, processor: DonutProcessor) -> str:
     parts = ["<s_sroie>"]
     for fld in receipt.fields:
         tag = fld.name.lower()
-        parts.append(f"<s_{tag}>{fld.value}</{tag}>")
+        parts.append(f"<s_{tag}>{fld.value}</s_{tag}>")
     parts.append("</s_sroie>")
     return "".join(parts)
 
@@ -109,6 +109,11 @@ def train_donut(config: ExpConfig, data: DataSplit) -> str:
     )[0]
     model.config.pad_token_id = processor.tokenizer.pad_token_id
     model.config.vocab_size = model.config.decoder.vocab_size
+    # Step 5: set encoder image size from config (not hardcoded)
+    model.config.encoder.image_size = list(config.image_size)
+    processor.image_processor.size = {
+        "height": config.image_size[0], "width": config.image_size[1],
+    }
     out_dir = os.path.join(config.output_dir, "donut")
     use_bf16 = config.precision == "bf16" and torch.cuda.is_bf16_supported()
     train_args = Seq2SeqTrainingArguments(

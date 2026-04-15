@@ -1,4 +1,4 @@
-"""Download SROIE dataset and produce train/val/test splits."""
+"""Download SROIE dataset, produce train/val/test splits, extract crops."""
 from __future__ import annotations
 
 import json
@@ -7,8 +7,10 @@ import shutil
 import subprocess
 from pathlib import Path
 
+from PIL import Image
+
 from core.errors import DataError
-from core.types import DataSplit, ExpConfig, Field, Receipt
+from core.types import Crop, DataSplit, ExpConfig, Field, Receipt
 
 # 500 train / 63 val / 63 test from 626 SROIE images (Bug 7: val ≠ test)
 _N_VAL = 63
@@ -69,6 +71,54 @@ def _parse_entities_txt(path: Path) -> dict[str, str]:
     return result
 
 
+def _match_field(text: str, gt: dict[str, str]) -> str:
+    """Match a box text line to the best-matching KIE field by token overlap."""
+    tokens = set(text.lower().split())
+    best, best_score = "", 0
+    for name, value in gt.items():
+        vtokens = set(value.lower().split())
+        overlap = len(tokens & vtokens)
+        if overlap > best_score:
+            best, best_score = name, overlap
+    return best
+
+
+def extract_crops(receipts: list[Receipt], fields: list[str]) -> list[Crop]:
+    """Parse SROIE box annotations → labeled Crop list for TrOCR + assigner."""
+    crops: list[Crop] = []
+    for rec in receipts:
+        box_path = rec.image_path.parent.parent / "box" / (rec.image_path.stem + ".txt")
+        if not box_path.exists():
+            continue
+        gt = {f.name.lower(): f.value for f in rec.fields}
+        img = Image.open(rec.image_path)
+        w, h = img.size
+        for line in box_path.read_text(errors="replace").splitlines():
+            parts = line.split(",", 8)
+            if len(parts) < 9:
+                continue
+            try:
+                coords = [int(p) for p in parts[:8]]
+            except ValueError:
+                continue
+            text = parts[8].strip()
+            if not text:
+                continue
+            x1 = max(0, min(coords[0], coords[6])) / w
+            y1 = max(0, min(coords[1], coords[3])) / h
+            x2 = min(w, max(coords[2], coords[4])) / w
+            y2 = min(h, max(coords[5], coords[7])) / h
+            label = _match_field(text, gt)
+            if label and label in fields:
+                crops.append(Crop(
+                    image_path=rec.image_path,
+                    bbox=(x1, y1, x2, y2),
+                    text=text,
+                    field_label=label,
+                ))
+    return crops
+
+
 def split_sroie(data_path: Path, seed: int) -> DataSplit:
     """Split SROIE into train/val/test (Bug 7: physically separate val/test)."""
     img_dir = data_path / "train" / "img"
@@ -81,4 +131,8 @@ def split_sroie(data_path: Path, seed: int) -> DataSplit:
     test = all_receipts[:_N_TEST]
     val = all_receipts[_N_TEST: _N_TEST + _N_VAL]
     train = all_receipts[_N_TEST + _N_VAL:]
+    # Bug 7: assert zero overlap between val and test sets
+    val_ids = {r.image_path.stem for r in val}
+    test_ids = {r.image_path.stem for r in test}
+    assert len(val_ids & test_ids) == 0, "Val/test overlap detected"
     return DataSplit(train=train, val=val, test=test)

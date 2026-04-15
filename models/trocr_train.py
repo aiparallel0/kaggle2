@@ -34,7 +34,13 @@ class _CropDataset(torch.utils.data.Dataset):  # type: ignore[misc]
         crop = self._crops[idx]
         from PIL import Image
         img = Image.open(crop.image_path).convert("RGB")
-        pv = self._processor(images=img, return_tensors="pt").pixel_values.squeeze(0)
+        # Crop to bbox (normalised x1, y1, x2, y2)
+        w, h = img.size
+        x1, y1, x2, y2 = crop.bbox
+        region = img.crop((int(x1 * w), int(y1 * h), int(x2 * w), int(y2 * h)))
+        if region.width < 1 or region.height < 1:
+            region = img
+        pv = self._processor(images=region, return_tensors="pt").pixel_values.squeeze(0)
         tok = self._processor.tokenizer(
             crop.text,
             max_length=self._config.trocr_max_len,
