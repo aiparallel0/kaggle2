@@ -108,6 +108,8 @@ def eval_pipeline(paths: PipelinePaths, test: list[Receipt]) -> Metrics:
                 x1, y1, x2, y2 = box[:4]
                 w, h = img.width, img.height
                 crop = img.crop((int(x1 * w), int(y1 * h), int(x2 * w), int(y2 * h)))
+                if crop.width < 1 or crop.height < 1:
+                    continue
                 pv = trocr_proc(images=crop, return_tensors="pt").pixel_values.to(device)
                 out = trocr_model.generate(pv, max_new_tokens=64)
                 text = trocr_proc.batch_decode(out, skip_special_tokens=True)[0]
@@ -116,14 +118,20 @@ def eval_pipeline(paths: PipelinePaths, test: list[Receipt]) -> Metrics:
                 region_texts.append(text)
                 text_feats_list.append(feat)
                 bbox_list.append([x1, y1, x2, y2])
+            assigned: dict[str, str] = {}
             if region_texts:
                 tf = torch.cat(list(text_feats_list), dim=0).unsqueeze(0)
                 bf = torch.tensor(bbox_list, dtype=torch.float32).unsqueeze(0).to(device)
-                logits = assigner(tf, bf).squeeze(0)  # (n_fields,)
-                field_idx = logits.argmax(dim=0).item()
-                assigned = {_FIELDS[int(field_idx)]: " ".join(region_texts)}
-            else:
-                assigned = {}
+                _, attn_w = assigner(tf, bf)  # attn_w: (1, n_fields, N_regions)
+                used: set[int] = set()
+                # Greedy: assign each field to its best unused region
+                for f_idx, field_name in enumerate(_FIELDS):
+                    weights = attn_w[0, f_idx].clone()  # (N_regions,)
+                    for u in used:
+                        weights[u] = -1e9
+                    best_r = int(weights.argmax().item())
+                    used.add(best_r)
+                    assigned[field_name] = region_texts[best_r]
             pred_fields = [Field(name=k, value=v) for k, v in assigned.items()]
             predictions.append(Prediction(receipt_id=rec.image_path.stem, fields=pred_fields))
     metrics = _compute_metrics(predictions, test)

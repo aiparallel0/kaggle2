@@ -61,11 +61,20 @@ class PipelinePaths:
 
 @dataclass
 class Crop:
-    """One text-region crop extracted by YOLO."""
+    """One text-region crop extracted by YOLO or SROIE box annotations."""
 
     image_path: Path
     bbox: tuple[float, float, float, float]  # x1 y1 x2 y2 normalised
     text: str = ""
+    field_label: str = ""
+
+
+@dataclass
+class AssignerData:
+    """Training payload for the attention-based field assigner."""
+
+    trocr_path: str
+    crops: list[Crop]
 
 
 @dataclass
@@ -83,9 +92,11 @@ class ExpConfig:
     epochs_donut: int
     epochs_yolo: int
     epochs_trocr: int
+    epochs_assigner: int
     batch_size: int
     grad_accum: int
     lr: float
+    lr_decoder: float
     warmup_steps: int
     weight_decay: float
     label_smoothing: float

@@ -28,24 +28,24 @@ class AttentionAssigner(nn.Module):  # type: ignore[misc]
         # Binary classifier: attended vector → assignment logit per field
         self.classifier = nn.Linear(hidden_dim, 1)
 
-    def forward(self, text_feats: Tensor, bbox_feats: Tensor) -> Tensor:
-        """Compute field assignment logits.
+    def forward(self, text_feats: Tensor, bbox_feats: Tensor) -> tuple[Tensor, Tensor]:
+        """Compute field assignment logits and attention weights.
 
         Args:
             text_feats: (B, N_regions, 768) TrOCR encoder hidden states.
             bbox_feats: (B, N_regions, 4) normalised (x1, y1, x2, y2) boxes.
 
         Returns:
-            Tensor of shape (B, n_fields) — logits, one per KIE field.
+            Tuple of (logits (B, n_fields), attn_weights (B, n_fields, N)).
         """
         # Key/value: combine text and spatial information
         kv = self.text_proj(text_feats) + self.bbox_proj(bbox_feats)
         # Expand field queries to batch size
         q = self.field_queries.unsqueeze(0).expand(kv.size(0), -1, -1)
         # Cross-attention: each field query attends over all region KV pairs
-        attn_out, _ = self.attn(q, kv, kv)  # (B, n_fields, hidden_dim)
-        # Squeeze to scalar logit per field
-        return self.classifier(attn_out).squeeze(-1)  # (B, n_fields)
+        attn_out, attn_w = self.attn(q, kv, kv)  # (B, n_fields, hidden_dim)
+        logits = self.classifier(attn_out).squeeze(-1)  # (B, n_fields)
+        return logits, attn_w
 
 
 def save_assigner(model: AttentionAssigner, path: str) -> None:

@@ -8,8 +8,8 @@ from pathlib import Path
 
 from core.config import load_config
 from core.errors import EvalError, TrainError
-from core.types import Crop, ExpConfig, PipelinePaths
-from data.sroie import download_sroie, split_sroie
+from core.types import AssignerData, ExpConfig, PipelinePaths
+from data.sroie import download_sroie, extract_crops, split_sroie
 from models.assigner_train import train_assigner
 from models.donut_eval import eval_donut
 from models.donut_train import train_donut
@@ -42,18 +42,18 @@ def _stage_train(config: ExpConfig) -> None:
     print(f"DONUT → {donut_path}")
     yolo_path = train_yolo(config, data)
     print(f"YOLO  → {yolo_path}")
-    crops = [
-        Crop(
-            image_path=r.image_path,
-            bbox=(0.0, 0.0, 1.0, 1.0),
-            text=r.fields[0].value if r.fields else "",
-        )
-        for r in data.train
-    ]
+    # Extract real text-region crops from SROIE box annotations
+    crops = extract_crops(data.train, config.fields)
+    print(f"Extracted {len(crops)} labeled crops from SROIE box annotations")
     trocr_path = train_trocr(config, crops)
     print(f"TrOCR → {trocr_path}")
-    assigner_path = train_assigner(config, data)
+    assigner_data = AssignerData(trocr_path=trocr_path, crops=crops)
+    assigner_path = train_assigner(config, assigner_data)
     print(f"Assigner → {assigner_path}")
+    # Store pipeline metadata for eval stage
+    Path(config.output_dir).mkdir(parents=True, exist_ok=True)
+    with open(os.path.join(config.output_dir, "pipeline_meta.json"), "w") as f:
+        json.dump({"yolo_img_size": config.yolo_img_size}, f)
 
 
 def _stage_eval(config: ExpConfig) -> None:
