@@ -49,10 +49,7 @@ def _rule_based_assign(
         assigned["company"] = region_texts[unused_by_y[0][0]]
         used.add(unused_by_y[0][0])
     # Address: concatenate next unused regions (typically below company, above total)
-    remaining = [
-        region_texts[i] for i, _ in unused_by_y[1:]
-        if i not in used
-    ]
+    remaining = [region_texts[i] for i, _ in unused_by_y[1:]]
     if remaining:
         assigned["address"] = " ".join(remaining[:3])
     return assigned
