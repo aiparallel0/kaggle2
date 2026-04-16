@@ -70,13 +70,17 @@ def _stage_eval(config: ExpConfig) -> None:
         assigner=os.path.join(config.output_dir, "assigner.pt"),
     )
     pm = eval_pipeline(paths, data.test)
-    _validate_f1({"global_f1": pm.global_f1}, "pipeline")
-    print(f"Pipeline F1={pm.global_f1:.4f}")
+    _validate_f1({"global_f1": pm.assigner.global_f1}, "pipeline")
+    print(f"Pipeline (assigner) F1={pm.assigner.global_f1:.4f}")
+    print(f"Pipeline (rulebased) F1={pm.rulebased.global_f1:.4f}")
+    assigner_delta = round(pm.assigner.global_f1 - pm.rulebased.global_f1, 4)
     combined: dict[str, object] = {
         "donut_f1": dm.global_f1, "donut_ned": dm.global_ned, "donut_em": dm.global_em,
-        "pipeline_f1": pm.global_f1, "pipeline_ned": pm.global_ned, "pipeline_em": pm.global_em,
-        "f1_gap": round(dm.global_f1 - pm.global_f1, 4),
-        "assigner_delta": 0.05,
+        "pipeline_f1": pm.assigner.global_f1,
+        "pipeline_ned": pm.assigner.global_ned,
+        "pipeline_em": pm.assigner.global_em,
+        "f1_gap": round(dm.global_f1 - pm.assigner.global_f1, 4),
+        "assigner_delta": assigner_delta,
         "donut_f1_company": dm.per_field_f1.get("company", 0.0),
         "donut_f1_date": dm.per_field_f1.get("date", 0.0),
         "donut_f1_address": dm.per_field_f1.get("address", 0.0),

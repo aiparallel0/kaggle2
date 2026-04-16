@@ -53,23 +53,30 @@ def train_assigner(config: ExpConfig, data: AssignerData) -> str:
     opt = torch.optim.Adam(assigner.parameters(), lr=1e-3)
     loss_fn = torch.nn.CrossEntropyLoss()
     n = len(embeddings)
+    batch_size = min(32, n)
     assigner.train()
     for epoch in range(config.epochs_assigner):
         total_loss = 0.0
-        for i in range(n):
-            # Process one sample: single region as key-value for cross-attention
-            tf = embeddings[i].unsqueeze(0).to(device)  # (1, 1, 768)
+        # Shuffle indices each epoch
+        perm = torch.randperm(n)
+        n_batches = 0
+        for start in range(0, n, batch_size):
+            end = min(start + batch_size, n)
+            idxs = perm[start:end]
+            tf = torch.stack([embeddings[i] for i in idxs]).to(device)  # (B, 1, 768)
             bf = torch.tensor(
-                [bboxes[i]], dtype=torch.float32,
-            ).unsqueeze(0).to(device)  # (1, 1, 4)
-            tgt = torch.tensor([labels[i]], device=device)
+                [bboxes[i] for i in idxs], dtype=torch.float32,
+            ).unsqueeze(1).to(device)  # (B, 1, 4)
+            tgt = torch.tensor([labels[i] for i in idxs], device=device)
             opt.zero_grad()
-            logits, _ = assigner(tf, bf)  # (1, n_fields)
+            logits, _ = assigner(tf, bf)  # (B, n_fields)
             loss = loss_fn(logits, tgt)
             loss.backward()
             opt.step()
             total_loss += loss.item()
-        print(f"  Assigner epoch {epoch + 1}/{config.epochs_assigner} loss={total_loss:.3f}")
+            n_batches += 1
+        avg_loss = total_loss / max(n_batches, 1)
+        print(f"  Assigner epoch {epoch + 1}/{config.epochs_assigner} loss={avg_loss:.3f}")
     out_path = os.path.join(config.output_dir, "assigner.pt")
     Path(config.output_dir).mkdir(parents=True, exist_ok=True)
     save_assigner(assigner, out_path)
