@@ -6,7 +6,6 @@ from typing import Any
 
 from core.types import ExpConfig
 
-
 _REQUIRED = [
     "seed", "base_model", "trocr_model", "yolo_model", "image_size",
     "yolo_img_size", "max_length", "trocr_max_len", "epochs_donut",

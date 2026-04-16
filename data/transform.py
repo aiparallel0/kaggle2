@@ -1,8 +1,9 @@
 """Image preprocessing: Receipt image → processor pixel values tensor."""
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 
 def to_pixel_values(img_path: Path, processor: Callable[..., Any]) -> Any:
