@@ -48,7 +48,7 @@ def _compute_metrics(predictions: list[Prediction], receipts: list[Receipt]) -> 
     pf1: dict[str, list[float]] = {f: [] for f in _FIELDS}
     pned: dict[str, list[float]] = {f: [] for f in _FIELDS}
     pem: dict[str, list[float]] = {f: [] for f in _FIELDS}
-    for pred, rec in zip(predictions, receipts):
+    for pred, rec in zip(predictions, receipts, strict=True):
         gt = {fld.name.lower(): fld.value.lower() for fld in rec.fields}
         pr = {fld.name.lower(): fld.value.lower() for fld in pred.fields}
         for f in _FIELDS:
@@ -99,7 +99,9 @@ def eval_pipeline(paths: PipelinePaths, test: list[Receipt]) -> Metrics:
         for rec in test:
             img = Image.open(rec.image_path).convert("RGB")
             # Bug 5: always pass imgsz explicitly
-            det_results = yolo.predict(str(rec.image_path), imgsz=yolo_img_size, verbose=False)
+            det_results = yolo.predict(
+                str(rec.image_path), imgsz=yolo_img_size, conf=0.25, verbose=False,
+            )
             boxes = det_results[0].boxes.xyxyn.cpu().tolist() if det_results[0].boxes else []
             region_texts: list[str] = []
             text_feats_list: list[object] = []
@@ -123,9 +125,13 @@ def eval_pipeline(paths: PipelinePaths, test: list[Receipt]) -> Metrics:
                 tf = torch.cat(list(text_feats_list), dim=0).unsqueeze(0)
                 bf = torch.tensor(bbox_list, dtype=torch.float32).unsqueeze(0).to(device)
                 _, attn_w = assigner(tf, bf)  # attn_w: (1, n_fields, N_regions)
+                n_regions = len(region_texts)
                 used: set[int] = set()
-                # Greedy: assign each field to its best unused region
+                # Greedy: assign each field to its best unused region; if we run out
+                # of regions, remaining fields stay empty rather than re-using a slot.
                 for f_idx, field_name in enumerate(_FIELDS):
+                    if len(used) >= n_regions:
+                        break
                     weights = attn_w[0, f_idx].clone()  # (N_regions,)
                     for u in used:
                         weights[u] = -1e9

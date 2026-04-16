@@ -6,10 +6,10 @@ from typing import Any
 
 import torch
 from transformers import (
-    TrOCRProcessor,
-    VisionEncoderDecoderModel,
     Seq2SeqTrainer,
     Seq2SeqTrainingArguments,
+    TrOCRProcessor,
+    VisionEncoderDecoderModel,
 )
 
 from core.errors import TrainError
@@ -74,6 +74,7 @@ def train_trocr(config: ExpConfig, crops: list[Crop]) -> str:
 
     out_dir = os.path.join(config.output_dir, "trocr")
     use_bf16 = config.precision == "bf16" and torch.cuda.is_bf16_supported()
+    use_fp16 = (not use_bf16) and torch.cuda.is_available()
     split = int(len(crops) * 0.9)
     train_crops, val_crops = crops[:split], crops[split:]
     if not val_crops:
@@ -85,7 +86,7 @@ def train_trocr(config: ExpConfig, crops: list[Crop]) -> str:
         per_device_train_batch_size=config.batch_size,
         learning_rate=config.lr,
         bf16=use_bf16,
-        fp16=not use_bf16,
+        fp16=use_fp16,
         max_grad_norm=config.max_grad_norm,  # Bug 4
         save_strategy="epoch",
         evaluation_strategy="epoch",

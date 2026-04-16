@@ -6,6 +6,8 @@ import shutil
 import textwrap
 from pathlib import Path
 
+from PIL import Image
+
 from core.errors import TrainError
 from core.types import DataSplit, ExpConfig, Receipt
 
@@ -13,13 +15,51 @@ from core.types import DataSplit, ExpConfig, Receipt
 # labels at yolo_data/labels/{train,val}/ in YOLO-format txt files.
 
 
-def _write_yolo_labels(receipts: list[Receipt], img_dst: Path, lbl_dst: Path) -> None:
-    """Copy images + write placeholder full-image labels (YOLO txt format)."""
+def _yolo_lines_from_sroie_box(box_path: Path, img_w: int, img_h: int) -> list[str]:
+    """Convert SROIE 4-corner-point box lines → YOLO (class cx cy w h) normalised."""
+    lines: list[str] = []
+    for raw in box_path.read_text(errors="replace").splitlines():
+        parts = raw.split(",", 8)
+        if len(parts) < 8:
+            continue
+        try:
+            coords = [int(p) for p in parts[:8]]
+        except ValueError:
+            continue
+        xs, ys = coords[0::2], coords[1::2]
+        xmin, xmax = max(0, min(xs)), min(img_w, max(xs))
+        ymin, ymax = max(0, min(ys)), min(img_h, max(ys))
+        if xmax <= xmin or ymax <= ymin:
+            continue
+        cx = (xmin + xmax) / 2.0 / img_w
+        cy = (ymin + ymax) / 2.0 / img_h
+        bw = (xmax - xmin) / img_w
+        bh = (ymax - ymin) / img_h
+        lines.append(f"0 {cx:.6f} {cy:.6f} {bw:.6f} {bh:.6f}")
+    return lines
+
+
+def _write_yolo_labels(receipts: list[Receipt], img_dst: Path, lbl_dst: Path) -> int:
+    """Copy images; derive per-text-line YOLO labels from SROIE box/ annotations.
+
+    Returns number of images that produced at least one real label.
+    """
+    labelled = 0
     for r in receipts:
         shutil.copy(r.image_path, img_dst / r.image_path.name)
-        # Full-image label: class 0, centre 0.5 0.5, w 1.0, h 1.0
         lbl = lbl_dst / (r.image_path.stem + ".txt")
-        lbl.write_text("0 0.5 0.5 1.0 1.0\n")
+        box_path = r.image_path.parent.parent / "box" / (r.image_path.stem + ".txt")
+        if not box_path.exists():
+            # Missing annotations: write an empty file so YOLO treats it as background.
+            lbl.write_text("")
+            continue
+        with Image.open(r.image_path) as img:
+            w, h = img.size
+        lines = _yolo_lines_from_sroie_box(box_path, w, h)
+        lbl.write_text("\n".join(lines) + ("\n" if lines else ""))
+        if lines:
+            labelled += 1
+    return labelled
 
 
 def train_yolo(config: ExpConfig, data: DataSplit) -> str:
@@ -34,8 +74,16 @@ def train_yolo(config: ExpConfig, data: DataSplit) -> str:
         (base / "images" / split).mkdir(parents=True, exist_ok=True)
         (base / "labels" / split).mkdir(parents=True, exist_ok=True)
 
-    _write_yolo_labels(data.train, base / "images" / "train", base / "labels" / "train")
-    _write_yolo_labels(data.val, base / "images" / "val", base / "labels" / "val")
+    n_train = _write_yolo_labels(
+        data.train, base / "images" / "train", base / "labels" / "train"
+    )
+    n_val = _write_yolo_labels(data.val, base / "images" / "val", base / "labels" / "val")
+    if n_train == 0:
+        raise TrainError(
+            "YOLO: zero training images have SROIE box annotations — "
+            "cannot train a text-region detector from placeholder labels."
+        )
+    print(f"YOLO: labelled {n_train}/{len(data.train)} train, {n_val}/{len(data.val)} val")
 
     yaml_path = base / "dataset.yaml"
     yaml_path.write_text(

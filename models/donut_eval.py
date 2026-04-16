@@ -36,7 +36,7 @@ def _compute_metrics(
     pf1: dict[str, list[float]] = {f: [] for f in fields}
     pned: dict[str, list[float]] = {f: [] for f in fields}
     pem: dict[str, list[float]] = {f: [] for f in fields}
-    for pred, rec in zip(predictions, receipts):
+    for pred, rec in zip(predictions, receipts, strict=True):
         gt = {fld.name.lower(): fld.value.lower() for fld in rec.fields}
         pr = {fld.name.lower(): fld.value.lower() for fld in pred.fields}
         for f in fields:
@@ -101,8 +101,18 @@ def eval_donut(model_path: str, test: list[Receipt]) -> Metrics:
     device = "cuda" if torch.cuda.is_available() else "cpu"
     model = model.to(device)
     model.eval()
-    # Bug 2: list-form decoder_start_token_id
+    # Bug 2: list-form decoder_start_token_id. Fall back to model.config if
+    # <s_sroie> is absent from the reloaded tokenizer (e.g. non-SROIE checkpoint).
     start_id = processor.tokenizer.convert_tokens_to_ids(["<s_sroie>"])[0]
+    unk_id = processor.tokenizer.unk_token_id
+    if start_id is None or start_id == unk_id:
+        cfg_start = model.config.decoder_start_token_id
+        if cfg_start is None:
+            raise EvalError(
+                "decoder_start_token_id unresolved: <s_sroie> is not in the "
+                "tokenizer and model.config.decoder_start_token_id is unset."
+            )
+        start_id = int(cfg_start)
     predictions: list[Prediction] = []
     from PIL import Image
     with torch.no_grad():

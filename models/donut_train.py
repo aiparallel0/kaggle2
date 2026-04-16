@@ -109,13 +109,14 @@ def train_donut(config: ExpConfig, data: DataSplit) -> str:
     )[0]
     model.config.pad_token_id = processor.tokenizer.pad_token_id
     model.config.vocab_size = model.config.decoder.vocab_size
-    # Step 5: set encoder image size from config (not hardcoded)
-    model.config.encoder.image_size = list(config.image_size)
-    processor.image_processor.size = {
-        "height": config.image_size[0], "width": config.image_size[1],
-    }
+    # Step 5: set encoder image size from config (config.image_size is [W, H]).
+    # DONUT/Swin encoder.image_size and DonutProcessor.size both expect (H, W).
+    img_w, img_h = config.image_size[0], config.image_size[1]
+    model.config.encoder.image_size = [img_h, img_w]
+    processor.image_processor.size = {"height": img_h, "width": img_w}
     out_dir = os.path.join(config.output_dir, "donut")
     use_bf16 = config.precision == "bf16" and torch.cuda.is_bf16_supported()
+    use_fp16 = (not use_bf16) and torch.cuda.is_available()
     train_args = Seq2SeqTrainingArguments(
         output_dir=out_dir,
         num_train_epochs=config.epochs_donut,
@@ -125,7 +126,7 @@ def train_donut(config: ExpConfig, data: DataSplit) -> str:
         warmup_steps=config.warmup_steps,
         weight_decay=config.weight_decay,
         bf16=use_bf16,
-        fp16=not use_bf16,
+        fp16=use_fp16,
         max_grad_norm=config.max_grad_norm,  # Bug 4
         label_smoothing_factor=config.label_smoothing,
         save_strategy="epoch",
