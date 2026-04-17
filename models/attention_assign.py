@@ -1,12 +1,21 @@
 """Cross-attention field assigner (~50 K params). Novel contribution."""
 from __future__ import annotations
 
-import torch
-import torch.nn as nn
-from torch import Tensor
+from typing import TYPE_CHECKING
+
+try:
+    import torch
+    import torch.nn as nn
+
+    _NN_BASE: type = nn.Module
+except ImportError:  # lightweight CI — torch not installed
+    _NN_BASE = object
+
+if TYPE_CHECKING:
+    from torch import Tensor
 
 
-class AttentionAssigner(nn.Module):  # type: ignore[misc]
+class AttentionAssigner(_NN_BASE):  # type: ignore[misc]
     """Cross-attention field assignment. Replaces rule-based heuristics.
 
     Given TrOCR region embeddings and normalised bounding boxes, learns to

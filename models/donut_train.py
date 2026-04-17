@@ -5,21 +5,37 @@ import json
 import os
 import random
 from pathlib import Path
-from typing import Any
-
-import numpy as np
-import torch
-from transformers import (
-    DonutProcessor,
-    EarlyStoppingCallback,
-    Seq2SeqTrainer,
-    Seq2SeqTrainingArguments,
-    TrainerCallback,
-    VisionEncoderDecoderModel,
-)
+from typing import TYPE_CHECKING, Any
 
 from core.metrics import token_f1
 from core.types import DataSplit, ExpConfig, Receipt
+
+try:
+    import numpy as np
+    import torch
+    from transformers import (
+        DonutProcessor,
+        EarlyStoppingCallback,
+        Seq2SeqTrainer,
+        Seq2SeqTrainingArguments,
+        TrainerCallback,
+        VisionEncoderDecoderModel,
+    )
+
+    _DATASET_BASE: type = torch.utils.data.Dataset
+    _CALLBACK_BASE: type = TrainerCallback
+except ImportError:  # lightweight CI — torch/transformers not installed
+    _DATASET_BASE = object
+    _CALLBACK_BASE = object
+
+if TYPE_CHECKING:
+    import numpy as np
+    import torch
+    from transformers import (
+        DonutProcessor,
+        Seq2SeqTrainingArguments,
+        TrainerCallback,
+    )
 
 
 def _build_label(receipt: Receipt) -> str:
@@ -31,7 +47,7 @@ def _build_label(receipt: Receipt) -> str:
     return "".join(parts)
 
 
-class _SROIEDataset(torch.utils.data.Dataset[dict[str, Any]]):  # type: ignore[misc]
+class _SROIEDataset(_DATASET_BASE):  # type: ignore[misc]
     def __init__(
         self, receipts: list[Receipt], processor: DonutProcessor, config: ExpConfig,
     ) -> None:
@@ -57,7 +73,7 @@ class _SROIEDataset(torch.utils.data.Dataset[dict[str, Any]]):  # type: ignore[m
         return {"pixel_values": pv, "labels": labels}
 
 
-class _LmHeadCloneCallback(TrainerCallback):  # type: ignore[misc]
+class _LmHeadCloneCallback(_CALLBACK_BASE):  # type: ignore[misc]
     """Bug 1: clone lm_head.weight before every save to defeat safetensors dedup."""
 
     def on_save(self, args: Any, state: Any, control: Any, **kwargs: Any) -> None:
