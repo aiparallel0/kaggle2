@@ -62,7 +62,7 @@ class _SROIEDataset(_DATASET_BASE):  # type: ignore[misc]
         input_ids = tok.input_ids.squeeze(0)
         labels = input_ids.clone()
         labels[labels == self._p.tokenizer.pad_token_id] = -100
-        return {"pixel_values": pv, "labels": labels, "decoder_input_ids": input_ids}
+        return {"pixel_values": pv, "labels": labels}
 
 
 class _LmHeadCloneCallback(_CALLBACK_BASE):  # type: ignore[misc]
