@@ -59,9 +59,10 @@ class _SROIEDataset(_DATASET_BASE):  # type: ignore[misc]
             _build_label(r), max_length=self._c.max_length,
             padding="max_length", truncation=True, return_tensors="pt",
         )
-        labels = tok.input_ids.squeeze(0)
+        input_ids = tok.input_ids.squeeze(0)
+        labels = input_ids.clone()
         labels[labels == self._p.tokenizer.pad_token_id] = -100
-        return {"pixel_values": pv, "labels": labels}
+        return {"pixel_values": pv, "labels": labels, "decoder_input_ids": input_ids}
 
 
 class _LmHeadCloneCallback(_CALLBACK_BASE):  # type: ignore[misc]
