@@ -100,7 +100,7 @@ def train_assigner(config: ExpConfig, data: AssignerData) -> str:
             feats, bboxes, targets = prepared[idx]
             opt.zero_grad()
             loss = _group_loss(assigner, feats, bboxes, targets, device)
-            loss.backward()
+            loss.backward()  # type: ignore[no-untyped-call]
             opt.step()
             total += float(loss.item())
             steps += 1
