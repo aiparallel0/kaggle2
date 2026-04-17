@@ -134,14 +134,3 @@ def test_shift_right_helper_directly() -> None:
     assert (out != -100).all(), "output must not contain -100"
     # shifted: [START, 20, 10, 11, PAD] — last position becomes PAD
     assert out[0, -1] == PAD
-
-
-def test_model_accepts_loss_kwargs_set_false() -> None:
-    """train_donut must set model.accepts_loss_kwargs=False to prevent
-    transformers >=4.48 from forwarding num_items_in_batch into the encoder."""
-    from models.donut_train import _DonutCollator  # noqa: F401 – just import check
-
-    model = _make_mock_model()
-    # Simulate what train_donut does
-    model.accepts_loss_kwargs = False
-    assert model.accepts_loss_kwargs is False
