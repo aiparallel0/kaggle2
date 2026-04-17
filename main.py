@@ -123,25 +123,59 @@ def _stage_eval(config: ExpConfig) -> None:
 
 
 def _compile_paper_pdf(tex_path: Path, bib_src: Path) -> Path | None:
-    """Compile ``tex_path`` to PDF via pdflatex + bibtex + pdflatex x2.
+    """Compile ``tex_path`` to PDF.
 
-    Returns the resulting PDF path on success, or ``None`` if ``pdflatex`` is
-    not installed (we warn instead of failing so ``make paper`` still works on
-    machines without a LaTeX toolchain). A non-zero compiler exit is fatal —
-    the README advertises ``report/paper_filled.pdf`` as the deliverable, so a
-    silent compilation failure would defeat the purpose of running the stage.
+    Prefers ``tectonic`` (self-contained LaTeX engine, handles bibtex+rerun
+    automatically in one call) and falls back to ``pdflatex`` + ``bibtex`` +
+    ``pdflatex`` x2 when only a traditional TeX Live install is available.
+
+    Returns the resulting PDF path on success, or ``None`` if neither engine
+    is installed — we warn instead of failing so ``make paper`` still works
+    on machines without a LaTeX toolchain. A non-zero compiler exit is fatal:
+    the README advertises ``report/paper_filled.pdf`` as the deliverable, so
+    a silent compilation failure would defeat the purpose of running the
+    stage.
     """
-    if shutil.which("pdflatex") is None:
-        log.warning(
-            "pdflatex not found — skipping PDF compilation. "
-            "Install texlive (scripts/vastai_bootstrap.sh does this) to "
-            "generate %s.pdf.", tex_path.stem,
-        )
-        return None
     work = tex_path.parent
-    # bibtex reads references.bib next to the .aux file; make sure it's there.
+    # bibtex/tectonic reads references.bib next to the .tex file.
     if bib_src.exists() and bib_src.resolve() != (work / bib_src.name).resolve():
         shutil.copy(bib_src, work / bib_src.name)
+
+    if shutil.which("tectonic") is not None:
+        # Tectonic: one invocation compiles, resolves citations, and reruns
+        # as needed. --keep-intermediates lets us inspect .aux / .log on
+        # failure; --chatter minimal keeps the stdout tidy.
+        result = subprocess.run(
+            [
+                "tectonic",
+                "--keep-intermediates",
+                "--keep-logs",
+                "--chatter", "minimal",
+                tex_path.name,
+            ],
+            cwd=work,
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0:
+            raise EvalError(
+                f"tectonic failed for {tex_path.name}:\n"
+                f"stdout: {result.stdout[-2000:]}\n"
+                f"stderr: {result.stderr[-2000:]}",
+            )
+        pdf = work / f"{tex_path.stem}.pdf"
+        if not pdf.exists():
+            raise EvalError(f"tectonic finished but {pdf} was not produced.")
+        return pdf
+
+    if shutil.which("pdflatex") is None:
+        log.warning(
+            "No LaTeX engine found (tried tectonic, pdflatex) — skipping PDF "
+            "compilation. Install tectonic (scripts/vastai_bootstrap.sh does "
+            "this) to generate %s.pdf.", tex_path.stem,
+        )
+        return None
+
     stem = tex_path.stem
     cmds: list[list[str]] = [
         ["pdflatex", "-interaction=nonstopmode", "-halt-on-error", tex_path.name],
