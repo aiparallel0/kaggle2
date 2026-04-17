@@ -27,6 +27,25 @@ data/sroie_cache/
 # YOLO run artefacts
 runs/
 
+# Third-party caches and logs
+.cache/
+.huggingface/
+wandb/
+lightning_logs/
+tensorboard/
+
+# Generated paper (produced by `make paper`)
+report/paper_filled.tex
+report/paper_filled.pdf
+report/paper_filled.aux
+report/paper_filled.log
+report/paper_filled.out
+report/paper_filled.bbl
+report/paper_filled.blg
+
+# Pytest cache
+.pytest_cache/
+
 # Jupyter
 .ipynb_checkpoints/
 

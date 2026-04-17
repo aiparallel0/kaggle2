@@ -33,5 +33,8 @@
   "data_dir": "./data/sroie_cache",
   "output_dir": "./results",
   "paper_template": "./report/template.tex",
-  "paper_output": "./report/paper_filled.tex"
+  "paper_output": "./report/paper_filled.tex",
+  "yolo_conf": 0.25,
+  "trocr_max_new_tokens": 64,
+  "max_regions_per_image": 32
 }

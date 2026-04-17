@@ -115,8 +115,9 @@ def train_donut(config: ExpConfig, data: DataSplit) -> str:
     model.config.encoder.image_size = [img_h, img_w]
     processor.image_processor.size = {"height": img_h, "width": img_w}
     out_dir = os.path.join(config.output_dir, "donut")
-    use_bf16 = config.precision == "bf16" and torch.cuda.is_bf16_supported()
-    use_fp16 = (not use_bf16) and torch.cuda.is_available()
+    cuda = torch.cuda.is_available()
+    use_bf16 = cuda and config.precision == "bf16" and torch.cuda.is_bf16_supported()
+    use_fp16 = cuda and not use_bf16  # Bug 4: never fp16 without CUDA (NaN on CPU)
     train_args = Seq2SeqTrainingArguments(
         output_dir=out_dir,
         num_train_epochs=config.epochs_donut,
