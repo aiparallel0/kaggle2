@@ -67,7 +67,7 @@ class _LmHeadCloneCallback(TrainerCallback):  # type: ignore[misc]
         )
 
 
-def _seed_worker(worker_id: int) -> None:
+def _seed_worker(_worker_id: int) -> None:
     """Deterministic DataLoader workers — prevents silent nondeterminism."""
     seed = torch.initial_seed() % 2**32
     np.random.seed(seed)
