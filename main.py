@@ -11,7 +11,7 @@ from core.config import load_config
 from core.errors import EvalError, TrainError
 from core.seed import seed_everything
 from core.types import AssignerData, ExpConfig, PipelinePaths
-from data.sroie import download_sroie, extract_crops, extract_receipt_regions, split_sroie
+from data.sroie import download_sroie, extract_crops, extract_receipt_regions, load_or_create_split
 from models.assigner_train import train_assigner
 from models.donut_eval import eval_donut
 from models.donut_train import train_donut
@@ -23,8 +23,12 @@ from report.inject import inject_results
 log = logging.getLogger("kaggle2")
 
 
-def _validate_f1(global_f1: float, arch: str) -> None:
-    """Post-eval F1 guardrails — raise if architecture-specific floor is breached."""
+def _validate_f1(global_f1: float, arch: str, config: ExpConfig) -> None:
+    """Post-eval F1 guardrails: hard raise below floor; soft WARN below expected.
+
+    F1 is stochastic (GPU, HF weights, SROIE label noise); no specific number
+    can be guaranteed. Floors flag *bugs*, not underperformance.
+    """
     if arch == "donut" and global_f1 < 0.50:
         raise TrainError(
             f"DONUT F1={global_f1:.4f} < 0.50 — likely lm_head dedup (Bug 1), "
@@ -32,8 +36,16 @@ def _validate_f1(global_f1: float, arch: str) -> None:
         )
     if arch == "pipeline" and global_f1 == 0.0:
         raise TrainError(
-            "Pipeline F1=0.0 — YOLO imgsz mismatch (Bug 5) or TrOCR undertrained (Bug 6).",
+            "Pipeline F1=0.0 — YOLO imgsz mismatch (Bug 5) "
+            "or TrOCR undertrained (Bug 6).",
         )
+    if global_f1 < config.expected_f1_warn:
+        log.warning("%s F1=%.4f below expected_f1_warn=%.2f (not an error).",
+                    arch, global_f1, config.expected_f1_warn)
+
+
+def _split_cache(config: ExpConfig) -> Path:
+    return Path(config.output_dir) / "split.json"
 
 
 def _write_pipeline_meta(config: ExpConfig) -> None:
@@ -45,7 +57,7 @@ def _write_pipeline_meta(config: ExpConfig) -> None:
 def _stage_train(config: ExpConfig) -> None:
     log.info("=== Stage: train ===")
     data_path = download_sroie(config)
-    data = split_sroie(data_path, config.seed)
+    data = load_or_create_split(data_path, config.seed, _split_cache(config))
     log.info("Split: %d train / %d val / %d test",
              len(data.train), len(data.val), len(data.test))
     donut_path = train_donut(config, data)
@@ -69,10 +81,10 @@ def _stage_train(config: ExpConfig) -> None:
 def _stage_eval(config: ExpConfig) -> None:
     log.info("=== Stage: eval ===")
     data_path = download_sroie(config)
-    data = split_sroie(data_path, config.seed)
+    data = load_or_create_split(data_path, config.seed, _split_cache(config))
     donut_model = os.path.join(config.output_dir, "donut")
-    dm = eval_donut(donut_model, data.test)
-    _validate_f1(dm.global_f1, "donut")
+    dm = eval_donut(donut_model, data.test, config)
+    _validate_f1(dm.global_f1, "donut", config)
     log.info("DONUT F1=%.4f", dm.global_f1)
     paths = PipelinePaths(
         yolo=os.path.join(config.output_dir, "yolo", "run", "weights", "best.pt"),
@@ -80,7 +92,7 @@ def _stage_eval(config: ExpConfig) -> None:
         assigner=os.path.join(config.output_dir, "assigner.pt"),
     )
     pm = eval_pipeline(paths, data.test, config)
-    _validate_f1(pm.assigner.global_f1, "pipeline")
+    _validate_f1(pm.assigner.global_f1, "pipeline", config)
     log.info("Pipeline (assigner)  F1=%.4f", pm.assigner.global_f1)
     log.info("Pipeline (rulebased) F1=%.4f", pm.rulebased.global_f1)
     combined: dict[str, object] = {

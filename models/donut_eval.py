@@ -10,48 +10,57 @@ from transformers import DonutProcessor, VisionEncoderDecoderModel
 
 from core.errors import EvalError
 from core.metrics import compute_metrics
-from core.types import Field, Metrics, Prediction, Receipt
+from core.types import ExpConfig, Field, Metrics, Prediction, Receipt
 
 
 def _token2json_safe(processor: DonutProcessor, tokens: str) -> dict[str, str]:
-    """Bug 3 fix: token2json may return a list on CORD data; merge into dict."""
+    """Bug 3 fix: token2json may return a list on CORD data; merge into dict.
+
+    When the list contains multiple values for the same key (happens on
+    multi-line addresses decoded as separate pages), prefer the *longest*
+    non-empty value — short strings are almost always truncations.
+    """
     result = processor.token2json(tokens)
     if isinstance(result, list):
         merged: dict[str, str] = {}
         for page in result:
-            if isinstance(page, dict):
-                for k, v in page.items():
-                    if k not in merged:
-                        merged[k] = str(v)
+            if not isinstance(page, dict):
+                continue
+            for k, v in page.items():
+                sv = str(v)
+                if k not in merged or len(sv) > len(merged[k]):
+                    merged[k] = sv
         return merged
     if isinstance(result, dict):
         return {k: str(v) for k, v in result.items()}
     return {}
 
 
-def eval_donut(model_path: str, test: list[Receipt]) -> Metrics:
+def eval_donut(
+    model_path: str, test: list[Receipt], config: ExpConfig | None = None,
+) -> Metrics:
     """Run DONUT inference on test receipts; return Metrics."""
     if not Path(model_path).exists():
         raise EvalError(f"DONUT model not found at {model_path}")
     processor: DonutProcessor = DonutProcessor.from_pretrained(model_path)
     model: VisionEncoderDecoderModel = VisionEncoderDecoderModel.from_pretrained(
-        model_path
+        model_path,
     )
     device = "cuda" if torch.cuda.is_available() else "cpu"
     model = model.to(device)
     model.eval()
-    # Bug 2: list-form decoder_start_token_id. Fall back to model.config if
-    # <s_sroie> is absent from the reloaded tokenizer (e.g. non-SROIE checkpoint).
-    start_id = processor.tokenizer.convert_tokens_to_ids(["<s_sroie>"])[0]
+    start_id = processor.tokenizer.convert_tokens_to_ids(["<s_sroie>"])[0]  # Bug 2
     unk_id = processor.tokenizer.unk_token_id
     if start_id is None or start_id == unk_id:
         cfg_start = model.config.decoder_start_token_id
         if cfg_start is None:
             raise EvalError(
                 "decoder_start_token_id unresolved: <s_sroie> is not in the "
-                "tokenizer and model.config.decoder_start_token_id is unset."
+                "tokenizer and model.config.decoder_start_token_id is unset.",
             )
         start_id = int(cfg_start)
+    num_beams = config.num_beams if config is not None else 4
+    max_len = config.max_length if config is not None else 768
     predictions: list[Prediction] = []
     from PIL import Image
     with torch.no_grad():
@@ -61,7 +70,8 @@ def eval_donut(model_path: str, test: list[Receipt]) -> Metrics:
             out = model.generate(
                 pv,
                 decoder_start_token_id=start_id,
-                max_length=768,
+                max_length=max_len,
+                num_beams=num_beams,
                 early_stopping=True,
             )
             tokens = processor.batch_decode(out, skip_special_tokens=False)[0]

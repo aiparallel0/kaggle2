@@ -32,15 +32,14 @@ def download_sroie(config: ExpConfig) -> Path:
     except subprocess.CalledProcessError as exc:
         raise DataError(f"SROIE clone failed: {exc.stderr.decode()}") from exc
     for split in ("train", "test"):
-        src_img = tmp / "data" / split / "img"
-        src_box = tmp / "data" / split / "box"
-        src_ent = tmp / "data" / split / "entities"
-        for src, name in [(src_img, "img"), (src_box, "box"), (src_ent, "entities")]:
-            if src.exists():
-                dst = cache / split / name
-                dst.mkdir(parents=True, exist_ok=True)
-                for f in src.iterdir():
-                    shutil.copy(f, dst / f.name)
+        for name in ("img", "box", "entities"):
+            src = tmp / "data" / split / name
+            if not src.exists():
+                continue
+            dst = cache / split / name
+            dst.mkdir(parents=True, exist_ok=True)
+            for f in src.iterdir():
+                shutil.copy(f, dst / f.name)
     shutil.rmtree(tmp, ignore_errors=True)
     return cache
 
@@ -48,27 +47,25 @@ def download_sroie(config: ExpConfig) -> Path:
 def _load_receipts(img_dir: Path, ent_dir: Path) -> list[Receipt]:
     receipts: list[Receipt] = []
     for img_path in sorted(img_dir.glob("*.jpg")):
-        ent_path = ent_dir / img_path.with_suffix(".json").name
-        if not ent_path.exists():
-            ent_path = ent_dir / (img_path.stem + ".txt")
-        if not ent_path.exists():
+        ent = ent_dir / img_path.with_suffix(".json").name
+        if not ent.exists():
+            ent = ent_dir / (img_path.stem + ".txt")
+        if not ent.exists():
             continue
         try:
-            raw = json.loads(ent_path.read_text())
+            raw = json.loads(ent.read_text())
         except json.JSONDecodeError:
-            raw = _parse_entities_txt(ent_path)
-        fields = [Field(name=k, value=str(v)) for k, v in raw.items()]
-        receipts.append(Receipt(image_path=img_path, fields=fields))
+            raw = _parse_entities_txt(ent)
+        receipts.append(Receipt(
+            image_path=img_path,
+            fields=[Field(name=k, value=str(v)) for k, v in raw.items()],
+        ))
     return receipts
 
 
 def _parse_entities_txt(path: Path) -> dict[str, str]:
-    result: dict[str, str] = {}
-    for line in path.read_text().splitlines():
-        if ":" in line:
-            k, _, v = line.partition(":")
-            result[k.strip().lower()] = v.strip()
-    return result
+    return {k.strip().lower(): v.strip() for line in path.read_text().splitlines()
+            if ":" in line for k, _, v in [line.partition(":")]}
 
 
 def _match_field(text: str, gt: dict[str, str]) -> str:
@@ -93,7 +90,7 @@ def _parse_box_file(rec: Receipt, fields: list[str]) -> list[Crop]:
     if not box_path.exists():
         return []
     gt = {f.name.lower(): f.value for f in rec.fields}
-    fields_lower = {f.lower() for f in fields}
+    ok = {f.lower() for f in fields}
     with Image.open(rec.image_path) as img:
         w, h = img.size
     out: list[Crop] = []
@@ -109,55 +106,59 @@ def _parse_box_file(rec: Receipt, fields: list[str]) -> list[Crop]:
         if not text:
             continue
         xs, ys = coords[0::2], coords[1::2]
-        x1 = max(0.0, min(xs) / w)
-        y1 = max(0.0, min(ys) / h)
-        x2 = min(1.0, max(xs) / w)
-        y2 = min(1.0, max(ys) / h)
+        x1, y1 = max(0.0, min(xs) / w), max(0.0, min(ys) / h)
+        x2, y2 = min(1.0, max(xs) / w), min(1.0, max(ys) / h)
         if x2 <= x1 or y2 <= y1:
             continue
         raw = _match_field(text, gt)
-        label = raw if raw in fields_lower else ""
-        out.append(Crop(
-            image_path=rec.image_path, bbox=(x1, y1, x2, y2),
-            text=text, field_label=label,
-        ))
+        label = raw if raw in ok else ""
+        out.append(Crop(image_path=rec.image_path, bbox=(x1, y1, x2, y2),
+                        text=text, field_label=label))
     return out
 
 
 def extract_crops(receipts: list[Receipt], fields: list[str]) -> list[Crop]:
     """Parse SROIE box annotations → labeled Crop list for TrOCR + assigner."""
-    crops: list[Crop] = []
-    for rec in receipts:
-        crops.extend(c for c in _parse_box_file(rec, fields) if c.field_label)
-    return crops
+    return [c for r in receipts for c in _parse_box_file(r, fields) if c.field_label]
 
 
 def extract_receipt_regions(
     receipts: list[Receipt], fields: list[str],
 ) -> list[list[Crop]]:
     """Parse annotations → ALL box regions per receipt (labeled + distractors)."""
-    groups: list[list[Crop]] = []
-    for rec in receipts:
-        regions = _parse_box_file(rec, fields)
-        if any(c.field_label for c in regions):
-            groups.append(regions)
-    return groups
+    gs = [_parse_box_file(r, fields) for r in receipts]
+    return [g for g in gs if any(c.field_label for c in g)]
 
 
 def split_sroie(data_path: Path, seed: int) -> DataSplit:
     """Split SROIE into train/val/test (Bug 7: physically separate val/test)."""
-    img_dir = data_path / "train" / "img"
-    ent_dir = data_path / "train" / "entities"
+    img_dir, ent_dir = data_path / "train" / "img", data_path / "train" / "entities"
     if not img_dir.exists():
         raise DataError(f"SROIE train/img not found at {img_dir}")
-    all_receipts = _load_receipts(img_dir, ent_dir)
-    rng = random.Random(seed)
-    rng.shuffle(all_receipts)
-    test = all_receipts[:_N_TEST]
-    val = all_receipts[_N_TEST: _N_TEST + _N_VAL]
-    train = all_receipts[_N_TEST + _N_VAL:]
-    # Bug 7: assert zero overlap between val and test sets
-    val_ids = {r.image_path.stem for r in val}
-    test_ids = {r.image_path.stem for r in test}
-    assert len(val_ids & test_ids) == 0, "Val/test overlap detected"
+    all_r = _load_receipts(img_dir, ent_dir)
+    random.Random(seed).shuffle(all_r)
+    test, val = all_r[:_N_TEST], all_r[_N_TEST: _N_TEST + _N_VAL]
+    train = all_r[_N_TEST + _N_VAL:]
+    assert not ({r.image_path.stem for r in val}
+                & {r.image_path.stem for r in test}), "Val/test overlap"  # Bug 7
     return DataSplit(train=train, val=val, test=test)
+
+
+def load_or_create_split(data_path: Path, seed: int, cache: Path) -> DataSplit:
+    """Reuse the saved split if present, else create+persist (prevents drift)."""
+    groups = ("train", "val", "test")
+    if cache.exists():
+        raw = json.loads(cache.read_text())
+        by_stem = {r.image_path.stem: r for r in _load_receipts(
+            data_path / "train" / "img", data_path / "train" / "entities")}
+        miss = [s for g in groups for s in raw[g] if s not in by_stem]
+        if miss:
+            raise DataError(f"Saved split missing images: {miss[:5]}...")
+        return DataSplit(*([by_stem[s] for s in raw[g]] for g in groups))
+    split = split_sroie(data_path, seed)
+    cache.parent.mkdir(parents=True, exist_ok=True)
+    cache.write_text(json.dumps(
+        {g: [r.image_path.stem for r in getattr(split, g)] for g in groups},
+        indent=2,
+    ))
+    return split
