@@ -5,7 +5,6 @@ import json
 from pathlib import Path
 from typing import Any
 
-import torch
 from PIL import Image
 
 from core.errors import EvalError
@@ -13,6 +12,13 @@ from core.metrics import compute_metrics
 from core.types import ExpConfig, Field, PipelinePaths, PipelineResult, Prediction, Receipt
 from models.attention_assign import AttentionAssigner, load_assigner
 from models.rule_based import rule_based_assign
+
+try:
+    import torch
+
+    _HAS_TORCH = True
+except ImportError:  # lightweight CI — torch not installed
+    _HAS_TORCH = False
 
 
 def _detect_and_read(

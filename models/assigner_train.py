@@ -9,15 +9,22 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
-import torch
 from PIL import Image
-from torch import Tensor
 
 from core.errors import TrainError
 from core.types import AssignerData, Crop, ExpConfig
 from models.attention_assign import AttentionAssigner, save_assigner
+
+try:
+    import torch
+    from torch import Tensor
+except ImportError:  # lightweight CI — torch not installed
+    pass
+
+if TYPE_CHECKING:
+    from torch import Tensor
 
 
 def _encode_regions(

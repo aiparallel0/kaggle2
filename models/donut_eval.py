@@ -5,12 +5,15 @@ import json
 import os
 from pathlib import Path
 
-import torch
-from transformers import DonutProcessor, VisionEncoderDecoderModel
-
 from core.errors import EvalError
 from core.metrics import compute_metrics
 from core.types import ExpConfig, Field, Metrics, Prediction, Receipt
+
+try:
+    import torch
+    from transformers import DonutProcessor, VisionEncoderDecoderModel
+except ImportError:  # lightweight CI — torch/transformers not installed
+    pass
 
 
 def _token2json_safe(processor: DonutProcessor, tokens: str) -> dict[str, str]:

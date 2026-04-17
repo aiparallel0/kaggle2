@@ -4,19 +4,24 @@ from __future__ import annotations
 import os
 from typing import Any
 
-import torch
-from transformers import (
-    Seq2SeqTrainer,
-    Seq2SeqTrainingArguments,
-    TrOCRProcessor,
-    VisionEncoderDecoderModel,
-)
-
 from core.errors import TrainError
 from core.types import Crop, ExpConfig
 
+try:
+    import torch
+    from transformers import (
+        Seq2SeqTrainer,
+        Seq2SeqTrainingArguments,
+        TrOCRProcessor,
+        VisionEncoderDecoderModel,
+    )
 
-class _CropDataset(torch.utils.data.Dataset[dict[str, Any]]):
+    _DATASET_BASE: type = torch.utils.data.Dataset
+except ImportError:  # lightweight CI — torch/transformers not installed
+    _DATASET_BASE = object
+
+
+class _CropDataset(_DATASET_BASE):  # type: ignore[misc]
     def __init__(
         self,
         crops: list[Crop],
