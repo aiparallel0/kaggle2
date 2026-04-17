@@ -5,7 +5,7 @@ import json
 import os
 import random
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from core.metrics import token_f1
 from core.types import DataSplit, ExpConfig, Receipt
@@ -27,15 +27,6 @@ try:
 except ImportError:  # lightweight CI — torch/transformers not installed
     _DATASET_BASE = object
     _CALLBACK_BASE = object
-
-if TYPE_CHECKING:
-    import numpy as np
-    import torch
-    from transformers import (
-        DonutProcessor,
-        Seq2SeqTrainingArguments,
-        TrainerCallback,
-    )
 
 
 def _build_label(receipt: Receipt) -> str:

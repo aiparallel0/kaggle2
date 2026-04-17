@@ -4,7 +4,6 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 from core.errors import EvalError
 from core.metrics import compute_metrics
@@ -15,9 +14,6 @@ try:
     from transformers import DonutProcessor, VisionEncoderDecoderModel
 except ImportError:  # lightweight CI — torch/transformers not installed
     pass
-
-if TYPE_CHECKING:
-    from transformers import DonutProcessor, VisionEncoderDecoderModel
 
 
 def _token2json_safe(processor: DonutProcessor, tokens: str) -> dict[str, str]:
