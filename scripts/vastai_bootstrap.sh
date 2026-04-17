@@ -13,6 +13,7 @@
 # (PyTorch template, >=24 GB GPU, >=50 GB disk), open its terminal / Jupyter,
 # and paste the three commands above.
 set -euo pipefail
+if [ "${VERBOSE:-0}" = "1" ]; then set -x; fi
 
 log() { printf "\033[1;36m[bootstrap]\033[0m %s\n" "$*"; }
 
@@ -103,6 +104,15 @@ pip install -r requirements.txt
 
 log "Running static checks (mypy + ruff) — the kaggle2 'test suite'"
 make check
+
+log "LaTeX engine summary:"
+if command -v tectonic >/dev/null; then
+    log "  tectonic: $(tectonic --version 2>&1 | head -n1)"
+elif command -v pdflatex >/dev/null; then
+    log "  pdflatex: $(pdflatex --version 2>&1 | head -n1)"
+else
+    log "  WARN: no LaTeX engine (tectonic or pdflatex) — 'make paper' will only produce .tex"
+fi
 
 log "Ready. Launch training with: make all"
 log "Intermediate outputs land in ./results/, final paper in report/paper_filled.pdf"

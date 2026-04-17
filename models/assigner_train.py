@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import torch
 from PIL import Image
@@ -100,7 +100,7 @@ def train_assigner(config: ExpConfig, data: AssignerData) -> str:
             feats, bboxes, targets = prepared[idx]
             opt.zero_grad()
             loss = _group_loss(assigner, feats, bboxes, targets, device)
-            loss.backward()
+            cast(Any, loss).backward()
             opt.step()
             total += float(loss.item())
             steps += 1
