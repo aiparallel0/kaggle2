@@ -14,7 +14,7 @@ def seed_everything(seed: int) -> None:
     os.environ["PYTHONHASHSEED"] = str(seed)
     random.seed(seed)
     try:
-        import numpy as np  # type: ignore[import-not-found]
+        import numpy as np
         np.random.seed(seed)
     except ImportError:
         pass

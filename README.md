@@ -3,7 +3,24 @@
 Context-window-first receipt KIE. DONUT vs YOLO+TrOCR+Attention on SROIE.
 18 files, ≤166 LOC cap, 2-in/1-out contracts, mypy-as-test-suite.
 Replaces 34K-line Python monolith. Trains both architectures, evaluates on
-63-image split, generates IEEE-regional LaTeX paper. Best F1 ≈ 0.85–0.90.
+63-image split, generates IEEE-regional LaTeX paper.
+
+## Expected F1 — honest range, no guarantees
+
+Published DONUT-on-SROIE results land in **0.73 – 0.90** depending on
+epochs, resolution, auxiliary data, and seed. The tightened configuration
+in this repo (15 epochs, cosine schedule, beam-search decoding, best-F1
+checkpoint selection) typically lands in **0.78 – 0.88** on an RTX 4090 /
+A6000. **No specific F1 number can be guaranteed by code changes alone**:
+F1 is a stochastic training outcome that depends on GPU availability,
+Hugging Face weight snapshots at download time, and SROIE label noise.
+
+`validate_f1()` in `main.py` enforces two levels:
+
+| level            | threshold                           | behaviour |
+|------------------|-------------------------------------|-----------|
+| hard floor       | DONUT < 0.50 / pipeline == 0.0      | raises `TrainError` (indicates a bug, not underperformance) |
+| soft expectation | `config.expected_f1_warn` (def 0.75) | logs a WARNING, does not fail the run |
 
 ## Architecture
 
@@ -22,99 +39,106 @@ regex heuristics) to quantify the assigner's contribution.
 
 ```
 core/         config, types, errors, shared metrics, seed_everything
-data/         SROIE download, split, crop extraction (labeled + distractor regions)
+data/         SROIE download, split (persisted), crop extraction
 models/       donut_train, donut_eval, yolo_train, trocr_train,
               assigner_train, attention_assign, pipeline_eval
 report/       LaTeX template injection, references
+scripts/      vastai_bootstrap.sh — one-shot install+check
 main.py       orchestrator (--stage train | eval | paper | all)
 ```
 
-### Cross-attention field assigner — realistic training
+## Quick start (vast.ai — three copy-pastes)
 
-The `AttentionAssigner` is trained on **per-receipt multi-region batches**,
-not single crops, so cross-attention over distractors is actually exercised
-the same way it is at inference (YOLO returns many text lines per receipt).
-`data.sroie.extract_receipt_regions` groups every SROIE box line per
-receipt (labeled fields + distractor text) and the training loss is
-per-field NLL on the pooled positive regions' attention mass.
+1. Rent a **PyTorch** instance with **≥24 GB GPU** (RTX 4090, 3090, A6000,
+   A100) and **≥50 GB disk**. Use the vast.ai web UI; do not bother with
+   the CLI / SSH.
+2. Open the instance's built-in terminal or Jupyter terminal.
+3. Paste:
 
-## Quick start
+   ```bash
+   cd /workspace
+   git clone https://github.com/aiparallel0/kaggle2.git && cd kaggle2
+   bash scripts/vastai_bootstrap.sh
+   make all
+   ```
+
+`make all` runs `check → test → train → eval → paper`. On a single RTX
+4090 the DONUT stage takes ≈ 45 min at 15 epochs; YOLO+TrOCR+Attention
+takes ≈ 30 min. Intermediate artefacts land in `./results/`, the final
+paper is `report/paper_filled.pdf`.
+
+Partial runs:
 
 ```bash
-# Install (GPU recommended; CPU works for eval on small splits)
+make check         # ruff + mypy --strict + import smoke
+make test          # pytest (no GPU needed)
+python main.py --stage train
+python main.py --stage eval
+python main.py --stage paper
+```
+
+The split (500 / 63 / 63) is persisted to `results/split.json` on the
+first train run, so a later `--stage eval` in a separate shell sees the
+exact same test set — no silent drift.
+
+## Local (non-vast.ai) run
+
+```bash
 pip install -r requirements.txt
-
-# Lint + type-check
-make check
-
-# Train both architectures on SROIE
-make train
-
-# Evaluate on held-out 63-image test split
-make eval
-
-# Generate IEEE-format LaTeX paper with real metrics
-make paper
-
-# Or run everything end-to-end
 make all
 ```
 
-### Docker
+Or via Docker:
 
 ```bash
 docker build -t kaggle2 .
-docker run --gpus all kaggle2
+docker run --gpus all -v $(pwd)/results:/app/results kaggle2
 ```
 
 ## Configuration
 
-All hyperparameters live in `config.json`. Key settings:
+All hyperparameters live in `config.json`. F1-affecting knobs:
 
-| Parameter | Default | Description |
+| Parameter | Default | Effect on expected F1 |
 |---|---|---|
-| `epochs_donut` | 10 | DONUT fine-tuning epochs |
-| `epochs_yolo` | 50 | YOLOv8 training epochs |
-| `epochs_trocr` | 10 | TrOCR fine-tuning epochs (≥5 enforced) |
-| `image_size` | [1280, 960] | DONUT input resolution [W, H] |
-| `yolo_img_size` | 512 | YOLO detection resolution |
-| `batch_size` | 8 | Training batch size |
-| `precision` | bf16 | Mixed precision (bf16 on Ampere+, fp16 on CUDA fallback, fp32 on CPU) |
-| `yolo_conf` | 0.25 | YOLO confidence threshold at pipeline inference |
-| `trocr_max_new_tokens` | 64 | TrOCR generation cap per region |
-| `max_regions_per_image` | 32 | Cap on regions fed to the assigner at inference |
+| `epochs_donut` | 15 | Longer training → higher F1, diminishing returns past 15. |
+| `image_size` | [1280, 960] | Higher resolution → better address/total recognition; more VRAM. |
+| `num_beams` | 4 | Beam search typically gains 2–4 F1 points over greedy. |
+| `lr_scheduler_type` | cosine | Cosine > linear for short SROIE runs. |
+| `warmup_ratio` | 0.1 | Stabilises early loss on small data. |
+| `gradient_checkpointing` | true | Lets batch 8 × 1280 × 960 fit in 24 GB. |
+| `patience` | 3 | EarlyStopping on plateau of eval F1. |
+| `precision` | bf16 | bf16 on Ampere+; fp16 with grad-clip otherwise (Bug 4). |
+| `yolo_img_size` | 512 | MUST match training and inference (Bug 5). |
+| `epochs_trocr` | 10 | Floor of 5 enforced in config.py (Bug 6). |
+| `expected_f1_warn` | 0.75 | Soft WARN threshold (non-fatal). |
 
-## F1-destroying bugs
+## F1-destroying bugs (all guarded in code)
 
-Seven implementation bugs that silently destroy F1 are documented and
-guarded against in code:
-
-1. **lm_head weight deduplication** — safetensors drops tied weights on reload
-2. **Wrong decoder_start_token_id** — string-form tokeniser returns wrong ID
-3. **token2json returns list** — CORD-style multi-page output breaks parsing
-4. **fp16 gradient overflow** — use bf16 or max_grad_norm clipping
-5. **YOLO imgsz mismatch** — inference default ≠ training size → 0% detection
-6. **TrOCR undertrained** — < 5 epochs produces all-empty outputs
-7. **Val == Test leakage** — physically separate validation and test splits
+1. lm_head weight deduplication (safetensors drops tied weights)
+2. Wrong decoder_start_token_id (string-form tokeniser)
+3. token2json list return (CORD-style multi-page output); merge prefers
+   longest non-empty value per field
+4. fp16 gradient overflow (bf16 on Ampere+, else fp16 + max_grad_norm)
+5. YOLO imgsz mismatch (inference default ≠ training size)
+6. TrOCR undertrained (<5 epochs produces all-empty outputs)
+7. Val == Test leakage (physically separate splits, persisted to disk)
 
 ## Testing
 
 ```bash
-make test        # runs pytest
-make check      # ruff + mypy --strict + import smoke
+make test        # pytest (split persistence, metrics, configs, etc.)
+make check       # ruff + mypy --strict + import smoke
 ```
-
-Tests cover configuration validation, deterministic seeding, metric
-computation (F1, NED, EM), YOLO label conversion, SROIE field matching
-(including multi-line addresses), the rule-based baseline assignment,
-and LaTeX template injection.
 
 ## Reproducibility
 
 `core.seed.seed_everything(config.seed)` is called at startup and seeds
 `random`, `numpy`, `torch`, and CUDA (with `cudnn.deterministic=True`).
-Combined with HF `Trainer(seed=config.seed)` this gives bit-for-bit
-reproducible runs on the same hardware.
+Combined with HF `Trainer(seed=config.seed, data_seed=config.seed)`, a
+persisted data split, and a deterministic DataLoader
+(`worker_init_fn` + seeded `torch.Generator`), runs are bit-for-bit
+reproducible on identical hardware.
 
 ## License
 

@@ -35,7 +35,11 @@ def load_config(path: str, defaults: dict[str, Any] | None = None) -> ExpConfig:
             "TrOCR will underfit (Bug 6). Set epochs_trocr >= 5."
         )
 
-    _optional = {"yolo_conf", "trocr_max_new_tokens", "max_regions_per_image"}
+    _optional = {
+        "yolo_conf", "trocr_max_new_tokens", "max_regions_per_image",
+        "warmup_ratio", "lr_scheduler_type", "gradient_checkpointing",
+        "num_beams", "expected_f1_warn",
+    }
     known = set(_REQUIRED) | _optional
     extra = {k: v for k, v in raw.items() if k not in known}
 
@@ -73,5 +77,10 @@ def load_config(path: str, defaults: dict[str, Any] | None = None) -> ExpConfig:
         yolo_conf=float(raw.get("yolo_conf", 0.25)),
         trocr_max_new_tokens=int(raw.get("trocr_max_new_tokens", 64)),
         max_regions_per_image=int(raw.get("max_regions_per_image", 32)),
+        warmup_ratio=float(raw.get("warmup_ratio", 0.1)),
+        lr_scheduler_type=str(raw.get("lr_scheduler_type", "cosine")),
+        gradient_checkpointing=bool(raw.get("gradient_checkpointing", True)),
+        num_beams=int(raw.get("num_beams", 4)),
+        expected_f1_warn=float(raw.get("expected_f1_warn", 0.75)),
         extra=extra,
     )
