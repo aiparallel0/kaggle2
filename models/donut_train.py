@@ -66,8 +66,8 @@ class _SROIEDataset(_DATASET_BASE):  # type: ignore[misc]
 
 
 def _shift_right(
-    labels: "torch.Tensor", start_id: int, pad_id: int,
-) -> "torch.Tensor":
+    labels: torch.Tensor, start_id: int, pad_id: int,
+) -> torch.Tensor:
     """Shift *labels* right by one to produce decoder_input_ids.
 
     Used as a fallback when the model does not expose
@@ -86,7 +86,7 @@ class _DonutCollator:
     mbart decoder with 'specify either decoder_input_ids or decoder_inputs_embeds'.
     """
 
-    def __init__(self, model: "VisionEncoderDecoderModel") -> None:
+    def __init__(self, model: VisionEncoderDecoderModel) -> None:
         self._model = model
 
     def __call__(self, features: list[dict[str, Any]]) -> dict[str, Any]:
