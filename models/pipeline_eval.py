@@ -15,8 +15,10 @@ from models.rule_based import rule_based_assign
 
 try:
     import torch
+
+    _HAS_TORCH = True
 except ImportError:  # lightweight CI — torch not installed
-    torch = None  # type: ignore[assignment]
+    _HAS_TORCH = False
 
 
 def _detect_and_read(
