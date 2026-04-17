@@ -6,7 +6,7 @@ import torch.nn as nn
 from torch import Tensor
 
 
-class AttentionAssigner(nn.Module):  # type: ignore[misc]
+class AttentionAssigner(nn.Module):
     """Cross-attention field assignment. Replaces rule-based heuristics.
 
     Given TrOCR region embeddings and normalised bounding boxes, learns to
