@@ -21,13 +21,22 @@ regex heuristics) to quantify the assigner's contribution.
 ### Module layout
 
 ```
-core/         config, types, errors, shared metrics
-data/         SROIE download, split, crop extraction
+core/         config, types, errors, shared metrics, seed_everything
+data/         SROIE download, split, crop extraction (labeled + distractor regions)
 models/       donut_train, donut_eval, yolo_train, trocr_train,
               assigner_train, attention_assign, pipeline_eval
 report/       LaTeX template injection, references
 main.py       orchestrator (--stage train | eval | paper | all)
 ```
+
+### Cross-attention field assigner — realistic training
+
+The `AttentionAssigner` is trained on **per-receipt multi-region batches**,
+not single crops, so cross-attention over distractors is actually exercised
+the same way it is at inference (YOLO returns many text lines per receipt).
+`data.sroie.extract_receipt_regions` groups every SROIE box line per
+receipt (labeled fields + distractor text) and the training loss is
+per-field NLL on the pooled positive regions' attention mass.
 
 ## Quick start
 
@@ -70,7 +79,10 @@ All hyperparameters live in `config.json`. Key settings:
 | `image_size` | [1280, 960] | DONUT input resolution [W, H] |
 | `yolo_img_size` | 512 | YOLO detection resolution |
 | `batch_size` | 8 | Training batch size |
-| `precision` | bf16 | Mixed precision (bf16 on Ampere+, fp16 fallback) |
+| `precision` | bf16 | Mixed precision (bf16 on Ampere+, fp16 on CUDA fallback, fp32 on CPU) |
+| `yolo_conf` | 0.25 | YOLO confidence threshold at pipeline inference |
+| `trocr_max_new_tokens` | 64 | TrOCR generation cap per region |
+| `max_regions_per_image` | 32 | Cap on regions fed to the assigner at inference |
 
 ## F1-destroying bugs
 
@@ -88,11 +100,21 @@ guarded against in code:
 ## Testing
 
 ```bash
-python -m pytest -q tests/
+make test        # runs pytest
+make check      # ruff + mypy --strict + import smoke
 ```
 
-Tests cover configuration validation, metric computation (F1, NED, EM),
-YOLO label conversion, and LaTeX template injection.
+Tests cover configuration validation, deterministic seeding, metric
+computation (F1, NED, EM), YOLO label conversion, SROIE field matching
+(including multi-line addresses), the rule-based baseline assignment,
+and LaTeX template injection.
+
+## Reproducibility
+
+`core.seed.seed_everything(config.seed)` is called at startup and seeds
+`random`, `numpy`, `torch`, and CUDA (with `cudnn.deterministic=True`).
+Combined with HF `Trainer(seed=config.seed)` this gives bit-for-bit
+reproducible runs on the same hardware.
 
 ## License
 

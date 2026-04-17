@@ -73,8 +73,9 @@ def train_trocr(config: ExpConfig, crops: list[Crop]) -> str:
     model.config.vocab_size = model.config.decoder.vocab_size
 
     out_dir = os.path.join(config.output_dir, "trocr")
-    use_bf16 = config.precision == "bf16" and torch.cuda.is_bf16_supported()
-    use_fp16 = (not use_bf16) and torch.cuda.is_available()
+    cuda = torch.cuda.is_available()
+    use_bf16 = cuda and config.precision == "bf16" and torch.cuda.is_bf16_supported()
+    use_fp16 = cuda and not use_bf16
     split = int(len(crops) * 0.9)
     train_crops, val_crops = crops[:split], crops[split:]
     if not val_crops:

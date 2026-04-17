@@ -35,7 +35,8 @@ def load_config(path: str, defaults: dict[str, Any] | None = None) -> ExpConfig:
             "TrOCR will underfit (Bug 6). Set epochs_trocr >= 5."
         )
 
-    known = set(_REQUIRED)
+    _optional = {"yolo_conf", "trocr_max_new_tokens", "max_regions_per_image"}
+    known = set(_REQUIRED) | _optional
     extra = {k: v for k, v in raw.items() if k not in known}
 
     img = raw["image_size"]
@@ -69,5 +70,8 @@ def load_config(path: str, defaults: dict[str, Any] | None = None) -> ExpConfig:
         output_dir=str(raw["output_dir"]),
         paper_template=str(raw["paper_template"]),
         paper_output=str(raw["paper_output"]),
+        yolo_conf=float(raw.get("yolo_conf", 0.25)),
+        trocr_max_new_tokens=int(raw.get("trocr_max_new_tokens", 64)),
+        max_regions_per_image=int(raw.get("max_regions_per_image", 32)),
         extra=extra,
     )

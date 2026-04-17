@@ -72,54 +72,76 @@ def _parse_entities_txt(path: Path) -> dict[str, str]:
 
 
 def _match_field(text: str, gt: dict[str, str]) -> str:
-    """Match a box text line to the best-matching KIE field by token overlap."""
-    tokens = set(text.lower().split())
+    """Match a box text line to the best KIE field by overlap / substring."""
+    low = text.lower().strip()
+    if not low:
+        return ""
+    addr = gt.get("address", "").lower()
+    if addr and low in addr and len(low) >= 3:
+        return "address"
+    tokens = set(low.split())
     best, best_score = "", 0
     for name, value in gt.items():
-        vtokens = set(value.lower().split())
-        overlap = len(tokens & vtokens)
+        overlap = len(tokens & set(value.lower().split()))
         if overlap > best_score:
             best, best_score = name.lower(), overlap
     return best
+
+
+def _parse_box_file(rec: Receipt, fields: list[str]) -> list[Crop]:
+    box_path = rec.image_path.parent.parent / "box" / (rec.image_path.stem + ".txt")
+    if not box_path.exists():
+        return []
+    gt = {f.name.lower(): f.value for f in rec.fields}
+    fields_lower = {f.lower() for f in fields}
+    with Image.open(rec.image_path) as img:
+        w, h = img.size
+    out: list[Crop] = []
+    for line in box_path.read_text(errors="replace").splitlines():
+        parts = line.split(",", 8)
+        if len(parts) < 9:
+            continue
+        try:
+            coords = [int(p) for p in parts[:8]]
+        except ValueError:
+            continue
+        text = parts[8].strip()
+        if not text:
+            continue
+        xs, ys = coords[0::2], coords[1::2]
+        x1 = max(0.0, min(xs) / w)
+        y1 = max(0.0, min(ys) / h)
+        x2 = min(1.0, max(xs) / w)
+        y2 = min(1.0, max(ys) / h)
+        if x2 <= x1 or y2 <= y1:
+            continue
+        raw = _match_field(text, gt)
+        label = raw if raw in fields_lower else ""
+        out.append(Crop(
+            image_path=rec.image_path, bbox=(x1, y1, x2, y2),
+            text=text, field_label=label,
+        ))
+    return out
 
 
 def extract_crops(receipts: list[Receipt], fields: list[str]) -> list[Crop]:
     """Parse SROIE box annotations → labeled Crop list for TrOCR + assigner."""
     crops: list[Crop] = []
     for rec in receipts:
-        box_path = rec.image_path.parent.parent / "box" / (rec.image_path.stem + ".txt")
-        if not box_path.exists():
-            continue
-        gt = {f.name.lower(): f.value for f in rec.fields}
-        img = Image.open(rec.image_path)
-        w, h = img.size
-        for line in box_path.read_text(errors="replace").splitlines():
-            parts = line.split(",", 8)
-            if len(parts) < 9:
-                continue
-            try:
-                coords = [int(p) for p in parts[:8]]
-            except ValueError:
-                continue
-            text = parts[8].strip()
-            if not text:
-                continue
-            # SROIE: 4 corner points (x1,y1,x2,y2,x3,y3,x4,y4)
-            xs = [coords[0], coords[2], coords[4], coords[6]]
-            ys = [coords[1], coords[3], coords[5], coords[7]]
-            x1 = max(0.0, min(xs) / w)
-            y1 = max(0.0, min(ys) / h)
-            x2 = min(1.0, max(xs) / w)
-            y2 = min(1.0, max(ys) / h)
-            label = _match_field(text, gt)
-            if label and label.lower() in [f.lower() for f in fields]:
-                crops.append(Crop(
-                    image_path=rec.image_path,
-                    bbox=(x1, y1, x2, y2),
-                    text=text,
-                    field_label=label,
-                ))
+        crops.extend(c for c in _parse_box_file(rec, fields) if c.field_label)
     return crops
+
+
+def extract_receipt_regions(
+    receipts: list[Receipt], fields: list[str],
+) -> list[list[Crop]]:
+    """Parse annotations → ALL box regions per receipt (labeled + distractors)."""
+    groups: list[list[Crop]] = []
+    for rec in receipts:
+        regions = _parse_box_file(rec, fields)
+        if any(c.field_label for c in regions):
+            groups.append(regions)
+    return groups
 
 
 def split_sroie(data_path: Path, seed: int) -> DataSplit:

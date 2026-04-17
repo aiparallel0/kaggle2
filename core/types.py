@@ -71,10 +71,16 @@ class Crop:
 
 @dataclass
 class AssignerData:
-    """Training payload for the attention-based field assigner."""
+    """Training payload for the attention-based field assigner.
+
+    ``regions`` groups every Crop per-receipt (labeled + distractors) so the
+    assigner trains on realistic multi-region inputs. ``crops`` is retained
+    for callers that only need labeled crops.
+    """
 
     trocr_path: str
     crops: list[Crop]
+    regions: list[list[Crop]] = field(default_factory=list)
 
 
 @dataclass
@@ -118,4 +124,7 @@ class ExpConfig:
     output_dir: str
     paper_template: str
     paper_output: str
+    yolo_conf: float = 0.25
+    trocr_max_new_tokens: int = 64
+    max_regions_per_image: int = 32
     extra: dict[str, object] = field(default_factory=dict)
