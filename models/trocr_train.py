@@ -76,6 +76,10 @@ def train_trocr(config: ExpConfig, crops: list[Crop]) -> str:
     model.config.decoder_start_token_id = processor.tokenizer.cls_token_id
     model.config.pad_token_id = processor.tokenizer.pad_token_id
     model.config.vocab_size = model.config.decoder.vocab_size
+    # Bug 7: transformers ≥4.48 forwards num_items_in_batch into model inputs
+    # when forward() has **kwargs; VisionEncoderDecoderModel then passes it to
+    # the encoder (SwinModel / ViT) which has no **kwargs → TypeError.
+    model.accepts_loss_kwargs = False
 
     out_dir = os.path.join(config.output_dir, "trocr")
     cuda = torch.cuda.is_available()
