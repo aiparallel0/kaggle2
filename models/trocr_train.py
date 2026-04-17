@@ -90,7 +90,7 @@ def train_trocr(config: ExpConfig, crops: list[Crop]) -> str:
         fp16=use_fp16,
         max_grad_norm=config.max_grad_norm,  # Bug 4
         save_strategy="epoch",
-        evaluation_strategy="epoch",
+        eval_strategy="epoch",
         load_best_model_at_end=True,
         predict_with_generate=True,
         seed=config.seed,

@@ -5,6 +5,8 @@ import argparse
 import json
 import logging
 import os
+import shutil
+import subprocess
 from pathlib import Path
 
 from core.config import load_config
@@ -120,6 +122,49 @@ def _stage_eval(config: ExpConfig) -> None:
         json.dump(combined, f, indent=2)
 
 
+def _compile_paper_pdf(tex_path: Path, bib_src: Path) -> Path | None:
+    """Compile ``tex_path`` to PDF via pdflatex + bibtex + pdflatex x2.
+
+    Returns the resulting PDF path on success, or ``None`` if ``pdflatex`` is
+    not installed (we warn instead of failing so ``make paper`` still works on
+    machines without a LaTeX toolchain). A non-zero compiler exit is fatal —
+    the README advertises ``report/paper_filled.pdf`` as the deliverable, so a
+    silent compilation failure would defeat the purpose of running the stage.
+    """
+    if shutil.which("pdflatex") is None:
+        log.warning(
+            "pdflatex not found — skipping PDF compilation. "
+            "Install texlive (scripts/vastai_bootstrap.sh does this) to "
+            "generate %s.pdf.", tex_path.stem,
+        )
+        return None
+    work = tex_path.parent
+    # bibtex reads references.bib next to the .aux file; make sure it's there.
+    if bib_src.exists() and bib_src.resolve() != (work / bib_src.name).resolve():
+        shutil.copy(bib_src, work / bib_src.name)
+    stem = tex_path.stem
+    cmds: list[list[str]] = [
+        ["pdflatex", "-interaction=nonstopmode", "-halt-on-error", tex_path.name],
+        ["bibtex", stem],
+        ["pdflatex", "-interaction=nonstopmode", "-halt-on-error", tex_path.name],
+        ["pdflatex", "-interaction=nonstopmode", "-halt-on-error", tex_path.name],
+    ]
+    for cmd in cmds:
+        # bibtex exits non-zero if there are no citations on the first run;
+        # tolerate that specifically, but let genuine pdflatex failures raise.
+        result = subprocess.run(cmd, cwd=work, capture_output=True, text=True)
+        if result.returncode != 0 and cmd[0] == "pdflatex":
+            raise EvalError(
+                f"pdflatex failed for {tex_path.name}:\n"
+                f"stdout: {result.stdout[-2000:]}\n"
+                f"stderr: {result.stderr[-2000:]}",
+            )
+    pdf = work / f"{stem}.pdf"
+    if not pdf.exists():
+        raise EvalError(f"pdflatex finished but {pdf} was not produced.")
+    return pdf
+
+
 def _stage_paper(config: ExpConfig) -> None:
     log.info("=== Stage: paper ===")
     metrics_path = os.path.join(config.output_dir, "combined_metrics.json")
@@ -130,10 +175,15 @@ def _stage_paper(config: ExpConfig) -> None:
     with open(config.paper_template) as f:
         template = f.read()
     filled = inject_results(template, metrics)
-    Path(config.paper_output).parent.mkdir(parents=True, exist_ok=True)
-    with open(config.paper_output, "w") as f:
+    tex_out = Path(config.paper_output)
+    tex_out.parent.mkdir(parents=True, exist_ok=True)
+    with open(tex_out, "w") as f:
         f.write(filled)
-    log.info("Paper written to %s", config.paper_output)
+    log.info("Paper LaTeX written to %s", tex_out)
+    bib_src = Path(config.paper_template).parent / "references.bib"
+    pdf = _compile_paper_pdf(tex_out, bib_src)
+    if pdf is not None:
+        log.info("Paper PDF written to %s", pdf)
 
 
 def main() -> None:
