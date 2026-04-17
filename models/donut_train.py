@@ -65,6 +65,54 @@ class _SROIEDataset(_DATASET_BASE):  # type: ignore[misc]
         return {"pixel_values": pv, "labels": labels}
 
 
+def _shift_right(
+    labels: torch.Tensor, start_id: int, pad_id: int,
+) -> torch.Tensor:
+    """Shift *labels* right by one to produce decoder_input_ids.
+
+    Used as a fallback when the model does not expose
+    ``prepare_decoder_input_ids_from_labels``.
+    """
+    shifted = labels.new_zeros(labels.shape)
+    shifted[:, 1:] = labels[:, :-1].clone()
+    shifted[:, 0] = start_id
+    shifted[shifted == -100] = pad_id
+    return shifted
+
+
+class _DonutCollator:
+    """Supplies ``decoder_input_ids`` so HF Trainer's label-smoothing path
+    (which pops ``labels`` before ``model(**inputs)``) does not crash the
+    mbart decoder with 'specify either decoder_input_ids or decoder_inputs_embeds'.
+    """
+
+    def __init__(self, model: VisionEncoderDecoderModel) -> None:
+        self._model = model
+
+    def __call__(self, features: list[dict[str, Any]]) -> dict[str, Any]:
+        batch: dict[str, Any] = {
+            "pixel_values": torch.stack([f["pixel_values"] for f in features]),
+            "labels": torch.stack([f["labels"] for f in features]),
+        }
+        # Replace ignore-index (-100) with pad before shifting; HF helper
+        # does not tolerate -100.
+        labels_for_shift = batch["labels"].clone()
+        labels_for_shift[labels_for_shift == -100] = self._model.config.pad_token_id
+        if hasattr(self._model, "prepare_decoder_input_ids_from_labels"):
+            batch["decoder_input_ids"] = (
+                self._model.prepare_decoder_input_ids_from_labels(
+                    labels=labels_for_shift,
+                )
+            )
+        else:
+            batch["decoder_input_ids"] = _shift_right(
+                labels_for_shift,
+                self._model.config.decoder_start_token_id,
+                self._model.config.pad_token_id,
+            )
+        return batch
+
+
 class _LmHeadCloneCallback(_CALLBACK_BASE):  # type: ignore[misc]
     """Bug 1: clone lm_head.weight before every save to defeat safetensors dedup."""
 
@@ -145,6 +193,7 @@ def train_donut(config: ExpConfig, data: DataSplit) -> str:
         model=model, args=args,
         train_dataset=_SROIEDataset(data.train, proc, config),
         eval_dataset=_SROIEDataset(data.val, proc, config),
+        data_collator=_DonutCollator(model),
         compute_metrics=_make_compute_metrics(proc),
         callbacks=[
             _LmHeadCloneCallback(),
