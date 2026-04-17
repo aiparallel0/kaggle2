@@ -78,6 +78,14 @@ class AssignerData:
 
 
 @dataclass
+class PipelineResult:
+    """Evaluation results for the pipeline with both assignment strategies."""
+
+    assigner: Metrics
+    rulebased: Metrics
+
+
+@dataclass
 class ExpConfig:
     """Full experiment configuration loaded from config.json."""
 
