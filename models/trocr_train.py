@@ -16,7 +16,7 @@ from core.errors import TrainError
 from core.types import Crop, ExpConfig
 
 
-class _CropDataset(torch.utils.data.Dataset[dict[str, Any]]):
+class _CropDataset(torch.utils.data.Dataset[dict[str, Any]]):  # type: ignore[misc]
     def __init__(
         self,
         crops: list[Crop],
