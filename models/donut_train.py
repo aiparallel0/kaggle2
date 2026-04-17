@@ -138,7 +138,12 @@ def _make_compute_metrics(processor: DonutProcessor) -> Any:
         preds, labels = pred.predictions, pred.label_ids
         if isinstance(preds, tuple):
             preds = preds[0]
+        # When predict_with_generate=False the trainer returns raw logits
+        # (shape [batch, seq_len, vocab_size]); convert to token IDs.
+        if preds.ndim == 3:
+            preds = np.argmax(preds, axis=-1)
         labels = np.where(labels == -100, pad, labels)
+        preds = np.where(preds == -100, pad, preds)
         p_txt = processor.tokenizer.batch_decode(preds, skip_special_tokens=True)
         g_txt = processor.tokenizer.batch_decode(labels, skip_special_tokens=True)
         s = [token_f1(g, p) for g, p in zip(g_txt, p_txt, strict=True)]
