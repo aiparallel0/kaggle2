@@ -23,19 +23,59 @@ nvidia-smi --query-gpu=name,memory.total,driver_version --format=csv,noheader ||
     exit 1
 }
 
-log "Installing system deps (texlive for the paper stage)"
-# texlive is only needed for the final PDF compile; main.py::_compile_paper_pdf
-# already warns and emits the .tex when pdflatex is missing. So an apt-get
-# failure (Ubuntu mirror timeout, sandboxed network, offline host, ...) must
-# NOT abort the bootstrap — otherwise training/eval never run. Retry a few
-# times, then degrade to a warning.
-install_texlive() {
+log "Installing LaTeX toolchain for the paper stage"
+# We use Tectonic rather than apt-installed texlive. Tectonic is a single
+# self-contained Rust/musl binary that bundles a full TeX Live on demand and
+# runs bibtex/rerun automatically. Installing it only requires a download
+# from GitHub releases — the same network that already cloned this repo —
+# so it works on hosts where the Ubuntu archive mirror is unreachable
+# (e.g. transient vast.ai network issues with archive.ubuntu.com).
+TECTONIC_VERSION="${TECTONIC_VERSION:-0.15.0}"
+TECTONIC_BIN="/usr/local/bin/tectonic"
+
+install_tectonic() {
+    if command -v tectonic >/dev/null; then
+        log "tectonic already installed: $(tectonic --version 2>&1 | head -n1)"
+        return 0
+    fi
+    local arch
+    arch="$(uname -m)"
+    case "$arch" in
+        x86_64|amd64) arch="x86_64" ;;
+        aarch64|arm64) arch="aarch64" ;;
+        *) log "unknown arch '$arch' for tectonic; skipping"; return 1 ;;
+    esac
+    local url="https://github.com/tectonic-typesetting/tectonic/releases/download/tectonic@${TECTONIC_VERSION}/tectonic-${TECTONIC_VERSION}-${arch}-unknown-linux-musl.tar.gz"
+    local tmp
+    tmp="$(mktemp -d)"
+    local attempt
+    for attempt in 1 2 3; do
+        if curl -fsSL --retry 3 --retry-delay 2 -o "${tmp}/tectonic.tar.gz" "$url"; then
+            if tar -xzf "${tmp}/tectonic.tar.gz" -C "$tmp" tectonic; then
+                install -m 0755 "${tmp}/tectonic" "$TECTONIC_BIN"
+                rm -rf "$tmp"
+                log "tectonic installed: $(tectonic --version 2>&1 | head -n1)"
+                return 0
+            fi
+        fi
+        log "tectonic download attempt ${attempt}/3 failed, retrying in 5s..."
+        sleep 5
+    done
+    rm -rf "$tmp"
+    return 1
+}
+
+# Best-effort apt texlive install — only if tectonic is somehow unavailable
+# AND the apt mirror is reachable. Failures here are NOT fatal: main.py's
+# paper stage works with either tectonic or pdflatex, and degrades to
+# emitting the .tex source if neither is present.
+install_apt_texlive() {
     local attempt
     for attempt in 1 2 3; do
         if apt-get update -qq \
             && apt-get install -y --no-install-recommends \
                 texlive-latex-base texlive-latex-recommended texlive-latex-extra \
-                texlive-fonts-recommended texlive-bibtex-extra biber git >/dev/null; then
+                texlive-fonts-recommended texlive-bibtex-extra biber >/dev/null; then
             return 0
         fi
         log "apt-get attempt ${attempt}/3 failed, retrying in 5s..."
@@ -44,17 +84,17 @@ install_texlive() {
     return 1
 }
 
-if ! command -v pdflatex >/dev/null; then
-    if install_texlive; then
-        log "texlive installed."
-    else
-        log "WARNING: could not install texlive (apt-get failed, likely a"
-        log "         transient mirror / network issue). Continuing without"
-        log "         it — 'make paper' will still write report/paper_filled.tex"
-        log "         but will skip PDF compilation. Re-run this script once"
-        log "         connectivity to archive.ubuntu.com is restored to get"
-        log "         the final PDF."
-    fi
+if command -v tectonic >/dev/null || command -v pdflatex >/dev/null; then
+    log "LaTeX engine already present — skipping install."
+elif install_tectonic; then
+    :
+elif install_apt_texlive; then
+    log "texlive installed via apt as fallback."
+else
+    log "WARNING: could not install tectonic (GitHub download failed) and"
+    log "         apt-get could not reach the Ubuntu archive. Continuing;"
+    log "         'make paper' will still write report/paper_filled.tex but"
+    log "         will skip PDF compilation until a LaTeX engine is available."
 fi
 
 log "Installing Python requirements"
