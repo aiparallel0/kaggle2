@@ -106,9 +106,13 @@ log "Running static checks (mypy + ruff) — the kaggle2 'test suite'"
 make check
 
 log "LaTeX engine summary:"
-command -v tectonic >/dev/null && log "  tectonic: $(tectonic --version 2>&1 | head -n1)" \
-    || command -v pdflatex >/dev/null && log "  pdflatex: $(pdflatex --version 2>&1 | head -n1)" \
-    || log "  WARN: no LaTeX engine (tectonic or pdflatex) — 'make paper' will only produce .tex"
+if command -v tectonic >/dev/null; then
+    log "  tectonic: $(tectonic --version 2>&1 | head -n1)"
+elif command -v pdflatex >/dev/null; then
+    log "  pdflatex: $(pdflatex --version 2>&1 | head -n1)"
+else
+    log "  WARN: no LaTeX engine (tectonic or pdflatex) — 'make paper' will only produce .tex"
+fi
 
 log "Ready. Launch training with: make all"
 log "Intermediate outputs land in ./results/, final paper in report/paper_filled.pdf"
