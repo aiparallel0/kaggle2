@@ -167,6 +167,12 @@ def train_donut(config: ExpConfig, data: DataSplit) -> str:
     if config.gradient_checkpointing:
         model.gradient_checkpointing_enable()
         model.config.use_cache = False
+    # Bug 7: transformers ≥4.48 adds num_items_in_batch to model inputs when
+    # model.forward has **kwargs (VisionEncoderDecoderModel does).  The value
+    # then leaks into kwargs_encoder and is forwarded to SwinModel.forward()
+    # which has no **kwargs → TypeError on the very first training batch.
+    # Setting accepts_loss_kwargs=False tells the Trainer to skip this path.
+    model.accepts_loss_kwargs = False
     out_dir = os.path.join(config.output_dir, "donut")
     cuda = torch.cuda.is_available()
     use_bf16 = cuda and config.precision == "bf16" and torch.cuda.is_bf16_supported()
