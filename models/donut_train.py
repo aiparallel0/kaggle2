@@ -31,7 +31,7 @@ def _build_label(receipt: Receipt) -> str:
     return "".join(parts)
 
 
-class _SROIEDataset(torch.utils.data.Dataset[dict[str, Any]]):  # type: ignore[misc]
+class _SROIEDataset(torch.utils.data.Dataset[dict[str, Any]]):
     def __init__(
         self, receipts: list[Receipt], processor: DonutProcessor, config: ExpConfig,
     ) -> None:
