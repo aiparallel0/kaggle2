@@ -31,15 +31,40 @@ def download_sroie(config: ExpConfig) -> Path:
         )
     except subprocess.CalledProcessError as exc:
         raise DataError(f"SROIE clone failed: {exc.stderr.decode()}") from exc
+
+    # Try the hierarchical layout first (data/{train,test}/{img,box,entities}).
+    found_hierarchical = False
     for split in ("train", "test"):
         for name in ("img", "box", "entities"):
             src = tmp / "data" / split / name
             if not src.exists():
                 continue
+            found_hierarchical = True
             dst = cache / split / name
             dst.mkdir(parents=True, exist_ok=True)
             for f in src.iterdir():
                 shutil.copy(f, dst / f.name)
+
+    # Fall back to the flat layout (data/{img,box,key}) used by the
+    # zzzDavid/ICDAR-2019-SROIE repo.  All files go under train/ because
+    # split_sroie() partitions them into train/val/test later.
+    if not found_hierarchical:
+        _FLAT_MAP: dict[str, str] = {"img": "img", "box": "box", "key": "entities"}
+        for src_name, dst_name in _FLAT_MAP.items():
+            src = tmp / "data" / src_name
+            if not src.exists():
+                continue
+            dst = cache / "train" / dst_name
+            dst.mkdir(parents=True, exist_ok=True)
+            for f in src.iterdir():
+                # _parse_box_file expects .txt; the repo ships .csv
+                out_name = (
+                    f.with_suffix(".txt").name
+                    if dst_name == "box" and f.suffix == ".csv"
+                    else f.name
+                )
+                shutil.copy(f, dst / out_name)
+
     shutil.rmtree(tmp, ignore_errors=True)
     return cache
 
