@@ -24,11 +24,37 @@ nvidia-smi --query-gpu=name,memory.total,driver_version --format=csv,noheader ||
 }
 
 log "Installing system deps (texlive for the paper stage)"
+# texlive is only needed for the final PDF compile; main.py::_compile_paper_pdf
+# already warns and emits the .tex when pdflatex is missing. So an apt-get
+# failure (Ubuntu mirror timeout, sandboxed network, offline host, ...) must
+# NOT abort the bootstrap — otherwise training/eval never run. Retry a few
+# times, then degrade to a warning.
+install_texlive() {
+    local attempt
+    for attempt in 1 2 3; do
+        if apt-get update -qq \
+            && apt-get install -y --no-install-recommends \
+                texlive-latex-base texlive-latex-recommended texlive-latex-extra \
+                texlive-fonts-recommended texlive-bibtex-extra biber git >/dev/null; then
+            return 0
+        fi
+        log "apt-get attempt ${attempt}/3 failed, retrying in 5s..."
+        sleep 5
+    done
+    return 1
+}
+
 if ! command -v pdflatex >/dev/null; then
-    apt-get update -qq
-    apt-get install -y --no-install-recommends \
-        texlive-latex-base texlive-latex-recommended texlive-latex-extra \
-        texlive-fonts-recommended texlive-bibtex-extra biber git >/dev/null
+    if install_texlive; then
+        log "texlive installed."
+    else
+        log "WARNING: could not install texlive (apt-get failed, likely a"
+        log "         transient mirror / network issue). Continuing without"
+        log "         it — 'make paper' will still write report/paper_filled.tex"
+        log "         but will skip PDF compilation. Re-run this script once"
+        log "         connectivity to archive.ubuntu.com is restored to get"
+        log "         the final PDF."
+    fi
 fi
 
 log "Installing Python requirements"
