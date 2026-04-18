@@ -57,3 +57,45 @@ def test_eval_donut_resolves_eos_token_id() -> None:
         "model.generate() so that early_stopping=True actually triggers when "
         "the end-of-document token is produced."
     )
+
+
+def test_in_training_metric_matches_eval_metric() -> None:
+    """``load_best_model_at_end`` must select the checkpoint that maximises
+    the same metric ``eval_donut`` reports — otherwise the Trainer picks a
+    checkpoint good at raw token-overlap but bad at structured per-field F1.
+
+    Source-level guards on the in-training ``compute_metrics`` factory:
+
+    * Decodes with ``skip_special_tokens=False`` so the ``<s_field>`` /
+      ``</s_field>`` tags survive and ``token2json`` can parse them.
+    * Parses through the same ``processor.token2json`` + flatten pipeline
+      as ``eval_donut``.
+    * Takes ``fields`` from the experiment config and averages per-field
+      token-F1, matching ``core.metrics.compute_metrics``.
+    """
+    src = inspect.getsource(donut_train._make_compute_metrics)  # type: ignore[attr-defined]
+    assert "skip_special_tokens=False" in src, (
+        "_make_compute_metrics must decode with skip_special_tokens=False — "
+        "the structural tags must survive decoding so token2json can parse "
+        "the per-field dict. Stripping them reduces the metric to raw "
+        "token-overlap F1 on free text, which diverges from eval_donut."
+    )
+    assert "token2json" in src, (
+        "_make_compute_metrics must parse predictions+labels through "
+        "processor.token2json (plus the shared _flatten_token2json wrapper "
+        "fix) so the in-training metric matches eval_donut's per-field F1. "
+        "Without this, load_best_model_at_end picks the wrong checkpoint."
+    )
+    assert "_flatten_token2json" in src, (
+        "_make_compute_metrics must apply _flatten_token2json after "
+        "token2json so the outer <s_sroie> wrapper is unwrapped exactly as "
+        "eval_donut does it. Any divergence here recreates the 'eval_f1 in "
+        "training was 0.34 but post-training F1 was 0.00' failure mode."
+    )
+    # Signature sanity: must now accept the fields list so the metric can
+    # iterate over the exact same field set as eval_donut + compute_metrics.
+    sig_src = inspect.getsource(donut_train._make_compute_metrics)  # type: ignore[attr-defined]
+    assert "fields" in sig_src.splitlines()[0], (
+        "_make_compute_metrics(processor, fields) signature is required so "
+        "the training metric iterates the configured field list."
+    )

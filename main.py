@@ -34,7 +34,8 @@ def _validate_f1(global_f1: float, arch: str, config: ExpConfig) -> None:
     if arch == "donut" and global_f1 < 0.50:
         raise TrainError(
             f"DONUT F1={global_f1:.4f} < 0.50 — likely lm_head dedup (Bug 1), "
-            "wrong decoder_start_token_id (Bug 2), or token2json list (Bug 3).",
+            "wrong decoder_start_token_id (Bug 2), token2json list (Bug 3), "
+            "or unflattened <s_sroie> wrapper (Bug 8).",
         )
     if arch == "pipeline" and global_f1 == 0.0:
         raise TrainError(

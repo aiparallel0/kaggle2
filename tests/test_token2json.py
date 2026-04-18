@@ -45,3 +45,39 @@ def test_list_merge_handles_non_dict_entries() -> None:
 def test_unrecognised_return_yields_empty() -> None:
     p = _FakeProcessor(42)
     assert _token2json_safe(p, "") == {}
+
+
+def test_outer_sroie_wrapper_is_unwrapped() -> None:
+    # HuggingFace's DonutProcessor.token2json parses our `<s_sroie>…</s_sroie>`
+    # label wrapper as a root key, yielding {"sroie": {...fields...}}. Without
+    # unwrapping, per-field lookup ("company" / "date" / ...) finds nothing
+    # and global F1 collapses to exactly 0.0000 — even when the model decoded
+    # the fields correctly.
+    p = _FakeProcessor({
+        "sroie": {
+            "company": "ACME",
+            "date": "2023-01-01",
+            "address": "123 MAIN ST",
+            "total": "10.00",
+        },
+    })
+    assert _token2json_safe(p, "") == {
+        "company": "ACME",
+        "date": "2023-01-01",
+        "address": "123 MAIN ST",
+        "total": "10.00",
+    }
+
+
+def test_nested_wrapper_with_list_pages_is_flattened() -> None:
+    # CORD-style <sep/> pages inside the outer <s_sroie> wrapper → nested
+    # list under a root key. Longest value wins on duplicate keys.
+    p = _FakeProcessor({
+        "sroie": [
+            {"address": "123 MAIN ST", "total": "10.00"},
+            {"address": "123 MAIN ST, SPRINGFIELD IL 62701"},
+        ],
+    })
+    merged = _token2json_safe(p, "")
+    assert merged["address"] == "123 MAIN ST, SPRINGFIELD IL 62701"
+    assert merged["total"] == "10.00"

@@ -9,6 +9,7 @@ from typing import Any
 
 from core.metrics import token_f1
 from core.types import DataSplit, ExpConfig, Receipt
+from models.donut_eval import _flatten_token2json
 
 try:
     import numpy as np
@@ -169,19 +170,42 @@ def _split_param_groups(
     ]
 
 
-def _make_compute_metrics(processor: DonutProcessor) -> Any:
-    """Return compute_metrics fn emitting eval_f1 for best-checkpoint selection."""
+def _make_compute_metrics(processor: DonutProcessor, fields: list[str]) -> Any:
+    """Return compute_metrics fn emitting eval_f1 for best-checkpoint selection.
+
+    The eval metric computed here MUST match ``eval_donut`` — otherwise
+    ``load_best_model_at_end=True`` picks the checkpoint that maximises the
+    wrong metric and ``EarlyStoppingCallback`` triggers on the wrong signal.
+
+    Historical failure mode: the old implementation decoded with
+    ``skip_special_tokens=True`` (stripping the ``<s_company>`` / ``<s_date>``
+    / … tags) and scored token-overlap F1 on the raw free-text stream. That
+    metric can sit around 0.3–0.4 purely because shared English words (city
+    names, numerals, ``TOTAL``) overlap between ground truth and prediction
+    even when the structured parse yields an empty ``{}``. Meanwhile the
+    real per-field F1 was exactly 0.0000. Consequence: the Trainer selected
+    an "eval_f1=0.42" checkpoint whose structured F1 was unknown, and early
+    stopping fired on the wrong trend.
+
+    The new implementation decodes with ``skip_special_tokens=False`` so the
+    structural tags survive, parses both predictions and labels through the
+    same ``processor.token2json`` → ``_flatten_token2json`` pipeline as
+    ``eval_donut``, and averages per-field token-F1 — exactly what
+    ``core.metrics.compute_metrics`` does at eval time.
+    """
     pad = processor.tokenizer.pad_token_id
 
-    def _decode_clean(batch: np.ndarray) -> list[str]:
-        """Truncate each row at first pad, then decode — avoids pad-token
-        pollution when pad_token_id is not in tokenizer.all_special_ids."""
+    def _decode_structural(batch: np.ndarray) -> list[str]:
+        """Truncate each row at first pad, keep structural tags for parsing."""
         out: list[str] = []
         for row in batch:
             mask = row == pad
             row = row[:int(mask.argmax())] if mask.any() else row
-            out.append(processor.tokenizer.decode(row, skip_special_tokens=True))
+            out.append(processor.tokenizer.decode(row, skip_special_tokens=False))
         return out
+
+    def _parse(tokens_str: str) -> dict[str, str]:
+        return _flatten_token2json(processor.token2json(tokens_str))
 
     def _compute(pred: Any) -> dict[str, float]:
         preds, labels = pred.predictions, pred.label_ids
@@ -193,10 +217,23 @@ def _make_compute_metrics(processor: DonutProcessor) -> Any:
         # early-epoch F1, masking convergence problems.
         labels = np.where(labels == -100, pad, labels)
         preds = np.where(preds == -100, pad, preds)
-        p_txt = _decode_clean(preds)
-        g_txt = _decode_clean(labels)
-        s = [token_f1(g, p) for g, p in zip(g_txt, p_txt, strict=True)]
-        return {"f1": float(sum(s) / len(s)) if s else 0.0}
+        p_txts = _decode_structural(preds)
+        g_txts = _decode_structural(labels)
+        f1s: list[float] = []
+        for p_txt, g_txt in zip(p_txts, g_txts, strict=True):
+            p_fields = _parse(p_txt)
+            g_fields = _parse(g_txt)
+            # Mirror compute_metrics: lowercase lookup, blank string for
+            # missing keys, token-F1 per field, arithmetic mean over fields.
+            per_field = [
+                token_f1(
+                    g_fields.get(f, "").lower(),
+                    p_fields.get(f, "").lower(),
+                )
+                for f in fields
+            ]
+            f1s.append(sum(per_field) / len(per_field) if per_field else 0.0)
+        return {"f1": float(sum(f1s) / len(f1s)) if f1s else 0.0}
 
     return _compute
 
@@ -283,7 +320,7 @@ def train_donut(config: ExpConfig, data: DataSplit) -> str:
         train_dataset=_SROIEDataset(data.train, proc, config),
         eval_dataset=_SROIEDataset(data.val, proc, config),
         data_collator=_DonutCollator(model),
-        compute_metrics=_make_compute_metrics(proc),
+        compute_metrics=_make_compute_metrics(proc, config.fields),
         optimizers=(optimizer, None),
         callbacks=[
             _LmHeadCloneCallback(),

@@ -18,26 +18,58 @@ except ImportError:  # lightweight CI — torch/transformers not installed
 
 
 def _token2json_safe(processor: DonutProcessor, tokens: str) -> dict[str, str]:
-    """Bug 3 fix: token2json may return a list on CORD data; merge into dict.
+    """Normalise ``processor.token2json`` output to a flat ``{field: value}`` dict.
 
-    When the list contains multiple values for the same key (happens on
-    multi-line addresses decoded as separate pages), prefer the *longest*
-    non-empty value — short strings are almost always truncations.
+    Two shapes must be flattened:
+
+    * **Bug 3 — list return (CORD multi-page).** ``token2json`` returns
+      ``[{...}, {...}]`` when it sees ``<sep/>`` tokens in the output stream.
+      Each page may contain the same key; the longest non-empty string wins
+      because short strings are almost always truncations.
+
+    * **Bug 8 — outer ``<s_sroie>`` wrapper.** Our training labels wrap every
+      receipt in ``<s_sroie>…</s_sroie>`` (this tag is also the
+      ``decoder_start_token_id`` / ``eos_token_id``). HuggingFace's
+      ``token2json`` parses the wrapper as a root key, returning
+      ``{"sroie": {"company": "X", "date": "Y", …}}``. Downstream
+      ``compute_metrics`` looks up ``company`` / ``date`` / ``address`` /
+      ``total`` directly on that dict and sees missing keys, driving global
+      F1 to exactly ``0.0000`` even when the model decoded the fields
+      correctly. Flattening nested dicts collects the real field-level
+      entries regardless of how many wrapper layers ``token2json``
+      introduces.
     """
-    result = processor.token2json(tokens)
-    if isinstance(result, list):
-        merged: dict[str, str] = {}
-        for page in result:
-            if not isinstance(page, dict):
-                continue
-            for k, v in page.items():
-                sv = str(v)
-                if k not in merged or len(sv) > len(merged[k]):
-                    merged[k] = sv
-        return merged
-    if isinstance(result, dict):
-        return {k: str(v) for k, v in result.items()}
-    return {}
+    return _flatten_token2json(processor.token2json(tokens))
+
+
+def _flatten_token2json(obj: Any) -> dict[str, str]:
+    """Collect all string-valued leaf entries from a nested dict/list tree.
+
+    Recurses into dict values and list elements so wrapper keys (e.g.
+    ``"sroie"``) and CORD-style page lists collapse to a single flat
+    ``{field: value}`` mapping. On duplicate keys, the longest value wins,
+    matching the Bug-3 fix rationale (address lines are usually truncated
+    on the first occurrence).
+    """
+    merged: dict[str, str] = {}
+
+    def _merge(key: str, value: str) -> None:
+        if key not in merged or len(value) > len(merged[key]):
+            merged[key] = value
+
+    if isinstance(obj, dict):
+        for k, v in obj.items():
+            if isinstance(v, (dict, list)):
+                for sub_k, sub_v in _flatten_token2json(v).items():
+                    _merge(sub_k, sub_v)
+            else:
+                _merge(k, str(v))
+    elif isinstance(obj, list):
+        for entry in obj:
+            if isinstance(entry, (dict, list)):
+                for sub_k, sub_v in _flatten_token2json(entry).items():
+                    _merge(sub_k, sub_v)
+    return merged
 
 
 def eval_donut(
