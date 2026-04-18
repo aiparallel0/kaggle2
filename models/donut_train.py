@@ -52,7 +52,7 @@ class _SROIEDataset(_DATASET_BASE):  # type: ignore[misc]
         from PIL import Image
         img = Image.open(r.image_path).convert("RGB")
         pv = self._p(
-            images=img, return_tensors="pt",
+            images=img, return_tensors="pt", legacy=False,
             size={"height": self._c.image_size[1], "width": self._c.image_size[0]},
         ).pixel_values.squeeze(0)
         tok = self._p.tokenizer(
@@ -160,8 +160,22 @@ def train_donut(config: ExpConfig, data: DataSplit) -> str:
         config.base_model,
     )
     proc.tokenizer.add_special_tokens({"additional_special_tokens": config.new_tokens})
+    # Bug 1: untie lm_head BEFORE resize so that resize_token_embeddings does not
+    # create a shared-storage alias between embed_tokens and lm_head.  Setting the
+    # flag on both the top-level config and the decoder sub-config is required
+    # because VisionEncoderDecoderModel reads the decoder sub-config when deciding
+    # whether to re-tie weights on resize.
+    model.config.tie_word_embeddings = False
+    model.config.decoder.tie_word_embeddings = False
     model.decoder.resize_token_embeddings(len(proc.tokenizer))
-    model.config.tie_word_embeddings = False  # Bug 1
+    # Belt-and-suspenders: clone unconditionally so that even if the model tied
+    # weights internally during resize the lm_head.weight is now a distinct tensor.
+    # safetensors skips tensors whose data_ptr() matches another tensor already
+    # serialised in the file; cloning guarantees a unique allocation, preventing
+    # the "missing keys: ['decoder.lm_head.weight']" warning on checkpoint reload.
+    model.decoder.lm_head.weight = torch.nn.Parameter(
+        model.decoder.lm_head.weight.data.clone()
+    )
     model.config.decoder_start_token_id = proc.tokenizer.convert_tokens_to_ids(
         ["<s_sroie>"],
     )[0]  # Bug 2
