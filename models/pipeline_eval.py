@@ -56,7 +56,10 @@ def _assign_learned(
         return {}
     tf = torch.cat(feats, dim=0).unsqueeze(0)
     bf = torch.tensor(bboxes, dtype=torch.float32).unsqueeze(0).to(device)
-    _, attn_w = assigner(tf, bf)
+    # logits (field presence scores) are produced by the classifier head but
+    # are not used for region assignment; attn_w encodes the field→region
+    # distribution learned during training and drives the argmax assignment.
+    _logits, attn_w = assigner(tf, bf)
     used: set[int] = set()
     out: dict[str, str] = {}
     for f_idx, name in enumerate(fields):

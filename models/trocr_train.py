@@ -5,9 +5,11 @@ import os
 from typing import Any
 
 from core.errors import TrainError
+from core.metrics import token_f1
 from core.types import Crop, ExpConfig
 
 try:
+    import numpy as np
     import torch
     from transformers import (
         Seq2SeqTrainer,
@@ -84,11 +86,25 @@ def train_trocr(config: ExpConfig, crops: list[Crop]) -> str:
     out_dir = os.path.join(config.output_dir, "trocr")
     cuda = torch.cuda.is_available()
     use_bf16 = cuda and config.precision == "bf16" and torch.cuda.is_bf16_supported()
-    use_fp16 = cuda and not use_bf16
+    use_fp16 = cuda and config.precision == "fp16"  # Bug 4 fix: only enable when explicitly configured
     split = int(len(crops) * 0.9)
     train_crops, val_crops = crops[:split], crops[split:]
     if not val_crops:
         val_crops = crops[:1]
+
+    pad = processor.tokenizer.pad_token_id
+
+    def _compute_metrics(pred: Any) -> dict[str, float]:
+        """Token-F1 over decoded crop texts — drives load_best_model_at_end."""
+        preds, labels = pred.predictions, pred.label_ids
+        if isinstance(preds, tuple):
+            preds = preds[0]
+        labels = np.where(labels == -100, pad, labels)
+        preds = np.where(preds == -100, pad, preds)
+        p_txt = processor.tokenizer.batch_decode(preds, skip_special_tokens=True)
+        g_txt = processor.tokenizer.batch_decode(labels, skip_special_tokens=True)
+        scores = [token_f1(g, p) for g, p in zip(g_txt, p_txt, strict=True)]
+        return {"f1": float(sum(scores) / len(scores)) if scores else 0.0}
 
     args = Seq2SeqTrainingArguments(
         output_dir=out_dir,
@@ -101,6 +117,8 @@ def train_trocr(config: ExpConfig, crops: list[Crop]) -> str:
         save_strategy="epoch",
         eval_strategy="epoch",
         load_best_model_at_end=True,
+        metric_for_best_model="eval_f1",
+        greater_is_better=True,
         predict_with_generate=True,
         seed=config.seed,
     )
@@ -108,6 +126,7 @@ def train_trocr(config: ExpConfig, crops: list[Crop]) -> str:
     val_ds = _CropDataset(val_crops, processor, config)
     trainer = Seq2SeqTrainer(
         model=model, args=args, train_dataset=train_ds, eval_dataset=val_ds,
+        compute_metrics=_compute_metrics,
     )
     trainer.train()
     trainer.save_model(out_dir)

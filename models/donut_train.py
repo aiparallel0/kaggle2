@@ -98,7 +98,13 @@ class _DonutCollator:
         # Replace ignore-index (-100) with pad before shifting; HF helper
         # does not tolerate -100.
         labels_for_shift = batch["labels"].clone()
-        labels_for_shift[labels_for_shift == -100] = self._model.config.pad_token_id
+        pad_id = self._model.config.pad_token_id
+        if pad_id is None:
+            raise ValueError(
+                "_DonutCollator: model.config.pad_token_id is None. "
+                "Ensure train_donut sets model.config.pad_token_id before the Trainer is created."
+            )
+        labels_for_shift[labels_for_shift == -100] = pad_id
         if hasattr(self._model, "prepare_decoder_input_ids_from_labels"):
             batch["decoder_input_ids"] = (
                 self._model.prepare_decoder_input_ids_from_labels(
@@ -135,18 +141,28 @@ def _make_compute_metrics(processor: DonutProcessor) -> Any:
     """Return compute_metrics fn emitting eval_f1 for best-checkpoint selection."""
     pad = processor.tokenizer.pad_token_id
 
+    def _decode_clean(batch: np.ndarray) -> list[str]:
+        """Truncate each row at first pad, then decode — avoids pad-token
+        pollution when pad_token_id is not in tokenizer.all_special_ids."""
+        out: list[str] = []
+        for row in batch:
+            mask = row == pad
+            row = row[:int(mask.argmax())] if mask.any() else row
+            out.append(processor.tokenizer.decode(row, skip_special_tokens=True))
+        return out
+
     def _compute(pred: Any) -> dict[str, float]:
         preds, labels = pred.predictions, pred.label_ids
         if isinstance(preds, tuple):
             preds = preds[0]
-        # When predict_with_generate=False the trainer returns raw logits
-        # (shape [batch, seq_len, vocab_size]); convert to token IDs.
-        if preds.ndim == 3:
-            preds = np.argmax(preds, axis=-1)
+        # predict_with_generate=True always produces 2-D generated token IDs.
+        # The 3-D logit path (teacher-forced argmax) is deliberately omitted:
+        # argmax over raw logits does not represent real generation and inflates
+        # early-epoch F1, masking convergence problems.
         labels = np.where(labels == -100, pad, labels)
         preds = np.where(preds == -100, pad, preds)
-        p_txt = processor.tokenizer.batch_decode(preds, skip_special_tokens=True)
-        g_txt = processor.tokenizer.batch_decode(labels, skip_special_tokens=True)
+        p_txt = _decode_clean(preds)
+        g_txt = _decode_clean(labels)
         s = [token_f1(g, p) for g, p in zip(g_txt, p_txt, strict=True)]
         return {"f1": float(sum(s) / len(s)) if s else 0.0}
 
@@ -199,14 +215,18 @@ def train_donut(config: ExpConfig, data: DataSplit) -> str:
     out_dir = os.path.join(config.output_dir, "donut")
     cuda = torch.cuda.is_available()
     use_bf16 = cuda and config.precision == "bf16" and torch.cuda.is_bf16_supported()
-    use_fp16 = cuda and not use_bf16  # Bug 4
+    use_fp16 = cuda and config.precision == "fp16"  # Bug 4 fix: only enable when explicitly configured
     args = Seq2SeqTrainingArguments(
         output_dir=out_dir, num_train_epochs=config.epochs_donut,
         per_device_train_batch_size=config.batch_size,
         gradient_accumulation_steps=config.grad_accum,
         learning_rate=config.lr,
         lr_scheduler_type=config.lr_scheduler_type,
-        warmup_ratio=config.warmup_ratio, warmup_steps=config.warmup_steps,
+        # Issue 3: HF Trainer uses warmup_steps when it is > 0, overriding
+        # warmup_ratio. Pass 0 whenever warmup_ratio is configured so that
+        # the ratio-based schedule (10 % of total steps) takes effect.
+        warmup_ratio=config.warmup_ratio,
+        warmup_steps=0 if config.warmup_ratio > 0 else config.warmup_steps,
         weight_decay=config.weight_decay, bf16=use_bf16, fp16=use_fp16,
         max_grad_norm=config.max_grad_norm,
         label_smoothing_factor=config.label_smoothing,

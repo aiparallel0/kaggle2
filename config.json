@@ -14,7 +14,7 @@
   "grad_accum": 2,
   "lr": 5e-5,
   "lr_decoder": 1e-4,
-  "warmup_steps": 40,
+  "warmup_steps": 0,
   "warmup_ratio": 0.1,
   "lr_scheduler_type": "cosine",
   "gradient_checkpointing": true,

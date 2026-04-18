@@ -87,7 +87,9 @@ def eval_donut(
             fields = [Field(name=k, value=v) for k, v in parsed.items()]
             rid = rec.image_path.stem
             predictions.append(Prediction(receipt_id=rid, fields=fields))
-    fields_list = ["company", "date", "address", "total"]
+    # Use config.fields when available; fall back to defaults only for callers
+    # that predate the config parameter (e.g. standalone scripts without a config).
+    fields_list = config.fields if config is not None else ["company", "date", "address", "total"]
     metrics = compute_metrics(predictions, test, fields_list)
     out_dir = os.path.dirname(model_path)
     with open(os.path.join(out_dir, "donut_metrics.json"), "w") as f:
