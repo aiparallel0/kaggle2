@@ -73,7 +73,7 @@ def eval_donut(
     with torch.no_grad():
         for rec in test:
             img = Image.open(rec.image_path).convert("RGB")
-            pv = processor(images=img, return_tensors="pt").pixel_values.to(device)
+            pv = processor(images=img, return_tensors="pt", legacy=False).pixel_values.to(device)
             out = model.generate(
                 pv,
                 decoder_start_token_id=start_id,
