@@ -65,7 +65,7 @@ def _write_yolo_labels(receipts: list[Receipt], img_dst: Path, lbl_dst: Path) ->
 def train_yolo(config: ExpConfig, data: DataSplit) -> str:
     """Train YOLOv8 on SROIE; return path to best.pt weights."""
     try:
-        from ultralytics import YOLO
+        from ultralytics import YOLO  # type: ignore[attr-defined]
     except ImportError as exc:
         raise TrainError("ultralytics not installed — pip install ultralytics") from exc
 
