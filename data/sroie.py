@@ -89,8 +89,18 @@ def _load_receipts(img_dir: Path, ent_dir: Path) -> list[Receipt]:
 
 
 def _parse_entities_txt(path: Path) -> dict[str, str]:
-    return {k.strip().lower(): v.strip() for line in path.read_text().splitlines()
-            if ":" in line for k, _, v in [line.partition(":")]}
+    """Parse key:value entity files, preserving colons that appear in values."""
+    out: dict[str, str] = {}
+    for line in path.read_text().splitlines():
+        if ":" not in line:
+            continue
+        # partition splits at the FIRST colon only; everything after (including
+        # any further colons) is preserved in the value — e.g. "12:30:00".
+        k, _, v = line.partition(":")
+        k, v = k.strip().lower(), v.strip()
+        if k:  # skip lines that start with ':' (empty key after strip)
+            out[k] = v
+    return out
 
 
 def _match_field(text: str, gt: dict[str, str]) -> str:
@@ -162,8 +172,9 @@ def split_sroie(data_path: Path, seed: int) -> DataSplit:
         raise DataError(f"SROIE train/img not found at {img_dir}")
     all_r = _load_receipts(img_dir, ent_dir)
     random.Random(seed).shuffle(all_r)
-    test, val = all_r[:_N_TEST], all_r[_N_TEST: _N_TEST + _N_VAL]
-    train = all_r[_N_TEST + _N_VAL:]
+    # Conventional order: val slice first, then test, then train.
+    val, test = all_r[:_N_VAL], all_r[_N_VAL: _N_VAL + _N_TEST]
+    train = all_r[_N_VAL + _N_TEST:]
     assert not ({r.image_path.stem for r in val}
                 & {r.image_path.stem for r in test}), "Val/test overlap"  # Bug 7
     return DataSplit(train=train, val=val, test=test)
