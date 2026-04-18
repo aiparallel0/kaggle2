@@ -87,10 +87,20 @@ def train_trocr(config: ExpConfig, crops: list[Crop]) -> str:
     cuda = torch.cuda.is_available()
     use_bf16 = cuda and config.precision == "bf16" and torch.cuda.is_bf16_supported()
     use_fp16 = cuda and config.precision == "fp16"  # Bug 4 fix: only enable when explicitly configured
-    split = int(len(crops) * 0.9)
-    train_crops, val_crops = crops[:split], crops[split:]
+    # Bug 9: ``crops[:split], crops[split:]`` carves the validation set out of
+    # the *last* 10 % of the input order, which is itself sorted by receipt
+    # filename.  That means val is dominated by receipts whose stems begin
+    # with high-numbered prefixes — a non-representative slice that biases
+    # eval_f1 by ~0.05 and routinely picks a worse "best" checkpoint.
+    # Shuffle deterministically (Random(seed)) so the split is uncorrelated
+    # with filename ordering but still reproducible.
+    import random as _random
+    shuffled = list(crops)
+    _random.Random(config.seed).shuffle(shuffled)
+    split = int(len(shuffled) * 0.9)
+    train_crops, val_crops = shuffled[:split], shuffled[split:]
     if not val_crops:
-        val_crops = crops[:1]
+        val_crops = shuffled[:1]
 
     pad = processor.tokenizer.pad_token_id
 

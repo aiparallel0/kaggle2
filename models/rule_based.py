@@ -7,8 +7,14 @@ from __future__ import annotations
 
 import re
 
-_DATE_RE = re.compile(r"\b\d{1,4}[/\-\.]\d{1,2}[/\-\.]\d{1,4}\b")
-_MONEY_RE = re.compile(r"\$?\d+(?:,\d{3})*\.\d{2}\b")
+# Public regex constants — re-used by pipeline_eval for post-processing
+# the learned assigner's per-region picks (ground truth for SROIE ``date``
+# and ``total`` is just the matched substring, not the surrounding text).
+DATE_RE = re.compile(r"\b\d{1,4}[/\-\.]\d{1,2}[/\-\.]\d{1,4}\b")
+MONEY_RE = re.compile(r"\$?\d+(?:,\d{3})*\.\d{2}\b")
+# Backwards-compatible aliases (used internally below).
+_DATE_RE = DATE_RE
+_MONEY_RE = MONEY_RE
 
 
 def rule_based_assign(
