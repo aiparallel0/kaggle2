@@ -59,14 +59,14 @@ def _flatten_token2json(obj: Any) -> dict[str, str]:
 
     if isinstance(obj, dict):
         for k, v in obj.items():
-            if isinstance(v, (dict, list)):
+            if isinstance(v, dict | list):
                 for sub_k, sub_v in _flatten_token2json(v).items():
                     _merge(sub_k, sub_v)
             else:
                 _merge(k, str(v))
     elif isinstance(obj, list):
         for entry in obj:
-            if isinstance(entry, (dict, list)):
+            if isinstance(entry, dict | list):
                 for sub_k, sub_v in _flatten_token2json(entry).items():
                     _merge(sub_k, sub_v)
     return merged
