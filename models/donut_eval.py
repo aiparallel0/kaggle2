@@ -85,6 +85,15 @@ def eval_donut(
     device = "cuda" if torch.cuda.is_available() else "cpu"
     model = model.to(device)
     model.eval()
+    # Bug 9 (eval side): donut-base ships a generation_config with
+    # ``forced_eos_token_id`` pointing at mBART's original ``</s>`` (id 2).
+    # Explicit ``eos_token_id=<s_sroie_close>`` kwarg below does NOT override
+    # the ``forced_*`` slots — HF applies forcing after picking the next
+    # token, so generation emits token 2 at the second-to-last position and
+    # our structural ``</s_sroie>`` is never produced.  Clearing both
+    # forced_*_token_id restores clean generation.
+    model.generation_config.forced_bos_token_id = None
+    model.generation_config.forced_eos_token_id = None
     start_id = processor.tokenizer.convert_tokens_to_ids(["<s_sroie>"])[0]  # Bug 2
     unk_id = processor.tokenizer.unk_token_id
     if start_id is None or start_id == unk_id:
