@@ -79,7 +79,7 @@ def eval_pipeline(
         if not Path(p).exists():
             raise EvalError(f"{name} checkpoint not found at {p}")
     try:
-        from ultralytics import YOLO
+        from ultralytics import YOLO  # type: ignore[attr-defined]
     except ImportError as exc:
         raise EvalError("ultralytics not installed") from exc
     from transformers import TrOCRProcessor, VisionEncoderDecoderModel
