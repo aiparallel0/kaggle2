@@ -269,6 +269,23 @@ def train_donut(config: ExpConfig, data: DataSplit) -> str:
         ["</s_sroie>"],
     )[0]  # Stop generation at end-of-document token
     model.config.vocab_size = model.config.decoder.vocab_size
+    # Bug 9: Seq2SeqTrainer's predict_with_generate=True calls model.generate()
+    # which reads ``model.generation_config`` (snapshotted from config at
+    # from_pretrained time) — NOT the live ``model.config``.  Without mirroring
+    # our overrides into generation_config, eval-time generation starts from
+    # the stale donut-base ``decoder_start_token_id`` (the mBART ``<s>``),
+    # produces tokens that never match ``<s_sroie>…</s_sroie>`` structure,
+    # and ``token2json`` returns ``{}`` for every sample → eval_f1 ≡ 0.0
+    # across all epochs while eval_loss (teacher-forced) drops normally.
+    # mBART's generation_config also ships with ``forced_bos_token_id`` /
+    # ``forced_eos_token_id`` pointing at language codes; leaving them in
+    # place forces a bogus second token after our decoder_start_token_id.
+    model.generation_config.decoder_start_token_id = model.config.decoder_start_token_id
+    model.generation_config.eos_token_id = model.config.eos_token_id
+    model.generation_config.pad_token_id = model.config.pad_token_id
+    model.generation_config.bos_token_id = model.config.decoder_start_token_id
+    model.generation_config.forced_bos_token_id = None
+    model.generation_config.forced_eos_token_id = None
     w, h = config.image_size
     model.config.encoder.image_size = [h, w]
     proc.image_processor.size = {"height": h, "width": w}
