@@ -58,6 +58,7 @@ class _SROIEDataset(_DATASET_BASE):  # type: ignore[misc]
         tok = self._p.tokenizer(
             _build_label(r), max_length=self._c.max_length,
             padding="max_length", truncation=True, return_tensors="pt",
+            add_special_tokens=False,  # DONUT labels must not include mBART BOS/EOS
         )
         input_ids = tok.input_ids.squeeze(0)
         labels = input_ids.clone()
@@ -165,6 +166,9 @@ def train_donut(config: ExpConfig, data: DataSplit) -> str:
         ["<s_sroie>"],
     )[0]  # Bug 2
     model.config.pad_token_id = proc.tokenizer.pad_token_id
+    model.config.eos_token_id = proc.tokenizer.convert_tokens_to_ids(
+        ["</s_sroie>"],
+    )[0]  # Stop generation at end-of-document token
     model.config.vocab_size = model.config.decoder.vocab_size
     w, h = config.image_size
     model.config.encoder.image_size = [h, w]

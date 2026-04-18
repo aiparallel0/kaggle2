@@ -62,6 +62,10 @@ def eval_donut(
                 "tokenizer and model.config.decoder_start_token_id is unset.",
             )
         start_id = int(cfg_start)
+    eos_id = processor.tokenizer.convert_tokens_to_ids(["</s_sroie>"])[0]
+    if eos_id is None or eos_id == unk_id:
+        cfg_eos = model.config.eos_token_id
+        eos_id = int(cfg_eos) if cfg_eos is not None else None
     num_beams = config.num_beams if config is not None else 4
     max_len = config.max_length if config is not None else 768
     predictions: list[Prediction] = []
@@ -73,6 +77,7 @@ def eval_donut(
             out = model.generate(
                 pv,
                 decoder_start_token_id=start_id,
+                eos_token_id=eos_id,
                 max_length=max_len,
                 num_beams=num_beams,
                 early_stopping=True,
