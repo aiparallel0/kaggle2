@@ -65,7 +65,7 @@ def _write_yolo_labels(receipts: list[Receipt], img_dst: Path, lbl_dst: Path) ->
 def train_yolo(config: ExpConfig, data: DataSplit) -> str:
     """Train YOLOv8 on SROIE; return path to best.pt weights."""
     try:
-        from ultralytics import YOLO  # type: ignore[attr-defined]
+        from ultralytics import YOLO
     except ImportError as exc:
         raise TrainError("ultralytics not installed — pip install ultralytics") from exc
 
@@ -96,7 +96,13 @@ def train_yolo(config: ExpConfig, data: DataSplit) -> str:
         """)
     )
 
-    out_dir = os.path.join(config.output_dir, "yolo")
+    # Bug 8: ultralytics >=8.3 resolves a relative ``project=`` against its
+    # internal settings ``runs_dir`` (defaults to ``runs/detect/``), not
+    # against CWD.  Passing ``project="./results/yolo"`` therefore writes to
+    # ``./runs/detect/results/yolo/run/weights/best.pt`` — which our caller
+    # never finds.  Resolve to an absolute path before handing it over so
+    # the project root and the lookup path agree byte-for-byte.
+    out_dir = str(Path(config.output_dir, "yolo").resolve())
     model = YOLO(config.yolo_model)
     model.train(
         data=str(yaml_path),

@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
+from typing import Any
 
 from core.errors import EvalError
 from core.metrics import compute_metrics
@@ -68,12 +69,26 @@ def eval_donut(
         eos_id = int(cfg_eos) if cfg_eos is not None else None
     num_beams = config.num_beams if config is not None else 4
     max_len = config.max_length if config is not None else 768
+    # Pin inference image size to the training size.  DonutProcessor stores
+    # ``size`` inside its image_processor and persists it via save_pretrained,
+    # but a stale checkpoint or a transformers version that drops the field
+    # silently falls back to the model-card default (1280x960 → 2560x1920),
+    # which interpolates positional embeddings and degrades F1 by ~0.05.
+    # Passing size= per call is the source-of-truth fix.
+    if config is not None:
+        size_kwargs: dict[str, Any] = {"size": {
+            "height": config.image_size[1], "width": config.image_size[0],
+        }}
+    else:
+        size_kwargs = {}
     predictions: list[Prediction] = []
     from PIL import Image
     with torch.no_grad():
         for rec in test:
             img = Image.open(rec.image_path).convert("RGB")
-            pv = processor(images=img, return_tensors="pt", legacy=False).pixel_values.to(device)
+            pv = processor(
+                images=img, return_tensors="pt", legacy=False, **size_kwargs,
+            ).pixel_values.to(device)
             out = model.generate(
                 pv,
                 decoder_start_token_id=start_id,

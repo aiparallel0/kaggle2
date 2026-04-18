@@ -11,7 +11,22 @@ from core.errors import EvalError
 from core.metrics import compute_metrics
 from core.types import ExpConfig, Field, PipelinePaths, PipelineResult, Prediction, Receipt
 from models.attention_assign import AttentionAssigner, load_assigner
-from models.rule_based import rule_based_assign
+from models.rule_based import DATE_RE, MONEY_RE, rule_based_assign
+
+# Fields whose ground-truth value spans multiple OCR regions on a typical
+# SROIE receipt.  ``address`` is the canonical case (street / city / postcode
+# rendered on three text lines).  The assigner is *trained* with sum-mass
+# loss, which spreads attention across all positive regions (assigner_train
+# ``_group_loss``).  Using argmax at inference therefore picks only one of
+# them and caps the address F1 at ~0.3.  For these fields we instead pick
+# every region whose attention exceeds ``_MULTI_LINE_FRACTION * max(attn)``
+# and concatenate them in spatial (top→bottom) order.
+_MULTI_LINE_FIELDS = frozenset({"address"})
+_MULTI_LINE_FRACTION = 0.5
+
+# Regex priors used to clean the picked region's text down to the substring
+# that matches SROIE ground truth (e.g. ``"TOTAL: 12.30"`` → ``"12.30"``).
+_FIELD_REGEX = {"date": DATE_RE, "total": MONEY_RE}
 
 try:
     import torch
@@ -47,6 +62,23 @@ def _detect_and_read(
     return texts, feats, bboxes
 
 
+def _postprocess_value(name: str, value: str) -> str:
+    """Strip the picked region's text down to the SROIE ground-truth substring.
+
+    SROIE's ``date`` and ``total`` ground truth contain only the matched
+    pattern (e.g. ``"01/01/2024"`` or ``"12.30"``), but TrOCR returns the
+    full region text — typically ``"DATE: 01/01/2024"`` or
+    ``"TOTAL    12.30"``.  Without this strip every correct prediction
+    scores token-F1 ≈ 0.5 because half the predicted tokens are noise.
+    The regex prior is *non-destructive*: if no match, we keep the raw text.
+    """
+    pattern = _FIELD_REGEX.get(name)
+    if pattern is None:
+        return value
+    m = pattern.search(value)
+    return m.group(0) if m else value
+
+
 def _assign_learned(
     assigner: AttentionAssigner, texts: list[str],
     feats: list[torch.Tensor], bboxes: list[list[float]],
@@ -58,7 +90,7 @@ def _assign_learned(
     bf = torch.tensor(bboxes, dtype=torch.float32).unsqueeze(0).to(device)
     # logits (field presence scores) are produced by the classifier head but
     # are not used for region assignment; attn_w encodes the field→region
-    # distribution learned during training and drives the argmax assignment.
+    # distribution learned during training and drives the assignment.
     _logits, attn_w = assigner(tf, bf)
     used: set[int] = set()
     out: dict[str, str] = {}
@@ -68,9 +100,31 @@ def _assign_learned(
         w = attn_w[0, f_idx].clone()
         for u in used:
             w[u] = -1e9
-        best = int(w.argmax().item())
-        used.add(best)
-        out[name] = texts[best]
+        if name in _MULTI_LINE_FIELDS:
+            # The assigner is trained with sum-mass cross-entropy over every
+            # positive region for a multi-line field, so its attention spreads
+            # across them.  At inference we mirror that by collecting every
+            # region whose weight is at least half the max weight for this
+            # query, then concatenate in spatial (top→bottom) order so the
+            # rendered string matches the receipt's reading order.
+            max_w = float(w.max().item())
+            if max_w <= 0:
+                continue
+            picks = [
+                i for i in range(w.shape[0])
+                if i not in used and float(w[i].item()) >= _MULTI_LINE_FRACTION * max_w
+            ]
+            if not picks:
+                continue
+            picks.sort(key=lambda i: bboxes[i][1])  # spatial top→bottom
+            for i in picks:
+                used.add(i)
+            value = " ".join(texts[i].strip() for i in picks if texts[i].strip())
+        else:
+            best = int(w.argmax().item())
+            used.add(best)
+            value = texts[best]
+        out[name] = _postprocess_value(name, value)
     return out
 
 
@@ -82,7 +136,7 @@ def eval_pipeline(
         if not Path(p).exists():
             raise EvalError(f"{name} checkpoint not found at {p}")
     try:
-        from ultralytics import YOLO  # type: ignore[attr-defined]
+        from ultralytics import YOLO
     except ImportError as exc:
         raise EvalError("ultralytics not installed") from exc
     from transformers import TrOCRProcessor, VisionEncoderDecoderModel
@@ -111,6 +165,17 @@ def eval_pipeline(
                 yolo, trocr_proc, trocr_model, img, str(rec.image_path),
                 config, yolo_img, device,
             )
+            # Empty-detection fallback: when YOLO produces zero boxes (rare on
+            # SROIE, but happens on very dark scans or low-contrast receipts)
+            # we run TrOCR on the full image as a single region.  Without this
+            # the receipt contributes 0 to all four field F1 scores.
+            if not texts:
+                pv = trocr_proc(images=img, return_tensors="pt").pixel_values.to(device)
+                enc = trocr_model.encoder(pv).last_hidden_state
+                full_out = trocr_model.generate(pv, max_new_tokens=config.trocr_max_new_tokens)
+                texts = [trocr_proc.batch_decode(full_out, skip_special_tokens=True)[0]]
+                feats = [enc.mean(dim=1)]
+                bboxes = [[0.0, 0.0, 1.0, 1.0]]
             learned = _assign_learned(assigner, texts, feats, bboxes, config.fields, device)
             rule = rule_based_assign(texts, bboxes) if texts else {}
             rid = rec.image_path.stem
