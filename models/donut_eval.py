@@ -7,13 +7,13 @@ import re
 from pathlib import Path
 from typing import Any
 
-# Matches <s_key>value</s_key> pairs in string leaves produced by token2json
-# when the model emits a duplicated outer wrapper (e.g. <s_sroie><s_sroie>…).
-_TAG_RE = re.compile(r"<s_(\w+)>(.*?)</s_\1>")
-
 from core.errors import EvalError
 from core.metrics import compute_metrics
 from core.types import ExpConfig, Field, Metrics, Prediction, Receipt
+
+# Matches <s_key>value</s_key> pairs in string leaves produced by token2json
+# when the model emits a duplicated outer wrapper (e.g. <s_sroie><s_sroie>…).
+_TAG_RE = re.compile(r"<s_(\w+)>(.*?)</s_\1>")
 
 try:
     import torch
