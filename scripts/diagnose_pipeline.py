@@ -43,7 +43,8 @@ if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
 from core.config import load_config  # noqa: E402
-from core.types import PipelinePaths  # noqa: E402
+from core.metrics import compute_metrics  # noqa: E402
+from core.types import Field, PipelinePaths, Prediction  # noqa: E402
 from data.sroie import download_sroie, load_or_create_split  # noqa: E402
 from models.rule_based import rule_based_assign  # noqa: E402
 
@@ -75,6 +76,30 @@ def _detect(yolo: Any, img_path: str, yolo_img: int, conf: float) -> list[list[f
     if boxes is None or len(boxes) == 0:
         return []
     return [b[:4] for b in boxes.xyxyn.cpu().tolist()]
+
+
+def _count_sroie_gt_boxes(image_path: Path) -> int:
+    """Count the SROIE-provided per-text-line boxes for *image_path*.
+
+    These are the boxes YOLO is trained to match.  If YOLO's eval-time
+    detection count is << this number, the detector collapsed at the
+    configured imgsz and every downstream component inherits a
+    starved region list.
+    """
+    box_path = image_path.parent.parent / "box" / (image_path.stem + ".txt")
+    if not box_path.exists():
+        return 0
+    n = 0
+    for line in box_path.read_text(errors="replace").splitlines():
+        parts = line.split(",", 8)
+        if len(parts) < 9:
+            continue
+        try:
+            [int(p) for p in parts[:8]]
+        except ValueError:
+            continue
+        n += 1
+    return n
 
 
 def _read_one(trocr_proc: Any, trocr_model: Any, img: Any, device: str, max_new: int) -> str:
@@ -110,16 +135,22 @@ def _diagnose(args: argparse.Namespace) -> dict[str, Any]:
     n = min(args.n, len(data.test))
     receipts: list[dict[str, Any]] = []
     total_boxes = 0
+    total_gt_boxes = 0
     empty_reads = 0
     total_reads = 0
     fallback_count = 0
     all_empty_assign = 0
+    preds_rule: list[Prediction] = []
+    preds_assign: list[Prediction] = []
+    subset_receipts = data.test[:n]
 
     with torch.no_grad():
-        for rec in data.test[:n]:
+        for rec in subset_receipts:
             img = Image.open(rec.image_path).convert("RGB")
             boxes = _detect(yolo, str(rec.image_path), yolo_img, config.yolo_conf)
+            gt_box_count = _count_sroie_gt_boxes(rec.image_path)
             total_boxes += len(boxes)
+            total_gt_boxes += gt_box_count
             used_fallback = False
             regions: list[dict[str, Any]] = []
             texts: list[str] = []
@@ -163,26 +194,48 @@ def _diagnose(args: argparse.Namespace) -> dict[str, Any]:
             if not learned:
                 all_empty_assign += 1
             gt = {f.name.lower(): f.value for f in rec.fields}
+            rid = rec.image_path.stem
+            preds_assign.append(Prediction(
+                receipt_id=rid,
+                fields=[Field(name=k, value=v) for k, v in learned.items()],
+            ))
+            preds_rule.append(Prediction(
+                receipt_id=rid,
+                fields=[Field(name=k, value=v) for k, v in rule.items()],
+            ))
             receipts.append({
-                "receipt_id": rec.image_path.stem,
+                "receipt_id": rid,
                 "yolo_n_boxes": len(boxes),
+                "sroie_gt_n_boxes": gt_box_count,
                 "fallback_used": used_fallback,
                 "regions": regions,
                 "assigner": learned,
                 "rulebased": rule,
                 "gt": gt,
             })
-            log.info("%s: %d boxes, learned=%s",
-                     rec.image_path.stem, len(boxes), list(learned.keys()))
+            log.info("%s: yolo=%d gt_lines=%d learned=%s rule=%s",
+                     rid, len(boxes), gt_box_count,
+                     list(learned.keys()), list(rule.keys()))
 
+    m_rule = compute_metrics(preds_rule, subset_receipts, config.fields)
+    m_assign = compute_metrics(preds_assign, subset_receipts, config.fields)
     summary = {
         "n_receipts": n,
         "avg_boxes_per_receipt": round(total_boxes / n, 2) if n else 0.0,
+        "avg_sroie_gt_boxes_per_receipt": round(total_gt_boxes / n, 2) if n else 0.0,
         "fallback_rate": round(fallback_count / n, 3) if n else 0.0,
         "empty_trocr_rate": round(empty_reads / total_reads, 3) if total_reads else 0.0,
         "all_fields_empty_rate": round(all_empty_assign / n, 3) if n else 0.0,
         "yolo_img": yolo_img,
         "yolo_conf": config.yolo_conf,
+        "subset_assigner_f1": round(m_assign.global_f1, 4),
+        "subset_rulebased_f1": round(m_rule.global_f1, 4),
+        "subset_assigner_per_field_f1": {
+            k: round(v, 4) for k, v in m_assign.per_field_f1.items()
+        },
+        "subset_rulebased_per_field_f1": {
+            k: round(v, 4) for k, v in m_rule.per_field_f1.items()
+        },
     }
     return {"summary": summary, "receipts": receipts}
 
