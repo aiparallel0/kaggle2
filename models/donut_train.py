@@ -19,15 +19,12 @@ try:
         EarlyStoppingCallback,
         Seq2SeqTrainer,
         Seq2SeqTrainingArguments,
-        TrainerCallback,
         VisionEncoderDecoderModel,
     )
 
     _DATASET_BASE: type = torch.utils.data.Dataset
-    _CALLBACK_BASE: type = TrainerCallback
 except ImportError:  # lightweight CI — torch/transformers not installed
     _DATASET_BASE = object
-    _CALLBACK_BASE = object
 
 
 def _build_label(receipt: Receipt) -> str:
@@ -119,16 +116,6 @@ class _DonutCollator:
                 self._model.config.pad_token_id,
             )
         return batch
-
-
-class _LmHeadCloneCallback(_CALLBACK_BASE):  # type: ignore[misc]
-    """Bug 1: clone lm_head.weight before every save to defeat safetensors dedup."""
-
-    def on_save(self, args: Any, state: Any, control: Any, **kwargs: Any) -> None:
-        m = kwargs["model"]
-        m.decoder.lm_head.weight = torch.nn.Parameter(
-            m.decoder.lm_head.weight.data.clone()
-        )
 
 
 def _seed_worker(_worker_id: int) -> None:
@@ -253,11 +240,17 @@ def train_donut(config: ExpConfig, data: DataSplit) -> str:
     model.config.tie_word_embeddings = False
     model.config.decoder.tie_word_embeddings = False
     model.decoder.resize_token_embeddings(len(proc.tokenizer))
-    # Belt-and-suspenders: clone unconditionally so that even if the model tied
-    # weights internally during resize the lm_head.weight is now a distinct tensor.
-    # safetensors skips tensors whose data_ptr() matches another tensor already
-    # serialised in the file; cloning guarantees a unique allocation, preventing
-    # the "missing keys: ['decoder.lm_head.weight']" warning on checkpoint reload.
+    # Clone unconditionally so that even if the model tied weights internally
+    # during resize the lm_head.weight is now a distinct tensor with a unique
+    # data_ptr(); safetensors identifies duplicates by data_ptr() and would
+    # otherwise drop lm_head, producing the "missing keys: ['decoder.lm_head
+    # .weight']" warning on checkpoint reload.  The clone MUST happen before
+    # the optimizer is constructed below so the optimizer tracks this exact
+    # Parameter for the entirety of training — there is no per-save re-clone
+    # callback because ``TrainerCallback.on_save`` fires *after* the save
+    # completes and replacing the Parameter post-hoc orphans it from the
+    # optimizer, freezing lm_head at epoch-1 values and collapsing eval F1 to
+    # exactly 0.0000.
     model.decoder.lm_head.weight = torch.nn.Parameter(
         model.decoder.lm_head.weight.data.clone()
     )
@@ -340,7 +333,6 @@ def train_donut(config: ExpConfig, data: DataSplit) -> str:
         compute_metrics=_make_compute_metrics(proc, config.fields),
         optimizers=(optimizer, None),
         callbacks=[
-            _LmHeadCloneCallback(),
             EarlyStoppingCallback(early_stopping_patience=config.patience),
         ],
     )

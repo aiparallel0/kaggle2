@@ -79,10 +79,23 @@ def test_lm_head_cloned_after_resize() -> None:
     )
 
 
-def test_lm_head_clone_callback_still_present() -> None:
-    """_LmHeadCloneCallback must still be registered as a belt-and-suspenders guard."""
-    src = inspect.getsource(donut_train.train_donut)
-    assert "_LmHeadCloneCallback" in src, (
-        "train_donut must still register _LmHeadCloneCallback as a per-save guard "
-        "in addition to the init-time clone."
+def test_no_per_save_lm_head_clone_callback() -> None:
+    """No on_save callback may replace ``lm_head.weight`` during training.
+
+    ``TrainerCallback.on_save`` fires *after* the checkpoint save completes,
+    so a clone performed there cannot influence the file just written.  Worse:
+    re-binding ``model.decoder.lm_head.weight`` to a fresh ``nn.Parameter``
+    orphans the tensor the optimizer still holds a reference to — from the
+    next epoch onwards autograd accumulates grads on the new Parameter while
+    ``optimizer.step()`` updates the old one, leaving the lm_head frozen at
+    its barely-warmed-up epoch-1 state.  Generation then collapses to
+    ``<s_sroie></s_sroie>`` and eval F1 lands at exactly 0.0000.  The
+    init-time clone at the top of ``train_donut`` is sufficient on its own
+    to defeat safetensors dedup.
+    """
+    src = inspect.getsource(donut_train)
+    assert "_LmHeadCloneCallback" not in src, (
+        "train_donut must not register a per-save lm_head clone callback — "
+        "on_save fires after the save and orphans the Parameter from the "
+        "optimizer, freezing lm_head and collapsing eval F1 to 0."
     )
