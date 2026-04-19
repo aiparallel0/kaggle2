@@ -75,6 +75,22 @@ def train_trocr(config: ExpConfig, crops: list[Crop]) -> str:
     model: VisionEncoderDecoderModel = VisionEncoderDecoderModel.from_pretrained(
         config.trocr_model
     )
+    # Bug 1 (TrOCR variant): the TrOCR decoder's ``output_projection`` is tied
+    # to ``embed_tokens`` via ``tie_word_embeddings=True``; safetensors then
+    # dedupes the two at save time and drops ``decoder.output_projection
+    # .weight`` from the checkpoint.  On reload HuggingFace warns "There were
+    # missing keys in the checkpoint model loaded: ['decoder.output_projection
+    # .weight']" and initialises the projection randomly — so every crop
+    # decodes to gibberish and pipeline F1 collapses to 0.  Untie before any
+    # save, then clone the projection weight to a fresh storage allocation so
+    # its data_ptr() cannot collide with embed_tokens even if a transformers
+    # version re-ties internally.
+    model.config.tie_word_embeddings = False
+    model.config.decoder.tie_word_embeddings = False
+    if hasattr(model.decoder, "output_projection"):
+        model.decoder.output_projection.weight = torch.nn.Parameter(
+            model.decoder.output_projection.weight.data.clone()
+        )
     model.config.decoder_start_token_id = processor.tokenizer.cls_token_id
     model.config.pad_token_id = processor.tokenizer.pad_token_id
     model.config.vocab_size = model.config.decoder.vocab_size
