@@ -3,8 +3,13 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from pathlib import Path
 from typing import Any
+
+# Matches <s_key>value</s_key> pairs in string leaves produced by token2json
+# when the model emits a duplicated outer wrapper (e.g. <s_sroie><s_sroie>…).
+_TAG_RE = re.compile(r"<s_(\w+)>(.*?)</s_\1>")
 
 from core.errors import EvalError
 from core.metrics import compute_metrics
@@ -63,7 +68,12 @@ def _flatten_token2json(obj: Any) -> dict[str, str]:
                 for sub_k, sub_v in _flatten_token2json(v).items():
                     _merge(sub_k, sub_v)
             else:
-                _merge(k, str(v))
+                sv = str(v)
+                if "<s_" in sv and "</s_" in sv:
+                    for tag_key, tag_val in _TAG_RE.findall(sv):
+                        _merge(tag_key, tag_val)
+                else:
+                    _merge(k, sv)
     elif isinstance(obj, list):
         for entry in obj:
             if isinstance(entry, dict | list):

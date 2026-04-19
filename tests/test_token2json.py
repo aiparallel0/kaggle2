@@ -69,6 +69,34 @@ def test_outer_sroie_wrapper_is_unwrapped() -> None:
     }
 
 
+def test_string_value_with_embedded_tags_is_regex_extracted() -> None:
+    # Regression: when the model emits a duplicated outer <s_sroie> wrapper
+    # (decoder_start_token_id == labels[0]), token2json falls through to its
+    # string branch and returns {"sroie": "<s_company>FOO</s_company>…"}.
+    # _flatten_token2json must regex-extract the child (key, value) pairs.
+    p = _FakeProcessor({
+        "sroie": (
+            "<s_company>ACME</s_company>"
+            "<s_date>2023-01-01</s_date>"
+            "<s_address>123 MAIN ST</s_address>"
+            "<s_total>10.00</s_total>"
+        ),
+    })
+    assert _token2json_safe(p, "") == {
+        "company": "ACME",
+        "date": "2023-01-01",
+        "address": "123 MAIN ST",
+        "total": "10.00",
+    }
+
+
+def test_string_value_without_tags_is_preserved_under_key() -> None:
+    # Guard against over-eager matching: plain-text string leaves must still be
+    # stored under their original key, not silently dropped.
+    p = _FakeProcessor({"company": "ACME CORP", "total": "10.00"})
+    assert _token2json_safe(p, "") == {"company": "ACME CORP", "total": "10.00"}
+
+
 def test_nested_wrapper_with_list_pages_is_flattened() -> None:
     # CORD-style <sep/> pages inside the outer <s_sroie> wrapper → nested
     # list under a root key. Longest value wins on duplicate keys.
