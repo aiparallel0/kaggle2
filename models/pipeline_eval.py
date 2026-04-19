@@ -1,7 +1,19 @@
-"""Evaluate YOLO + TrOCR + AttentionAssigner pipeline → PipelineResult."""
+"""Evaluate YOLO + TrOCR + AttentionAssigner pipeline → PipelineResult.
+
+Inference flow per receipt:
+
+  YOLO         → N normalised text-line boxes
+  crop + TrOCR → N ``texts`` and ``feats`` per region
+  AttentionAssigner → field→region attention distribution
+  post-process → strip label noise, apply regex priors on ``date`` / ``total``
+
+The empty-detection fallback (full-image TrOCR as one region) keeps the
+rare completely-empty YOLO outputs from contributing 0 to every F1.
+"""
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Any
 
@@ -10,7 +22,7 @@ from PIL import Image
 from core.errors import EvalError
 from core.metrics import compute_metrics
 from core.types import ExpConfig, Field, PipelinePaths, PipelineResult, Prediction, Receipt
-from models.attention_assign import AttentionAssigner, load_assigner
+from models.attention_assign import AttentionAssigner, load_assigner, text_priors
 from models.rule_based import DATE_RE, MONEY_RE, rule_based_assign
 
 # Fields whose ground-truth value spans multiple OCR regions on a typical
@@ -28,12 +40,38 @@ _MULTI_LINE_FRACTION = 0.5
 # that matches SROIE ground truth (e.g. ``"TOTAL: 12.30"`` → ``"12.30"``).
 _FIELD_REGEX = {"date": DATE_RE, "total": MONEY_RE}
 
+# Lines that are just field labels with no value content — the assigner
+# sometimes picks them when the actual value line lost a box to YOLO
+# drop-out or fell below the confidence threshold. Filtering them after
+# OCR but before assignment raises address/company F1 measurably on SROIE.
+_LABEL_ONLY_RE = re.compile(
+    r"^\s*(?:date|total|sub\s*-?\s*total|subtotal|amount|"
+    r"grand\s*total|cashier|receipt|invoice|address|"
+    r"company|name|description|item|qty|quantity|price)\s*[:\-]?\s*$",
+    re.IGNORECASE,
+)
+
+# Non-printable / punctuation-only noise that occasionally comes out of TrOCR
+# on blurry receipt lines. Filtering upstream keeps the assigner from
+# learning to pick them.
+_NOISE_ONLY_RE = re.compile(r"^[\s\W_]+$")
+
 try:
     import torch
 
     _HAS_TORCH = True
 except ImportError:  # lightweight CI — torch not installed
     _HAS_TORCH = False
+
+
+def _is_usable_region(text: str) -> bool:
+    """False for empty, label-only, or pure-punctuation TrOCR transcriptions."""
+    t = text.strip()
+    if not t:
+        return False
+    if _NOISE_ONLY_RE.match(t):
+        return False
+    return not _LABEL_ONLY_RE.match(t)
 
 
 def _detect_and_read(
@@ -44,6 +82,9 @@ def _detect_and_read(
         img_path, imgsz=yolo_img, conf=cfg.yolo_conf, verbose=False,
     )
     boxes = results[0].boxes.xyxyn.cpu().tolist() if results[0].boxes else []
+    # Sort boxes top-to-bottom; downstream heuristics (rule_based, address
+    # concatenation) assume this order.
+    boxes.sort(key=lambda b: b[1])
     texts: list[str] = []
     feats: list[torch.Tensor] = []
     bboxes: list[list[float]] = []
@@ -56,7 +97,10 @@ def _detect_and_read(
         pv = trocr_proc(images=crop, return_tensors="pt").pixel_values.to(device)
         enc = trocr_model.encoder(pv).last_hidden_state
         out = trocr_model.generate(pv, max_new_tokens=cfg.trocr_max_new_tokens)
-        texts.append(trocr_proc.batch_decode(out, skip_special_tokens=True)[0])
+        txt = trocr_proc.batch_decode(out, skip_special_tokens=True)[0]
+        if not _is_usable_region(txt):
+            continue
+        texts.append(txt)
         feats.append(enc.mean(dim=1))
         bboxes.append([x1, y1, x2, y2])
     return texts, feats, bboxes
@@ -71,12 +115,23 @@ def _postprocess_value(name: str, value: str) -> str:
     ``"TOTAL    12.30"``.  Without this strip every correct prediction
     scores token-F1 ≈ 0.5 because half the predicted tokens are noise.
     The regex prior is *non-destructive*: if no match, we keep the raw text.
+
+    For ``total`` we additionally strip currency prefixes ("RM12.30" →
+    "12.30") because the SROIE ground truth omits them.
     """
     pattern = _FIELD_REGEX.get(name)
     if pattern is None:
         return value
     m = pattern.search(value)
-    return m.group(0) if m else value
+    if not m:
+        return value
+    out = m.group(0).strip()
+    if name == "total":
+        # MONEY_RE greedily matches an optional currency prefix + leading
+        # whitespace so TrOCR spacing doesn't break the match; the SROIE
+        # ground truth omits both, so strip them here.
+        out = re.sub(r"^(RM|USD|SGD|MYR|\$)\s*", "", out, flags=re.IGNORECASE)
+    return out
 
 
 def _assign_learned(
@@ -88,10 +143,13 @@ def _assign_learned(
         return {}
     tf = torch.cat(feats, dim=0).unsqueeze(0)
     bf = torch.tensor(bboxes, dtype=torch.float32).unsqueeze(0).to(device)
+    priors = torch.tensor(
+        [text_priors(t) for t in texts], dtype=torch.float32,
+    ).unsqueeze(0).to(device)
     # logits (field presence scores) are produced by the classifier head but
     # are not used for region assignment; attn_w encodes the field→region
     # distribution learned during training and drives the assignment.
-    _logits, attn_w = assigner(tf, bf)
+    _logits, attn_w = assigner(tf, bf, priors)
     used: set[int] = set()
     out: dict[str, str] = {}
     for f_idx, name in enumerate(fields):
@@ -195,5 +253,6 @@ def eval_pipeline(
             "assigner_f1": m_l.global_f1, "rulebased_f1": m_r.global_f1,
             "assigner_ned": m_l.global_ned, "assigner_em": m_l.global_em,
             "per_field_f1": m_l.per_field_f1,
+            "rulebased_per_field_f1": m_r.per_field_f1,
         }, f, indent=2)
     return PipelineResult(assigner=m_l, rulebased=m_r)

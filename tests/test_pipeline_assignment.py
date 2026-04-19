@@ -39,9 +39,14 @@ def _attn_module(weights: list[list[float]]) -> Any:
 
     class _Fake(AttentionAssigner):
         def __init__(self) -> None:
-            super().__init__(hidden_dim=4, n_fields=weights_t.shape[1])
+            # hidden_dim=16 keeps the nn.MultiheadAttention(num_heads=…)
+            # divisibility constraint happy under the new defaults without
+            # forcing the test to hard-code them.
+            super().__init__(hidden_dim=16, n_fields=weights_t.shape[1])
 
-        def forward(self, text_feats: Any, bbox_feats: Any) -> tuple[Any, Any]:  # noqa: ARG002
+        def forward(  # type: ignore[override]
+            self, text_feats: Any, bbox_feats: Any, text_priors: Any = None,
+        ) -> tuple[Any, Any]:  # noqa: ARG002
             logits = torch.zeros(1, weights_t.shape[1])
             return logits, weights_t
 
