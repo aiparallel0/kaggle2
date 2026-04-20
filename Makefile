@@ -1,4 +1,4 @@
-.PHONY: all train eval paper check clean
+.PHONY: all train eval paper check clean serve
 
 .DELETE_ON_ERROR:
 
@@ -25,3 +25,9 @@ paper:
 
 clean:
 	rm -rf results/ data/sroie_cache/ $(shell find . -name '__pycache__' -type d)
+
+# Run the demo website — drop a receipt, see DONUT extract the fields.
+# Uses the fine-tuned checkpoint in results/donut if present, otherwise
+# falls back to config.base_model so the page works before training.
+serve:
+	python -m uvicorn app.server:app --host 0.0.0.0 --port 8000
