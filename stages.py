@@ -14,6 +14,11 @@ from models.assigner_train import train_assigner
 from models.donut_eval import eval_donut
 from models.donut_train import train_donut
 from models.pipeline_eval import eval_pipeline
+from models.rule_eval import (
+    combined_from_rulebased,
+    eval_rulebased_gold,
+    per_field_injection,
+)
 from models.trocr_train import train_trocr
 from models.yolo_train import train_yolo
 from report.inject import expand_inputs, inject_results
@@ -92,27 +97,37 @@ def _eval_donut_or_skip(config: ExpConfig, data: DataSplit) -> Metrics:
     return dm
 
 
-def _combined_metrics(config: ExpConfig, dm: Metrics, pm: PipelineResult) -> dict[str, object]:
-    return {
+def _combined_metrics(
+    config: ExpConfig, dm: Metrics, pm: PipelineResult, rb_gold: Metrics,
+) -> dict[str, object]:
+    out: dict[str, object] = {
         "donut_f1": dm.global_f1, "donut_ned": dm.global_ned, "donut_em": dm.global_em,
         "pipeline_f1": pm.assigner.global_f1,
         "pipeline_ned": pm.assigner.global_ned,
         "pipeline_em": pm.assigner.global_em,
         "rulebased_f1": pm.rulebased.global_f1,
         "rulebased_ned": pm.rulebased.global_ned,
+        "rulebased_gold_f1": rb_gold.global_f1,
+        "rulebased_gold_ned": rb_gold.global_ned,
         "f1_gap": round(dm.global_f1 - pm.assigner.global_f1, 4),
         "assigner_delta": round(pm.assigner.global_f1 - pm.rulebased.global_f1, 4),
         "donut_f1_company": dm.per_field_f1.get("company", 0.0),
         "donut_f1_date": dm.per_field_f1.get("date", 0.0),
         "donut_f1_address": dm.per_field_f1.get("address", 0.0),
         "donut_f1_total": dm.per_field_f1.get("total", 0.0),
+        "rulebased_f1_company": rb_gold.per_field_f1.get("company", 0.0),
+        "rulebased_f1_date": rb_gold.per_field_f1.get("date", 0.0),
+        "rulebased_f1_address": rb_gold.per_field_f1.get("address", 0.0),
+        "rulebased_f1_total": rb_gold.per_field_f1.get("total", 0.0),
         "epochs_donut": config.epochs_donut, "epochs_trocr": config.epochs_trocr,
         "epochs_yolo": config.epochs_yolo, "batch_size": config.batch_size,
         "lr": config.lr, "precision": config.precision,
         "label_smoothing": config.label_smoothing,
         "yolo_img_size": config.yolo_img_size,
         "img_w": config.image_size[0], "img_h": config.image_size[1],
+        "artifact_mode": "full",
     }
+    return out
 
 
 def stage_eval(config: ExpConfig) -> None:
@@ -126,9 +141,38 @@ def stage_eval(config: ExpConfig) -> None:
     _warn_below_expected(pm.assigner, config, "pipeline")
     log.info("Pipeline (assigner)  F1=%.4f", pm.assigner.global_f1)
     log.info("Pipeline (rulebased) F1=%.4f", pm.rulebased.global_f1)
+    # Also run rule-based on gold OCR so the paper's "Rule-based (gold OCR)"
+    # row has a real number in full-pipeline mode too — this is a legitimate
+    # ablation (assignment heuristic quality in isolation from OCR noise).
+    rb_gold = eval_rulebased_gold(config, data.test)
+    log.info("Rule-based (gold OCR) F1=%.4f", rb_gold.global_f1)
     Path(config.output_dir).mkdir(parents=True, exist_ok=True)
     with open(os.path.join(config.output_dir, "combined_metrics.json"), "w") as f:
-        json.dump(_combined_metrics(config, dm, pm), f, indent=2)
+        json.dump(_combined_metrics(config, dm, pm, rb_gold), f, indent=2)
+
+
+def stage_eval_rulebased_gold(config: ExpConfig) -> None:
+    """Produce real rule-based F1 over SROIE gold-OCR (no HF/GPU dependency).
+
+    Writes ``results/rulebased_gold_metrics.json`` and a ``combined_metrics.json``
+    pre-populated with zeros for DONUT / pipeline-learned so ``stage_paper``
+    can compile a paper whose rule-based numbers are honest real values even
+    when the neural components could not be trained in this environment.
+    """
+    log.info("=== Stage: eval_rulebased_gold ===")
+    data_path = download_sroie(config)
+    data = load_or_create_split(config, data_path)
+    log.info("Split: %d train / %d val / %d test",
+             len(data.train), len(data.val), len(data.test))
+    metrics = eval_rulebased_gold(config, data.test)
+    log.info("Rule-based (gold OCR) F1=%.4f  per-field=%s",
+             metrics.global_f1,
+             {k: round(v, 4) for k, v in metrics.per_field_f1.items()})
+    combined = combined_from_rulebased(config, metrics)
+    combined.update(per_field_injection(metrics))
+    Path(config.output_dir).mkdir(parents=True, exist_ok=True)
+    with open(os.path.join(config.output_dir, "combined_metrics.json"), "w") as f:
+        json.dump(combined, f, indent=2)
 
 
 def stage_paper(config: ExpConfig) -> None:

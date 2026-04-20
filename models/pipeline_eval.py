@@ -85,22 +85,33 @@ def eval_pipeline(config: ExpConfig, test: list[Receipt]) -> PipelineResult:
     preds_r: list[Prediction] = []
     with torch.no_grad():
         for rec in test:
-            img = Image.open(rec.image_path).convert("RGB")
-            texts, feats, bboxes = _detect_and_read(
-                yolo, trocr_proc, trocr_model, img, str(rec.image_path),
-                config, yolo_img, device,
-            )
-            # Empty-detection fallback: rare on SROIE but happens on dark scans.
-            # Without it, the receipt contributes 0 to all four field F1s.
-            if not texts:
-                texts, feats, bboxes = _fallback_full_image(
-                    trocr_proc, trocr_model, img, config, device,
-                )
-            learned = _assign_learned(
-                assigner, texts, feats, bboxes, config.fields, device,
-            )
-            rule = rule_based_assign(texts, bboxes) if texts else {}
             rid = rec.image_path.stem
+            # Per-receipt try/except so one unreadable scan (corrupt PNG,
+            # truncated JPEG, CUDA hiccup) does not abort the entire eval
+            # run. We still emit an (empty-fields) Prediction for the
+            # receipt so ``compute_metrics`` — which zips predictions and
+            # receipts with ``strict=True`` — stays aligned; the receipt
+            # then scores F1=0 for every field, which is the correct
+            # accounting for "pipeline failed on this input".
+            try:
+                img = Image.open(rec.image_path).convert("RGB")
+                texts, feats, bboxes = _detect_and_read(
+                    yolo, trocr_proc, trocr_model, img, str(rec.image_path),
+                    config, yolo_img, device,
+                )
+                # Empty-detection fallback: rare on SROIE but happens on
+                # dark scans. Without it the receipt contributes 0 to all
+                # four field F1s.
+                if not texts:
+                    texts, feats, bboxes = _fallback_full_image(
+                        trocr_proc, trocr_model, img, config, device,
+                    )
+                learned = _assign_learned(
+                    assigner, texts, feats, bboxes, config.fields, device,
+                )
+                rule = rule_based_assign(texts, bboxes) if texts else {}
+            except (OSError, RuntimeError, ValueError):
+                learned, rule = {}, {}
             preds_l.append(Prediction(
                 receipt_id=rid,
                 fields=[Field(name=k, value=v) for k, v in learned.items()],

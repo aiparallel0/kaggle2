@@ -48,7 +48,10 @@ def inject_results(template: str, metrics: dict[str, Any]) -> str:
         metrics: Flat dict of metric name → value.
 
     Returns:
-        LaTeX source with all placeholders replaced.
+        LaTeX source with all placeholders replaced. Any \\VAR{} key not
+        present in ``metrics`` is replaced by ``---`` so the resulting
+        LaTeX always compiles (unresolved macros otherwise produce
+        ``Undefined control sequence`` errors in pdflatex/tectonic).
     """
     result = template
     for key, value in metrics.items():
@@ -57,4 +60,9 @@ def inject_results(template: str, metrics: dict[str, Any]) -> str:
             result = result.replace(placeholder, f"{value:.4f}")
         else:
             result = result.replace(placeholder, str(value))
+    # Backstop: any \VAR{...} that was NOT in the metrics dict becomes ---.
+    # Prevents half-rendered \VAR{rulebased_f1_company} tokens leaking into
+    # the PDF when a newer results.tex adds placeholders the orchestrator
+    # hasn't learned to emit yet.
+    result = re.sub(r"\\VAR\{[^}]+\}", "---", result)
     return result
