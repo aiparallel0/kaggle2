@@ -92,7 +92,7 @@ def train_yolo(config: ExpConfig, data: DataSplit) -> str:
         train: images/train
         val: images/val
         nc: 1
-        names: [receipt]
+        names: [text_line]
         """)
     )
 

@@ -82,10 +82,11 @@ def train_assigner(config: ExpConfig, data: AssignerData) -> str:
     """
     device = "cuda" if torch.cuda.is_available() else "cpu"
     field_to_idx = {f.lower(): i for i, f in enumerate(config.fields)}
-    prepared = _prepare_groups(data, field_to_idx, device)
+    prepared, text_feat_dim = _prepare_groups(data, field_to_idx, device)
     train_groups, val_groups = split_train_val(prepared, config.seed)
     assigner = AttentionAssigner(
         hidden_dim=DEFAULT_HIDDEN_DIM, n_fields=len(config.fields),
+        text_feat_dim=text_feat_dim,
     ).to(device)
     opt = torch.optim.AdamW(assigner.parameters(), lr=1e-3, weight_decay=1e-4)
     best_val = float("inf")

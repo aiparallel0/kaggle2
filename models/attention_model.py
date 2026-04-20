@@ -64,17 +64,19 @@ class AttentionAssigner(_NN_BASE):  # type: ignore[misc]
         n_layers: int = DEFAULT_N_LAYERS,
         dropout: float = DEFAULT_DROPOUT,
         n_text_priors: int = N_TEXT_PRIORS,
+        text_feat_dim: int = 768,
     ) -> None:
         super().__init__()
         self.hidden_dim = hidden_dim
         self.n_fields = n_fields
         self.n_text_priors = n_text_priors
         self.n_layers = n_layers
+        self.text_feat_dim = text_feat_dim
         heads = _pick_n_heads(hidden_dim, n_heads)
         self.n_heads = heads
 
         self.field_queries = nn.Parameter(torch.randn(n_fields, hidden_dim) * 0.02)
-        self.text_proj = nn.Linear(768, hidden_dim)
+        self.text_proj = nn.Linear(text_feat_dim, hidden_dim)
         self.bbox_proj = nn.Linear(8, hidden_dim)
         self.prior_proj: nn.Module | None
         if n_text_priors > 0:
@@ -120,7 +122,7 @@ class AttentionAssigner(_NN_BASE):  # type: ignore[misc]
         """Compute field-assignment logits and cross-attention weights.
 
         Args:
-            text_feats: ``(B, N, 768)`` TrOCR encoder hidden states.
+            text_feats: ``(B, N, text_feat_dim)`` TrOCR encoder hidden states.
             bbox_feats: ``(B, N, 4)`` or ``(B, N, 8)`` normalised boxes.
             text_priors: ``(B, N, n_text_priors)``. If ``None`` and the
                 module has a prior head, a zero tensor is substituted.

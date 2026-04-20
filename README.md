@@ -10,8 +10,10 @@ Replaces 34K-line Python monolith. Trains both architectures, evaluates on
 Published DONUT-on-SROIE results land in **0.73 – 0.90** depending on
 epochs, resolution, auxiliary data, and seed. The tightened configuration
 in this repo (15 epochs, cosine schedule, beam-search decoding, best-F1
-checkpoint selection) typically lands in **0.78 – 0.88** on an RTX 4090 /
-A6000. **No specific F1 number can be guaranteed by code changes alone**:
+checkpoint selection) typically lands in **0.78 – 0.85** on an RTX 4090 /
+A6000. The pipeline (YOLO+TrOCR+Attention) typically achieves
+**0.50 – 0.60** F1, with YOLO text-line detection at **0.98 mAP@0.5**.
+**No specific F1 number can be guaranteed by code changes alone**:
 F1 is a stochastic training outcome that depends on GPU availability,
 Hugging Face weight snapshots at download time, and SROIE label noise.
 
@@ -123,6 +125,9 @@ All hyperparameters live in `config.json`. F1-affecting knobs:
 5. YOLO imgsz mismatch (inference default ≠ training size)
 6. TrOCR undertrained (<5 epochs produces all-empty outputs)
 7. Val == Test leakage (physically separate splits, persisted to disk)
+8. YOLO project path resolution (ultralytics ≥8.3 relative-path bug)
+9. Stale generation_config (saved decoder_start_token_id ≠ model.config;
+   affects both DONUT and TrOCR — mirror ids into generation_config)
 
 ## Testing
 

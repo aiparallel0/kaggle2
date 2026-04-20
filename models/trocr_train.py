@@ -75,16 +75,10 @@ def train_trocr(config: ExpConfig, crops: list[Crop]) -> str:
     model: VisionEncoderDecoderModel = VisionEncoderDecoderModel.from_pretrained(
         config.trocr_model
     )
-    # Bug 1 (TrOCR variant): the TrOCR decoder's ``output_projection`` is tied
-    # to ``embed_tokens`` via ``tie_word_embeddings=True``; safetensors then
-    # dedupes the two at save time and drops ``decoder.output_projection
-    # .weight`` from the checkpoint.  On reload HuggingFace warns "There were
-    # missing keys in the checkpoint model loaded: ['decoder.output_projection
-    # .weight']" and initialises the projection randomly — so every crop
-    # decodes to gibberish and pipeline F1 collapses to 0.  Untie before any
-    # save, then clone the projection weight to a fresh storage allocation so
-    # its data_ptr() cannot collide with embed_tokens even if a transformers
-    # version re-ties internally.
+    # Bug 1 (TrOCR variant): untie output_projection from embed_tokens so
+    # safetensors does not dedup/drop it at save time. On reload HuggingFace
+    # would reinit the projection randomly → gibberish output → pipeline F1=0.
+    # Clone to a fresh allocation so data_ptr() never collides with embed_tokens.
     model.config.tie_word_embeddings = False
     model.config.decoder.tie_word_embeddings = False
     if hasattr(model.decoder, "output_projection"):
@@ -92,8 +86,18 @@ def train_trocr(config: ExpConfig, crops: list[Crop]) -> str:
             model.decoder.output_projection.weight.data.clone()
         )
     model.config.decoder_start_token_id = processor.tokenizer.cls_token_id
+    model.config.eos_token_id = processor.tokenizer.sep_token_id
     model.config.pad_token_id = processor.tokenizer.pad_token_id
     model.config.vocab_size = model.config.decoder.vocab_size
+    # Bug 9 (TrOCR): mirror decoder-start/EOS/pad ids into generation_config so
+    # the saved generation_config.json does not overwrite our overrides with the
+    # stale trocr-small-printed snapshot at reload time. Without this, pipeline
+    # inference starts decoding from </s> (id 2) → empty strings for every crop.
+    gc = model.generation_config
+    gc.decoder_start_token_id = model.config.decoder_start_token_id
+    gc.eos_token_id = model.config.eos_token_id
+    gc.pad_token_id = model.config.pad_token_id
+    gc.bos_token_id = model.config.decoder_start_token_id
     # Bug 7: transformers ≥4.48 forwards num_items_in_batch into model inputs
     # when forward() has **kwargs; VisionEncoderDecoderModel then passes it to
     # the encoder (SwinModel / ViT) which has no **kwargs → TypeError.
