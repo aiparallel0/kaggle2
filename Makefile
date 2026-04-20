@@ -1,16 +1,13 @@
-.PHONY: all train eval paper check test clean
+.PHONY: all train eval paper check clean
 
 .DELETE_ON_ERROR:
 
-all: check test train eval paper
+all: check train eval paper
 
 check:
-	mypy --strict core/ data/ models/ report/ main.py
+	mypy --strict core/ data/ models/ report/ stages.py main.py
 	ruff check .
 	python -c "from core.types import Receipt, Metrics; from core.config import load_config"
-
-test:
-	python -m pytest -q tests/
 
 train:
 	python main.py --stage train

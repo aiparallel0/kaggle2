@@ -1,7 +1,43 @@
-"""Inject real metrics into LaTeX template by replacing \\VAR{name} placeholders."""
+"""Inject real metrics into LaTeX template by replacing \\VAR{name} placeholders.
+
+Also resolves ``\\input{path}`` directives textually before substitution so
+\\VAR{} placeholders in section files are also replaced and the filled output
+is a single flat ``.tex`` (no extra files needed at compile time).
+"""
 from __future__ import annotations
 
+import re
+from pathlib import Path
 from typing import Any
+
+_INPUT_RE = re.compile(r"\\input\{([^}]+)\}")
+
+
+def _read_section(base: Path, name: str) -> str:
+    """Read ``<base>/<name>(.tex)``; raise ``FileNotFoundError`` if missing."""
+    # LaTeX \input accepts names with or without the .tex suffix.
+    candidates = [base / name, base / f"{name}.tex"]
+    for c in candidates:
+        if c.is_file():
+            return c.read_text()
+    raise FileNotFoundError(f"\\input{{{name}}} not found near {base}")
+
+
+def expand_inputs(template: str, base: Path, max_depth: int = 4) -> str:
+    """Recursively inline ``\\input{path}`` directives in *template*.
+
+    Resolves relative paths against *base* (the directory containing the
+    top-level ``.tex`` file). Guards against cyclic / runaway inclusions
+    with a shallow depth limit — one level of section files is expected.
+    """
+    if max_depth <= 0:
+        return template
+
+    def _replace(match: re.Match[str]) -> str:
+        inner = _read_section(base, match.group(1))
+        return expand_inputs(inner, base, max_depth - 1)
+
+    return _INPUT_RE.sub(_replace, template)
 
 
 def inject_results(template: str, metrics: dict[str, Any]) -> str:

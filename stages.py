@@ -1,0 +1,154 @@
+"""Three top-level stages: train, eval, paper."""
+from __future__ import annotations
+
+import json
+import logging
+import os
+from pathlib import Path
+
+from core.errors import EvalError, TrainError
+from core.types import AssignerData, DataSplit, ExpConfig, Metrics, PipelinePaths, PipelineResult
+from core.validate import validate_f1
+from data.sroie import download_sroie, extract_crops, extract_receipt_regions, load_or_create_split
+from models.assigner_train import train_assigner
+from models.donut_eval import eval_donut
+from models.donut_train import train_donut
+from models.pipeline_eval import eval_pipeline
+from models.trocr_train import train_trocr
+from models.yolo_train import train_yolo
+from report.inject import expand_inputs, inject_results
+from report.pdflatex import compile_paper_pdf
+
+log = logging.getLogger("kaggle2")
+
+
+def _split_cache(config: ExpConfig) -> Path:
+    return Path(config.output_dir) / "split.json"
+
+
+def _write_pipeline_meta(config: ExpConfig) -> None:
+    Path(config.output_dir).mkdir(parents=True, exist_ok=True)
+    with open(os.path.join(config.output_dir, "pipeline_meta.json"), "w") as f:
+        json.dump({"yolo_img_size": config.yolo_img_size}, f)
+
+
+def stage_train(config: ExpConfig) -> None:
+    log.info("=== Stage: train ===")
+    data_path = download_sroie(config)
+    data = load_or_create_split(data_path, config.seed, _split_cache(config))
+    log.info("Split: %d train / %d val / %d test",
+             len(data.train), len(data.val), len(data.test))
+    if config.skip_donut:
+        log.info("skip_donut=True — Phase 1 mode: DONUT training suppressed. "
+                 "KD losses will be disabled downstream (kd_*_weight must be 0).")
+        if config.kd_attn_weight != 0.0 or config.kd_logits_weight != 0.0:
+            raise TrainError(
+                "skip_donut=True but kd_attn_weight or kd_logits_weight != 0. "
+                "Phase 1 cannot distil from a missing teacher; set both to 0.",
+            )
+    else:
+        donut_path = train_donut(config, data)
+        log.info("DONUT → %s", donut_path)
+    yolo_path = train_yolo(config, data)
+    log.info("YOLO  → %s", yolo_path)
+    crops = extract_crops(data.train, config.fields)
+    regions = extract_receipt_regions(data.train, config.fields)
+    log.info("Extracted %d labeled crops / %d receipt region-groups",
+             len(crops), len(regions))
+    if not crops:
+        raise TrainError("No labeled SROIE crops — check box/ annotations.")
+    trocr_path = train_trocr(config, crops)
+    log.info("TrOCR → %s", trocr_path)
+    assigner_data = AssignerData(trocr_path=trocr_path, crops=crops, regions=regions)
+    assigner_path = train_assigner(config, assigner_data)
+    log.info("Assigner → %s", assigner_path)
+    _write_pipeline_meta(config)
+
+
+def _eval_donut_or_skip(config: ExpConfig, data: DataSplit) -> Metrics:
+    """Eval DONUT iff skip_donut is False AND a checkpoint exists on disk."""
+    donut_model = os.path.join(config.output_dir, "donut")
+    if config.skip_donut:
+        log.info("skip_donut=True — skipping DONUT eval; reporting zeros.")
+        return Metrics(
+            global_f1=0.0, global_ned=0.0, global_em=0.0,
+            per_field_f1={f: 0.0 for f in config.fields},
+            per_field_ned={f: 0.0 for f in config.fields},
+            per_field_em={f: 0.0 for f in config.fields},
+        )
+    if not Path(donut_model).exists():
+        raise EvalError(
+            f"DONUT checkpoint not found at {donut_model}. Either run train "
+            "stage first, or set skip_donut=true for a Phase-1 pipeline-only run.",
+        )
+    dm = eval_donut(donut_model, data.test, config)
+    validate_f1(dm.global_f1, "donut", config)
+    return dm
+
+
+def _combined_metrics(config: ExpConfig, dm: Metrics, pm: PipelineResult) -> dict[str, object]:
+    return {
+        "donut_f1": dm.global_f1, "donut_ned": dm.global_ned, "donut_em": dm.global_em,
+        "pipeline_f1": pm.assigner.global_f1,
+        "pipeline_ned": pm.assigner.global_ned,
+        "pipeline_em": pm.assigner.global_em,
+        "rulebased_f1": pm.rulebased.global_f1,
+        "rulebased_ned": pm.rulebased.global_ned,
+        "f1_gap": round(dm.global_f1 - pm.assigner.global_f1, 4),
+        "assigner_delta": round(pm.assigner.global_f1 - pm.rulebased.global_f1, 4),
+        "donut_f1_company": dm.per_field_f1.get("company", 0.0),
+        "donut_f1_date": dm.per_field_f1.get("date", 0.0),
+        "donut_f1_address": dm.per_field_f1.get("address", 0.0),
+        "donut_f1_total": dm.per_field_f1.get("total", 0.0),
+        "epochs_donut": config.epochs_donut, "epochs_trocr": config.epochs_trocr,
+        "epochs_yolo": config.epochs_yolo, "batch_size": config.batch_size,
+        "lr": config.lr, "precision": config.precision,
+        "label_smoothing": config.label_smoothing,
+        "yolo_img_size": config.yolo_img_size,
+        "img_w": config.image_size[0], "img_h": config.image_size[1],
+    }
+
+
+def stage_eval(config: ExpConfig) -> None:
+    log.info("=== Stage: eval ===")
+    data_path = download_sroie(config)
+    data = load_or_create_split(data_path, config.seed, _split_cache(config))
+    dm = _eval_donut_or_skip(config, data)
+    log.info("DONUT F1=%.4f", dm.global_f1)
+    paths = PipelinePaths(
+        yolo=os.path.join(config.output_dir, "yolo", "run", "weights", "best.pt"),
+        trocr=os.path.join(config.output_dir, "trocr"),
+        assigner=os.path.join(config.output_dir, "assigner.pt"),
+    )
+    pm = eval_pipeline(paths, data.test, config)
+    validate_f1(pm.assigner.global_f1, "pipeline", config)
+    log.info("Pipeline (assigner)  F1=%.4f", pm.assigner.global_f1)
+    log.info("Pipeline (rulebased) F1=%.4f", pm.rulebased.global_f1)
+    Path(config.output_dir).mkdir(parents=True, exist_ok=True)
+    with open(os.path.join(config.output_dir, "combined_metrics.json"), "w") as f:
+        json.dump(_combined_metrics(config, dm, pm), f, indent=2)
+
+
+def stage_paper(config: ExpConfig) -> None:
+    log.info("=== Stage: paper ===")
+    metrics_path = os.path.join(config.output_dir, "combined_metrics.json")
+    if not Path(metrics_path).exists():
+        raise EvalError(f"Run eval stage first — {metrics_path} not found.")
+    with open(metrics_path) as f:
+        metrics: dict[str, object] = json.load(f)
+    with open(config.paper_template) as f:
+        template = f.read()
+    # Inline \input{sections/...} before \VAR{} substitution — keeps the
+    # 166-LOC rule applicable to each section file while producing a single
+    # flat paper_filled.tex that tectonic can compile without extra paths.
+    template = expand_inputs(template, Path(config.paper_template).parent)
+    filled = inject_results(template, metrics)
+    tex_out = Path(config.paper_output)
+    tex_out.parent.mkdir(parents=True, exist_ok=True)
+    with open(tex_out, "w") as f:
+        f.write(filled)
+    log.info("Paper LaTeX written to %s", tex_out)
+    bib_src = Path(config.paper_template).parent / "references.bib"
+    pdf = compile_paper_pdf(tex_out, bib_src)
+    if pdf is not None:
+        log.info("Paper PDF written to %s", pdf)
