@@ -84,6 +84,19 @@ class AssignerData:
 
 
 @dataclass
+class EvalBundle:
+    """Predictions + ground-truth receipts + field list for metric computation.
+
+    Bundled to keep ``core.metrics.compute_metrics`` at a single argument so
+    every public function satisfies the 2-in/1-out contract.
+    """
+
+    predictions: list[Prediction]
+    receipts: list[Receipt]
+    fields: list[str]
+
+
+@dataclass
 class PipelineResult:
     """Evaluation results for the pipeline with both assignment strategies."""
 

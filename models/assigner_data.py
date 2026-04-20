@@ -40,7 +40,7 @@ def _encode_regions(proc: Any, trocr: Any, regions: list[Crop], device: str) -> 
     return torch.cat(feats, dim=0) if feats else torch.zeros(0, 768)
 
 
-def prepare_groups(
+def _prepare_groups(
     data: AssignerData, field_to_idx: dict[str, int], device: str,
 ) -> list[Group]:
     """Encode every region once per receipt → list of training groups.

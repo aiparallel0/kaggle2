@@ -1,7 +1,7 @@
 """Shared metric computation: token-F1, NED, EM — used by both eval modules."""
 from __future__ import annotations
 
-from core.types import Metrics, Prediction, Receipt
+from core.types import EvalBundle, Metrics
 
 
 def edit_distance(a: str, b: str) -> int:
@@ -40,19 +40,15 @@ def token_f1(a: str, b: str) -> float:
     return 2 * p * r / (p + r) if (p + r) else 0.0
 
 
-def compute_metrics(
-    predictions: list[Prediction],
-    receipts: list[Receipt],
-    fields: list[str],
-) -> Metrics:
-    """Compute per-field and global F1 / NED / EM from prediction–receipt pairs."""
-    pf1: dict[str, list[float]] = {f: [] for f in fields}
-    pned: dict[str, list[float]] = {f: [] for f in fields}
-    pem: dict[str, list[float]] = {f: [] for f in fields}
-    for pred, rec in zip(predictions, receipts, strict=True):
+def compute_metrics(bundle: EvalBundle) -> Metrics:
+    """Compute per-field and global F1 / NED / EM from an :class:`EvalBundle`."""
+    pf1: dict[str, list[float]] = {f: [] for f in bundle.fields}
+    pned: dict[str, list[float]] = {f: [] for f in bundle.fields}
+    pem: dict[str, list[float]] = {f: [] for f in bundle.fields}
+    for pred, rec in zip(bundle.predictions, bundle.receipts, strict=True):
         gt = {fld.name.lower(): fld.value.lower() for fld in rec.fields}
         pr = {fld.name.lower(): fld.value.lower() for fld in pred.fields}
-        for f in fields:
+        for f in bundle.fields:
             g = gt.get(f, "")
             p = pr.get(f, "")
             pem[f].append(1.0 if g == p else 0.0)

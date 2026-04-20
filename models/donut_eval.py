@@ -8,7 +8,7 @@ from typing import Any
 
 from core.errors import EvalError
 from core.metrics import compute_metrics
-from core.types import ExpConfig, Field, Metrics, Prediction, Receipt
+from core.types import EvalBundle, ExpConfig, Field, Metrics, Prediction, Receipt
 from models.donut_parse import token2json_safe as _token2json_safe
 
 try:
@@ -55,22 +55,22 @@ def _resolve_start_eos(processor: Any, model: Any) -> tuple[int, int | None]:
     return start_id, eos_id
 
 
-def eval_donut(
-    model_path: str, test: list[Receipt], config: ExpConfig | None = None,
-) -> Metrics:
-    """Run DONUT inference on test receipts; return Metrics."""
+def eval_donut(config: ExpConfig, test: list[Receipt]) -> Metrics:
+    """Run DONUT inference on test receipts; return :class:`Metrics`.
+
+    The model directory is resolved to ``{config.output_dir}/donut`` — the
+    same location ``train_donut`` writes to. Keeps eval_donut at 2-in/1-out.
+    """
+    model_path = os.path.join(config.output_dir, "donut")
     processor, model, device = _load(model_path)
     start_id, eos_id = _resolve_start_eos(processor, model)
-    num_beams = config.num_beams if config is not None else 4
-    max_len = config.max_length if config is not None else 768
+    num_beams = config.num_beams
+    max_len = config.max_length
     # Pin inference image size to the training size (stale checkpoints can
     # silently fall back to the model-card default and lose ~0.05 F1).
-    if config is not None:
-        size_kwargs: dict[str, Any] = {"size": {
-            "height": config.image_size[1], "width": config.image_size[0],
-        }}
-    else:
-        size_kwargs = {}
+    size_kwargs: dict[str, Any] = {"size": {
+        "height": config.image_size[1], "width": config.image_size[0],
+    }}
     predictions: list[Prediction] = []
     from PIL import Image
     with torch.no_grad():
@@ -87,8 +87,9 @@ def eval_donut(
             parsed = _token2json_safe(processor, tokens)
             fields = [Field(name=k, value=v) for k, v in parsed.items()]
             predictions.append(Prediction(receipt_id=rec.image_path.stem, fields=fields))
-    fields_list = config.fields if config is not None else ["company", "date", "address", "total"]
-    metrics = compute_metrics(predictions, test, fields_list)
+    metrics = compute_metrics(EvalBundle(
+        predictions=predictions, receipts=test, fields=config.fields,
+    ))
     out_dir = os.path.dirname(model_path)
     with open(os.path.join(out_dir, "donut_metrics.json"), "w") as f:
         json.dump(

@@ -42,7 +42,7 @@ def _is_usable_region(text: str) -> bool:
     return not _LABEL_ONLY_RE.match(t)
 
 
-def detect_and_read(
+def _detect_and_read(
     yolo: Any, trocr_proc: Any, trocr_model: Any,
     img: Image.Image, img_path: str, cfg: ExpConfig, yolo_img: int, device: str,
 ) -> tuple[list[str], list[torch.Tensor], list[list[float]]]:
@@ -78,7 +78,7 @@ def detect_and_read(
     return texts, feats, bboxes
 
 
-def fallback_full_image(
+def _fallback_full_image(
     trocr_proc: Any, trocr_model: Any, img: Image.Image, cfg: ExpConfig, device: str,
 ) -> tuple[list[str], list[torch.Tensor], list[list[float]]]:
     """Run TrOCR on the full image as a single region (empty-detection fallback)."""

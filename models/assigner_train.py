@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
 from core.types import AssignerData, ExpConfig
-from models.assigner_data import Group, prepare_groups, split_train_val
+from models.assigner_data import Group, _prepare_groups, split_train_val
 from models.attention_assign import DEFAULT_HIDDEN_DIM, AttentionAssigner, save_assigner
 
 try:
@@ -82,7 +82,7 @@ def train_assigner(config: ExpConfig, data: AssignerData) -> str:
     """
     device = "cuda" if torch.cuda.is_available() else "cpu"
     field_to_idx = {f.lower(): i for i, f in enumerate(config.fields)}
-    prepared = prepare_groups(data, field_to_idx, device)
+    prepared = _prepare_groups(data, field_to_idx, device)
     train_groups, val_groups = split_train_val(prepared, config.seed)
     assigner = AttentionAssigner(
         hidden_dim=DEFAULT_HIDDEN_DIM, n_fields=len(config.fields),

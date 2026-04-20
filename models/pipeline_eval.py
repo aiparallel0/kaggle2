@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from typing import Any
 
@@ -9,10 +10,18 @@ from PIL import Image
 
 from core.errors import EvalError
 from core.metrics import compute_metrics
-from core.types import ExpConfig, Field, PipelinePaths, PipelineResult, Prediction, Receipt
-from models.attention_assign import load_assigner
-from models.pipeline_assign import assign_learned
-from models.pipeline_detect import detect_and_read, fallback_full_image
+from core.types import (
+    EvalBundle,
+    ExpConfig,
+    Field,
+    PipelinePaths,
+    PipelineResult,
+    Prediction,
+    Receipt,
+)
+from models.attention_assign import _load_assigner
+from models.pipeline_assign import _assign_learned
+from models.pipeline_detect import _detect_and_read, _fallback_full_image
 from models.rule_based import rule_based_assign
 
 try:
@@ -20,6 +29,15 @@ try:
     from torch import Tensor as _Tensor  # noqa: F401  (silence ruff SIM105)
 except ImportError:  # lightweight CI — torch not installed
     pass
+
+
+def _paths_from_config(config: ExpConfig) -> PipelinePaths:
+    """Derive pipeline checkpoint paths from ``config.output_dir``."""
+    return PipelinePaths(
+        yolo=os.path.join(config.output_dir, "yolo", "run", "weights", "best.pt"),
+        trocr=os.path.join(config.output_dir, "trocr"),
+        assigner=os.path.join(config.output_dir, "assigner.pt"),
+    )
 
 
 def _load(paths: PipelinePaths, config: ExpConfig) -> tuple[Any, Any, Any, Any, str]:
@@ -36,7 +54,7 @@ def _load(paths: PipelinePaths, config: ExpConfig) -> tuple[Any, Any, Any, Any, 
     yolo = YOLO(paths.yolo)
     trocr_proc = TrOCRProcessor.from_pretrained(paths.trocr)
     trocr_model = VisionEncoderDecoderModel.from_pretrained(paths.trocr)
-    assigner = load_assigner(paths.assigner, n_fields=len(config.fields))
+    assigner = _load_assigner(paths.assigner, n_fields=len(config.fields))
     device = "cuda" if torch.cuda.is_available() else "cpu"
     trocr_model = trocr_model.to(device)
     assigner = assigner.to(device)
@@ -53,10 +71,14 @@ def _resolve_yolo_img(paths: PipelinePaths, config: ExpConfig) -> int:
     return config.yolo_img_size
 
 
-def eval_pipeline(
-    paths: PipelinePaths, test: list[Receipt], config: ExpConfig,
-) -> PipelineResult:
-    """Run YOLO→TrOCR pipeline with learned + rule-based assignment."""
+def eval_pipeline(config: ExpConfig, test: list[Receipt]) -> PipelineResult:
+    """Run YOLO→TrOCR pipeline with learned + rule-based assignment.
+
+    Pipeline checkpoint paths are derived from ``config.output_dir``; this
+    keeps the public surface at 2-in/1-out while still reading every path
+    from the single source of truth (``config.json``).
+    """
+    paths = _paths_from_config(config)
     yolo, trocr_proc, trocr_model, assigner, device = _load(paths, config)
     yolo_img = _resolve_yolo_img(paths, config)
     preds_l: list[Prediction] = []
@@ -64,17 +86,19 @@ def eval_pipeline(
     with torch.no_grad():
         for rec in test:
             img = Image.open(rec.image_path).convert("RGB")
-            texts, feats, bboxes = detect_and_read(
+            texts, feats, bboxes = _detect_and_read(
                 yolo, trocr_proc, trocr_model, img, str(rec.image_path),
                 config, yolo_img, device,
             )
             # Empty-detection fallback: rare on SROIE but happens on dark scans.
             # Without it, the receipt contributes 0 to all four field F1s.
             if not texts:
-                texts, feats, bboxes = fallback_full_image(
+                texts, feats, bboxes = _fallback_full_image(
                     trocr_proc, trocr_model, img, config, device,
                 )
-            learned = assign_learned(assigner, texts, feats, bboxes, config.fields, device)
+            learned = _assign_learned(
+                assigner, texts, feats, bboxes, config.fields, device,
+            )
             rule = rule_based_assign(texts, bboxes) if texts else {}
             rid = rec.image_path.stem
             preds_l.append(Prediction(
@@ -85,8 +109,12 @@ def eval_pipeline(
                 receipt_id=rid,
                 fields=[Field(name=k, value=v) for k, v in rule.items()],
             ))
-    m_l = compute_metrics(preds_l, test, config.fields)
-    m_r = compute_metrics(preds_r, test, config.fields)
+    m_l = compute_metrics(EvalBundle(
+        predictions=preds_l, receipts=test, fields=config.fields,
+    ))
+    m_r = compute_metrics(EvalBundle(
+        predictions=preds_r, receipts=test, fields=config.fields,
+    ))
     out_dir = Path(paths.yolo).parent.parent
     with open(out_dir / "pipeline_metrics.json", "w") as f:
         json.dump({

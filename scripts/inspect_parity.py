@@ -4,11 +4,8 @@ from __future__ import annotations
 import argparse
 import json
 import logging
-import os
-from pathlib import Path
 
 from core.config import load_config
-from core.types import PipelinePaths
 from data.sroie import download_sroie, load_or_create_split
 from models.pipeline_eval import eval_pipeline
 
@@ -18,16 +15,10 @@ log = logging.getLogger("inspect")
 def _run_parity(args: argparse.Namespace) -> None:
     config = load_config(args.config)
     data_path = download_sroie(config)
-    split_cache = Path(config.output_dir) / "split.json"
-    data = load_or_create_split(data_path, config.seed, split_cache)
+    data = load_or_create_split(config, data_path)
     receipts = getattr(data, args.split)
-    paths = PipelinePaths(
-        yolo=os.path.join(config.output_dir, "yolo", "run", "weights", "best.pt"),
-        trocr=os.path.join(config.output_dir, "trocr"),
-        assigner=os.path.join(config.output_dir, "assigner.pt"),
-    )
     log.info("Running eval_pipeline on %d %s receipts...", len(receipts), args.split)
-    pm = eval_pipeline(paths, receipts, config)
+    pm = eval_pipeline(config, receipts)
     report = {
         "split": args.split,
         "assigner_global_f1": pm.assigner.global_f1,
