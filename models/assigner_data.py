@@ -25,7 +25,9 @@ if TYPE_CHECKING:
 Group = tuple["Tensor", "Tensor", "Tensor", dict[int, list[int]]]
 
 
-def _encode_regions(proc: Any, trocr: Any, regions: list[Crop], device: str) -> Tensor:
+def _encode_regions(
+    proc: Any, trocr: Any, regions: list[Crop], device: str, feat_dim: int,
+) -> Tensor:
     feats: list[Tensor] = []
     for crop in regions:
         img = Image.open(crop.image_path).convert("RGB")
@@ -37,17 +39,20 @@ def _encode_regions(proc: Any, trocr: Any, regions: list[Crop], device: str) -> 
         pv = proc(images=region, return_tensors="pt").pixel_values.to(device)
         feat = trocr.encoder(pv).last_hidden_state.mean(dim=1)
         feats.append(feat.cpu())
-    return torch.cat(feats, dim=0) if feats else torch.zeros(0, 768)
+    return torch.cat(feats, dim=0) if feats else torch.zeros(0, feat_dim)
 
 
 def _prepare_groups(
     data: AssignerData, field_to_idx: dict[str, int], device: str,
-) -> list[Group]:
+) -> tuple[list[Group], int]:
     """Encode every region once per receipt → list of training groups.
 
-    Each group is ``(feats (N, 768), bboxes (N, 4), priors (N, n_text_priors),
-    targets {field_idx: [positive_region_idxs]})``. The assigner enriches the
-    bbox to 8-d at forward time, so we store the 4-d form here.
+    Each group is ``(feats (N, D), bboxes (N, 4), priors (N, n_text_priors),
+    targets {field_idx: [positive_region_idxs]})`` where D is the TrOCR
+    encoder hidden size (384 for trocr-small, 768 for trocr-base). The
+    assigner enriches the bbox to 8-d at forward time, so we store the
+    4-d form here. Returns ``(groups, feat_dim)`` so the caller can
+    construct ``AttentionAssigner(text_feat_dim=feat_dim)``.
     """
     if not data.regions:
         raise TrainError("AssignerData.regions is empty — cannot train assigner.")
@@ -55,12 +60,13 @@ def _prepare_groups(
     proc = TrOCRProcessor.from_pretrained(data.trocr_path)
     trocr = VisionEncoderDecoderModel.from_pretrained(data.trocr_path).to(device)
     trocr.eval()
+    feat_dim: int = trocr.config.encoder.hidden_size
     prepared: list[Group] = []
     with torch.no_grad():
         for regions in data.regions:
             if not regions:
                 continue
-            feats = _encode_regions(proc, trocr, regions, device)
+            feats = _encode_regions(proc, trocr, regions, device, feat_dim)
             if feats.shape[0] == 0:
                 continue
             bboxes = torch.tensor([list(r.bbox) for r in regions], dtype=torch.float32)
@@ -76,7 +82,7 @@ def _prepare_groups(
                 prepared.append((feats, bboxes, priors, targets))
     if not prepared:
         raise TrainError("No valid labeled receipts for assigner training.")
-    return prepared
+    return prepared, feat_dim
 
 
 def split_train_val(prepared: list[Group], seed: int) -> tuple[list[Group], list[Group]]:

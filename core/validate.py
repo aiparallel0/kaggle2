@@ -25,6 +25,7 @@ def validate_f1(metrics: Metrics, arch: str) -> None:
         )
     if arch == "pipeline" and f1 == 0.0:
         raise EvalError(
-            "Pipeline F1=0.0 — YOLO imgsz mismatch (Bug 5) "
-            "or TrOCR undertrained (Bug 6).",
+            "Pipeline F1=0.0 — YOLO imgsz mismatch (Bug 5), "
+            "TrOCR undertrained (Bug 6), or stale generation_config "
+            "decoder_start_token_id (Bug 9).",
         )

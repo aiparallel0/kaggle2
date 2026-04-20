@@ -43,6 +43,7 @@ def _architecture_config(model: AttentionAssigner) -> dict[str, int]:
         "n_heads": model.n_heads,
         "n_layers": model.n_layers,
         "n_text_priors": model.n_text_priors,
+        "text_feat_dim": model.text_feat_dim,
     }
 
 
@@ -56,6 +57,7 @@ def save_assigner(model: AttentionAssigner, path: str) -> None:
 
 def _load_assigner(
     path: str, n_fields: int | None = None, hidden_dim: int | None = None,
+    text_feat_dim: int | None = None,
 ) -> AttentionAssigner:
     """Load an ``AttentionAssigner`` from ``path``.
 
@@ -81,17 +83,20 @@ def _load_assigner(
         cfg = {
             "hidden_dim": int(fq.shape[1]), "n_fields": int(fq.shape[0]),
             "n_heads": DEFAULT_N_HEADS, "n_layers": DEFAULT_N_LAYERS,
-            "n_text_priors": N_TEXT_PRIORS,
+            "n_text_priors": N_TEXT_PRIORS, "text_feat_dim": 768,
         }
     if n_fields is not None:
         cfg["n_fields"] = n_fields
     if hidden_dim is not None:
         cfg["hidden_dim"] = hidden_dim
+    if text_feat_dim is not None:
+        cfg["text_feat_dim"] = text_feat_dim
     m = AttentionAssigner(
         hidden_dim=cfg["hidden_dim"], n_fields=cfg["n_fields"],
         n_heads=cfg.get("n_heads", DEFAULT_N_HEADS),
         n_layers=cfg.get("n_layers", DEFAULT_N_LAYERS),
         n_text_priors=cfg.get("n_text_priors", N_TEXT_PRIORS),
+        text_feat_dim=cfg.get("text_feat_dim", 768),
     )
     m.load_state_dict(sd)
     return m
