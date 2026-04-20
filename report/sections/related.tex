@@ -1,0 +1,27 @@
+\section{Related Work}
+
+\textbf{Document understanding.}
+LayoutLM~\cite{xu2020layoutlm} and its successors~\cite{xu2021layoutlmv2,huang2022layoutlmv3}
+combine OCR tokens with 2-D positional embeddings in a BERT-style encoder.
+BROS~\cite{hong2022bros} adds relative spatial attention.
+These models require an external OCR step; DONUT~\cite{kim2022donut}
+eliminates it entirely.
+
+\textbf{Text recognition.}
+TrOCR~\cite{li2023trocr} applies a ViT encoder and language-model
+decoder to cropped text-line images, achieving state-of-the-art
+printed-text accuracy on standard benchmarks.
+
+\textbf{Object detection.}
+YOLOv8~\cite{jocher2023yolov8} provides real-time bounding-box
+detection; Swin Transformer~\cite{liu2021swin} serves as a stronger
+backbone alternative.
+
+\textbf{Sequence-to-sequence pre-training.}
+BART~\cite{lewis2020bart} and T5~\cite{raffel2020t5} established the
+paradigm; DONUT adapts it to document images without OCR.
+
+\textbf{SROIE.}
+Introduced at ICDAR 2019~\cite{huang2019icdar}, SROIE provides 626
+receipt images with character-level bounding boxes and four KIE fields.
+WildReceipt~\cite{sun2021wildreceipt} extends to in-the-wild scenarios.

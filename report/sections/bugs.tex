@@ -1,0 +1,22 @@
+\section{F1-Destroying Bugs and Fixes}
+
+We identified seven implementation bugs that silently degrade F1:
+
+\begin{enumerate}
+\item \textbf{lm\_head deduplication} (F1 $\approx$ 0.42): safetensors
+  drops the tied weight on reload. Fix: \texttt{tie\_word\_embeddings=False}
+  + clone before every checkpoint save.
+\item \textbf{Wrong decoder\_start\_token\_id} (F1 = 0.00): string-form
+  tokeniser returns the ID of \texttt{<} not the full special token.
+  Fix: always use list form.
+\item \textbf{token2json returns list} (F1 $\approx$ 0.008): CORD-style
+  multi-page output. Fix: merge pages into a single dict.
+\item \textbf{fp16 overflow} (loss NaN): use bf16 on Ampere+, fp16 with
+  \texttt{max\_grad\_norm} otherwise.
+\item \textbf{YOLO imgsz mismatch} (0\% detection): inference defaults
+  to 640; if training used 512, zero boxes are produced.
+\item \textbf{TrOCR undertrained} (all empty): val\_loss~$\approx$~9.1 at
+  1 epoch; requires $\geq$5 epochs.
+\item \textbf{Val\,==\,Test leakage}: physically separate val and test
+  splits.
+\end{enumerate}

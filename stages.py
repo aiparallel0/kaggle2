@@ -16,7 +16,7 @@ from models.donut_train import train_donut
 from models.pipeline_eval import eval_pipeline
 from models.trocr_train import train_trocr
 from models.yolo_train import train_yolo
-from report.inject import inject_results
+from report.inject import expand_inputs, inject_results
 from report.pdflatex import compile_paper_pdf
 
 log = logging.getLogger("kaggle2")
@@ -138,6 +138,10 @@ def stage_paper(config: ExpConfig) -> None:
         metrics: dict[str, object] = json.load(f)
     with open(config.paper_template) as f:
         template = f.read()
+    # Inline \input{sections/...} before \VAR{} substitution — keeps the
+    # 166-LOC rule applicable to each section file while producing a single
+    # flat paper_filled.tex that tectonic can compile without extra paths.
+    template = expand_inputs(template, Path(config.paper_template).parent)
     filled = inject_results(template, metrics)
     tex_out = Path(config.paper_output)
     tex_out.parent.mkdir(parents=True, exist_ok=True)

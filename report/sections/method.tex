@@ -1,0 +1,40 @@
+\section{Methodology}
+
+\subsection{Dataset and Splits}
+We use the 626 SROIE images with a fixed seed-42 shuffle:
+500 training / 63 validation / 63 test (physically separate splits to
+prevent evaluation leakage).
+
+\subsection{DONUT}
+We fine-tune \texttt{naver-clova-ix/donut-base} for \VAR{epochs_donut}
+epochs with image resolution $\VAR{img_w} \times \VAR{img_h}$, batch
+size \VAR{batch_size}, learning rate \VAR{lr}, and label smoothing
+$\lambda = \VAR{label_smoothing}$. Seven implementation bugs were
+identified and fixed (Section~IV).
+
+\subsection{YOLO + TrOCR + Attention Assigner}
+YOLOv8n detects text regions at $\VAR{yolo_img_size} \times
+\VAR{yolo_img_size}$ (always passed explicitly at inference to prevent
+zero-detection mismatch). TrOCR transcribes each crop. A learned
+cross-attention assigner (Figure~\ref{fig:assigner}) maps region
+embeddings and bounding boxes to field logits.
+
+\begin{figure}[t]
+\centering
+\begin{tikzpicture}[
+  box/.style={draw,rounded corners,minimum width=1.8cm,minimum height=0.6cm,align=center},
+  arr/.style={-Stealth}
+]
+\node[box] (trocr) {TrOCR\\encoder};
+\node[box,right=0.6cm of trocr] (proj) {Linear\\768→64};
+\node[box,below=0.4cm of proj] (bbox) {BBox\\Linear\\4→64};
+\node[box,right=0.6cm of proj] (attn) {MHA\\(4 heads)};
+\node[box,right=0.6cm of attn] (cls) {Linear\\→1};
+\draw[arr] (trocr) -- (proj);
+\draw[arr] (bbox) -- (proj.south);
+\draw[arr] (proj) -- (attn);
+\draw[arr] (attn) -- (cls);
+\end{tikzpicture}
+\caption{Attention assigner architecture ($\approx$50\,K parameters).}
+\label{fig:assigner}
+\end{figure}

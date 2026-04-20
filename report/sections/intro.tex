@@ -1,0 +1,15 @@
+\section{Introduction}
+Receipt Key Information Extraction (KIE) — recovering structured
+fields such as merchant name, date, address, and total from scanned
+receipts — underpins downstream financial automation. Two paradigms
+have emerged: (i) end-to-end vision-language models that treat KIE as
+image-conditioned text generation~\cite{kim2022donut}, and (ii)
+detect-then-read pipelines that first locate text regions with an
+object detector~\cite{jocher2023yolov8} and then transcribe each
+region with a specialised OCR model~\cite{li2023trocr}.
+
+The central question this paper asks is: \emph{does the added
+modularity of a pipeline justify its lower end-to-end F1, and can a
+learned field assigner close the gap?} We answer on the SROIE
+dataset~\cite{huang2019icdar}, which provides 626 labelled receipt
+images with four ground-truth fields per image.
