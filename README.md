@@ -49,6 +49,29 @@ scripts/      vastai_bootstrap.sh — one-shot install+check
 main.py       orchestrator (--stage train | eval | paper | all)
 ```
 
+## Demo — see it work in a browser
+
+One command, no training required:
+
+```bash
+pip install -r requirements.txt
+make serve            # → http://localhost:8000
+```
+
+Drop a receipt image onto the page; DONUT returns `company`, `date`,
+`address`, `total`. If `results/donut/` exists the fine-tuned checkpoint
+is used; otherwise the server falls back to `config.base_model` and the
+page shows a clear banner that predictions will be poor until training
+finishes. `GET /health` reports which is loaded.
+
+Endpoints:
+
+| Route | Purpose |
+|---|---|
+| `GET  /`        | Drag-and-drop upload UI (single HTML page, no build step). |
+| `POST /predict` | multipart `file` → `{"fields": {...}, "model_source": ...}`. |
+| `GET  /health`  | `{"model_loaded": bool, "model_source": "finetuned"\|"base", ...}`. |
+
 ## Quick start (vast.ai — three copy-pastes)
 
 1. Rent a **PyTorch** instance with **≥24 GB GPU** (RTX 4090, 3090, A6000,
