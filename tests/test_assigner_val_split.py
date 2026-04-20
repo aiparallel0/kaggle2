@@ -50,11 +50,12 @@ def test_train_assigner_saves_best_by_val() -> None:
 def test_split_train_val_is_deterministic_and_nonempty() -> None:
     """_split_train_val must be reproducible and produce a non-empty val."""
     torch = pytest.importorskip("torch")
-    # Fabricate 20 tiny prepared groups (feats, bboxes, targets).
+    # Fabricate 20 tiny prepared groups (feats, bboxes, priors, targets).
     prepared = [
         (
             torch.zeros(3, 768),
             torch.zeros(3, 4),
+            torch.zeros(3, 6),
             {0: [0], 1: [1], 2: [2]},
         )
         for _ in range(20)
@@ -81,7 +82,7 @@ def test_split_train_val_handles_singleton() -> None:
     """With one prepared group, both sides degenerate to that single group
     — training still runs, but the val signal is just train loss."""
     torch = pytest.importorskip("torch")
-    prepared = [(torch.zeros(1, 768), torch.zeros(1, 4), {0: [0]})]
+    prepared = [(torch.zeros(1, 768), torch.zeros(1, 4), torch.zeros(1, 6), {0: [0]})]
     train, val = assigner_train._split_train_val(prepared, seed=0)  # type: ignore[attr-defined]
     assert len(train) == 1 and len(val) == 1
 
@@ -92,7 +93,8 @@ def test_different_seeds_produce_different_splits() -> None:
     → same split, different seeds → likely different splits."""
     torch = pytest.importorskip("torch")
     prepared = [
-        (torch.zeros(2, 768), torch.zeros(2, 4), {0: [0]}) for _ in range(50)
+        (torch.zeros(2, 768), torch.zeros(2, 4), torch.zeros(2, 6), {0: [0]})
+        for _ in range(50)
     ]
     _, v_a = assigner_train._split_train_val(prepared, seed=1)  # type: ignore[attr-defined]
     _, v_b = assigner_train._split_train_val(prepared, seed=2)  # type: ignore[attr-defined]

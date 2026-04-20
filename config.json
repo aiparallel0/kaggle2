@@ -4,7 +4,7 @@
   "trocr_model": "microsoft/trocr-base-printed",
   "yolo_model": "yolov8n.pt",
   "image_size": [1280, 960],
-  "yolo_img_size": 512,
+  "yolo_img_size": 1024,
   "max_length": 256,
   "trocr_max_len": 128,
   "epochs_donut": 30,
@@ -22,7 +22,7 @@
   "weight_decay": 0.01,
   "label_smoothing": 0.0,
   "precision": "bf16",
-  "epochs_assigner": 20,
+  "epochs_assigner": 30,
   "patience": 10,
   "max_grad_norm": 1.0,
   "expected_f1_warn": 0.75,
@@ -41,5 +41,5 @@
   "paper_output": "./report/paper_filled.tex",
   "yolo_conf": 0.25,
   "trocr_max_new_tokens": 64,
-  "max_regions_per_image": 32
+  "max_regions_per_image": 96
 }
