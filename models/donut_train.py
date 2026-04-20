@@ -9,7 +9,7 @@ from typing import Any
 
 from core.metrics import token_f1
 from core.types import DataSplit, ExpConfig, Receipt
-from models.donut_eval import _flatten_token2json
+from models.donut_parse import _flatten_token2json
 
 try:
     import numpy as np

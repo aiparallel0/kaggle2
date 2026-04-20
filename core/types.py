@@ -132,4 +132,13 @@ class ExpConfig:
     gradient_checkpointing: bool = True
     num_beams: int = 4
     expected_f1_warn: float = 0.75
+    skip_donut: bool = False
+    assigner_hidden: int = 192
+    assigner_n_layers_level2: int = 3
+    emit_hidden: int = 128
+    emit_vocab_size: int = 259
+    emit_max_len: int = 96
+    emit_beam_width: int = 4
+    kd_attn_weight: float = 0.0
+    kd_logits_weight: float = 0.0
     extra: dict[str, object] = field(default_factory=dict)

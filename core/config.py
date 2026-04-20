@@ -39,6 +39,10 @@ def load_config(path: str, defaults: dict[str, Any] | None = None) -> ExpConfig:
         "yolo_conf", "trocr_max_new_tokens", "max_regions_per_image",
         "warmup_ratio", "lr_scheduler_type", "gradient_checkpointing",
         "num_beams", "expected_f1_warn",
+        "skip_donut",
+        "assigner_hidden", "assigner_n_layers_level2",
+        "emit_hidden", "emit_vocab_size", "emit_max_len", "emit_beam_width",
+        "kd_attn_weight", "kd_logits_weight",
     }
     known = set(_REQUIRED) | _optional
     extra = {k: v for k, v in raw.items() if k not in known}
@@ -82,5 +86,14 @@ def load_config(path: str, defaults: dict[str, Any] | None = None) -> ExpConfig:
         gradient_checkpointing=bool(raw.get("gradient_checkpointing", True)),
         num_beams=int(raw.get("num_beams", 4)),
         expected_f1_warn=float(raw.get("expected_f1_warn", 0.75)),
+        skip_donut=bool(raw.get("skip_donut", False)),
+        assigner_hidden=int(raw.get("assigner_hidden", 192)),
+        assigner_n_layers_level2=int(raw.get("assigner_n_layers_level2", 3)),
+        emit_hidden=int(raw.get("emit_hidden", 128)),
+        emit_vocab_size=int(raw.get("emit_vocab_size", 259)),
+        emit_max_len=int(raw.get("emit_max_len", 96)),
+        emit_beam_width=int(raw.get("emit_beam_width", 4)),
+        kd_attn_weight=float(raw.get("kd_attn_weight", 0.0)),
+        kd_logits_weight=float(raw.get("kd_logits_weight", 0.0)),
         extra=extra,
     )
