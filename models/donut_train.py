@@ -48,7 +48,7 @@ def _prepare_model(config: ExpConfig) -> tuple[Any, Any]:
     # whether to re-tie weights on resize.
     model.config.tie_word_embeddings = False
     model.config.decoder.tie_word_embeddings = False
-    model.decoder.resize_token_embeddings(len(proc.tokenizer))
+    model.decoder.resize_token_embeddings(len(proc.tokenizer), mean_resizing=False)
     # Clone unconditionally so even if the model tied weights internally during
     # resize, lm_head.weight is now a distinct tensor with a unique data_ptr();
     # safetensors identifies duplicates by data_ptr() and would otherwise drop
@@ -112,6 +112,7 @@ def _build_args(config: ExpConfig, out_dir: str) -> Seq2SeqTrainingArguments:
         label_smoothing_factor=config.label_smoothing,
         gradient_checkpointing=config.gradient_checkpointing,
         save_strategy="epoch", eval_strategy="epoch",
+        save_total_limit=2,
         load_best_model_at_end=True,
         metric_for_best_model="eval_f1", greater_is_better=True,
         predict_with_generate=True, generation_num_beams=config.num_beams,
