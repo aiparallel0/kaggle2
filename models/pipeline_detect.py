@@ -50,12 +50,29 @@ def _detect_and_read(
 
     Boxes are sorted top→bottom so downstream heuristics (rule_based,
     multi-line address concatenation) can assume reading order. Regions
-    failing :func:`_is_usable_region` are silently dropped.
+    failing :func:`_is_usable_region` are silently dropped. A single
+    pathological crop that makes TrOCR raise (out-of-memory on a huge
+    region, generate-time assertion on an empty pixel tensor, …) is
+    skipped rather than aborting the whole receipt — one bad box
+    shouldn't cost us the other 40 lines of text on the same scan.
     """
     results = yolo.predict(
         img_path, imgsz=yolo_img, conf=cfg.yolo_conf, verbose=False,
     )
-    boxes = results[0].boxes.xyxyn.cpu().tolist() if results[0].boxes else []
+    # ``results`` is typically a one-element list for a single image, but
+    # ultralytics has shipped builds that return an empty list on total
+    # detector failure. Guard both cases explicitly.
+    first = results[0] if results else None
+    # ``first.boxes`` is a ``Boxes`` container that is *always* truthy even
+    # when empty; use an explicit length check so a detection-miss scan
+    # falls through to the full-image fallback instead of iterating an
+    # empty tensor-view and producing junk coordinates.
+    has_boxes = (
+        first is not None
+        and getattr(first, "boxes", None) is not None
+        and len(first.boxes) > 0
+    )
+    boxes = first.boxes.xyxyn.cpu().tolist() if has_boxes else []
     boxes.sort(key=lambda b: b[1])
     texts: list[str] = []
     feats: list[torch.Tensor] = []
@@ -66,10 +83,15 @@ def _detect_and_read(
         crop = img.crop((int(x1 * w), int(y1 * h), int(x2 * w), int(y2 * h)))
         if crop.width < 1 or crop.height < 1:
             continue
-        pv = trocr_proc(images=crop, return_tensors="pt").pixel_values.to(device)
-        enc = trocr_model.encoder(pv).last_hidden_state
-        out = trocr_model.generate(pv, max_new_tokens=cfg.trocr_max_new_tokens)
-        txt = trocr_proc.batch_decode(out, skip_special_tokens=True)[0]
+        try:
+            pv = trocr_proc(images=crop, return_tensors="pt").pixel_values.to(device)
+            enc = trocr_model.encoder(pv).last_hidden_state
+            out = trocr_model.generate(pv, max_new_tokens=cfg.trocr_max_new_tokens)
+            txt = trocr_proc.batch_decode(out, skip_special_tokens=True)[0]
+        except (RuntimeError, ValueError):
+            # CUDA OOM, assertion-tripped generate, or preprocessor reject
+            # on a degenerate crop — drop this region, keep the receipt.
+            continue
         if not _is_usable_region(txt):
             continue
         texts.append(txt)
