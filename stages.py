@@ -4,9 +4,11 @@ from __future__ import annotations
 import json
 import logging
 import os
+import statistics
 from pathlib import Path
 
 from core.errors import EvalError, TrainError
+from core.seed import seed_everything
 from core.types import AssignerData, DataSplit, ExpConfig, Metrics, PipelineResult
 from core.validate import validate_f1
 from data.sroie import download_sroie, extract_crops, extract_receipt_regions, load_or_create_split
@@ -130,25 +132,46 @@ def _combined_metrics(
     return out
 
 
-def stage_eval(config: ExpConfig) -> None:
+def stage_eval(config: ExpConfig, seeds: list[int] | None = None) -> None:
+    """Run eval across one or more seeds; aggregate mean/std when ``seeds`` has
+    more than one entry. Keeps the legacy single-seed keys for backwards
+    compatibility with the paper's ``\\VAR{}`` substitution.
+    """
     log.info("=== Stage: eval ===")
     data_path = download_sroie(config)
     data = load_or_create_split(config, data_path)
-    dm = _eval_donut_or_skip(config, data)
-    log.info("DONUT F1=%.4f", dm.global_f1)
-    pm = eval_pipeline(config, data.test)
-    validate_f1(pm.assigner, "pipeline")
-    _warn_below_expected(pm.assigner, config, "pipeline")
-    log.info("Pipeline (assigner)  F1=%.4f", pm.assigner.global_f1)
-    log.info("Pipeline (rulebased) F1=%.4f", pm.rulebased.global_f1)
-    # Also run rule-based on gold OCR so the paper's "Rule-based (gold OCR)"
-    # row has a real number in full-pipeline mode too — this is a legitimate
-    # ablation (assignment heuristic quality in isolation from OCR noise).
-    rb_gold = eval_rulebased_gold(config, data.test)
-    log.info("Rule-based (gold OCR) F1=%.4f", rb_gold.global_f1)
+    run_seeds = seeds if seeds else [config.seed]
+    donut_f1s: list[float] = []
+    pipeline_f1s: list[float] = []
+    last: dict[str, object] = {}
+    for seed in run_seeds:
+        if len(run_seeds) > 1:
+            log.info("--- Eval seed=%d ---", seed)
+        seed_everything(seed)
+        dm = _eval_donut_or_skip(config, data)
+        log.info("DONUT F1=%.4f", dm.global_f1)
+        pm = eval_pipeline(config, data.test)
+        validate_f1(pm.assigner, "pipeline")
+        _warn_below_expected(pm.assigner, config, "pipeline")
+        log.info("Pipeline (assigner)  F1=%.4f", pm.assigner.global_f1)
+        log.info("Pipeline (rulebased) F1=%.4f", pm.rulebased.global_f1)
+        # Also run rule-based on gold OCR so the paper's "Rule-based (gold OCR)"
+        # row has a real number in full-pipeline mode too — this is a legitimate
+        # ablation (assignment heuristic quality in isolation from OCR noise).
+        rb_gold = eval_rulebased_gold(config, data.test)
+        log.info("Rule-based (gold OCR) F1=%.4f", rb_gold.global_f1)
+        donut_f1s.append(dm.global_f1)
+        pipeline_f1s.append(pm.assigner.global_f1)
+        last = _combined_metrics(config, dm, pm, rb_gold)
+    if len(run_seeds) >= 2:
+        last["donut_f1_mean"] = round(statistics.fmean(donut_f1s), 4)
+        last["donut_f1_std"] = round(statistics.stdev(donut_f1s), 4)
+        last["pipeline_f1_mean"] = round(statistics.fmean(pipeline_f1s), 4)
+        last["pipeline_f1_std"] = round(statistics.stdev(pipeline_f1s), 4)
+    last["seeds_used"] = list(run_seeds)
     Path(config.output_dir).mkdir(parents=True, exist_ok=True)
     with open(os.path.join(config.output_dir, "combined_metrics.json"), "w") as f:
-        json.dump(_combined_metrics(config, dm, pm, rb_gold), f, indent=2)
+        json.dump(last, f, indent=2)
 
 
 def stage_eval_rulebased_gold(config: ExpConfig) -> None:

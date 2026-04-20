@@ -1,6 +1,10 @@
 \section{Discussion and Limitations}
+\label{sec:discussion}
 
 The 63-image test split is small; confidence intervals span
-$\pm$0.05 F1. All results use a single seed (42); multi-seed
-evaluation is left for future work. We do not compare against the
-official SROIE leaderboard, which uses a different evaluation protocol.
+$\pm$0.05 F1. Evaluation is run across \VAR{seeds_used} seeds (see
+Section~VI) and we report mean $\pm$ standard deviation across seeds
+in the main results table when more than one seed is available; the
+absolute F1 differences between architectures remain within
+single-seed noise. We do not compare against the official SROIE
+leaderboard, which uses a different evaluation protocol.

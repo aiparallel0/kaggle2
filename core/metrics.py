@@ -1,7 +1,56 @@
 """Shared metric computation: token-F1, NED, EM — used by both eval modules."""
 from __future__ import annotations
 
+from typing import TypedDict
+
 from core.types import EvalBundle, Metrics
+
+
+class CombinedMetrics(TypedDict, total=False):
+    """Typed view of ``results/combined_metrics.json``.
+
+    Single source of truth for every number surfaced in the paper via
+    ``\\VAR{}`` substitution. ``total=False`` because keys are populated
+    incrementally (e.g. multi-seed mean/std only appear when the
+    ``--seeds`` harness aggregates more than one run).
+    """
+
+    donut_f1: float
+    donut_ned: float
+    donut_em: float
+    pipeline_f1: float
+    pipeline_ned: float
+    pipeline_em: float
+    rulebased_f1: float
+    rulebased_ned: float
+    rulebased_gold_f1: float
+    rulebased_gold_ned: float
+    f1_gap: float
+    assigner_delta: float
+    donut_f1_company: float
+    donut_f1_date: float
+    donut_f1_address: float
+    donut_f1_total: float
+    rulebased_f1_company: float
+    rulebased_f1_date: float
+    rulebased_f1_address: float
+    rulebased_f1_total: float
+    epochs_donut: int
+    epochs_trocr: int
+    epochs_yolo: int
+    batch_size: int
+    lr: float
+    precision: str
+    label_smoothing: float
+    yolo_img_size: int
+    img_w: int
+    img_h: int
+    artifact_mode: str
+    donut_f1_mean: float
+    donut_f1_std: float
+    pipeline_f1_mean: float
+    pipeline_f1_std: float
+    seeds_used: list[int]
 
 
 def edit_distance(a: str, b: str) -> int:

@@ -26,7 +26,8 @@ the SROIE receipt benchmark: an end-to-end sequence-to-sequence model
 (DONUT) and a detect-then-read pipeline (YOLOv8 + TrOCR + learned
 attention assigner). Training on 500 receipts and evaluating on a
 held-out 63-image test split, DONUT achieves a global F1 of
-\VAR{donut_f1} versus the pipeline's \VAR{pipeline_f1}. Our attention
+\VAR{donut_f1} versus the pipeline's \VAR{pipeline_f1} --- a
+difference within single-seed noise. Our attention
 assigner, a 50\,K-parameter cross-attention module, closes the F1 gap
 relative to rule-based assignment by \VAR{assigner_delta} absolute
 points. We document seven previously unreported implementation bugs

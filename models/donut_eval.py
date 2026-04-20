@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from pathlib import Path
 from typing import Any
 
@@ -17,7 +18,61 @@ try:
 except ImportError:  # lightweight CI — torch/transformers not installed
     pass
 
-__all__ = ["eval_donut", "_token2json_safe"]
+__all__ = ["eval_donut", "_token2json_safe", "normalize_total"]
+
+_CURRENCY_RE = re.compile(r"(?:\brm|\busd|\bmyr)\.?\s*", re.IGNORECASE)
+_CURRENCY_SYMS = ("$", "₹", "€", "£")
+_THOUSANDS_RE = re.compile(r"^\d{1,3}(,\d{3})+(\.\d{1,2})?$")
+_NUMERIC_TOKEN_RE = re.compile(r"^\d+(\.\d{1,2})?$")
+
+
+def normalize_total(s: str) -> str:
+    """Deterministically normalize a SROIE ``TOTAL``-field string.
+
+    Applied symmetrically to DONUT predictions and ground-truth at eval
+    time so the metric measures semantic match, not formatting. Strips
+    ``RM``/``USD``/``MYR``/``$``/``₹``/``€``/``£`` prefixes, drops
+    thousand separators, keeps the **last** numeric token when the string
+    contains multiple candidates (receipt totals tend to appear last,
+    e.g. ``"TOTAL 43.50 CASH 50.00"``), and normalizes to two decimals
+    when parsing succeeds (``"12.5"`` → ``"12.50"``).
+    """
+    if not s:
+        return s
+    t = _CURRENCY_RE.sub("", s)
+    for sym in _CURRENCY_SYMS:
+        t = t.replace(sym, "")
+    t = t.strip()
+    if _THOUSANDS_RE.match(t):
+        t = t.replace(",", "")
+    tokens = [tok for tok in t.split() if _NUMERIC_TOKEN_RE.match(tok)]
+    if tokens:
+        t = tokens[-1]
+    try:
+        return f"{float(t):.2f}"
+    except ValueError:
+        return t
+
+
+def _apply_total_normalizer(preds: list[Prediction], gts: list[Receipt]) -> tuple[
+    list[Prediction], list[Receipt],
+]:
+    """Return normalized copies with ``total`` fields passed through
+    :func:`normalize_total` — preds and GT both, so the metric is symmetric."""
+    def _norm_fields(fs: list[Field]) -> list[Field]:
+        out: list[Field] = []
+        for fld in fs:
+            if fld.name.lower() == "total":
+                out.append(Field(name=fld.name, value=normalize_total(fld.value)))
+            else:
+                out.append(fld)
+        return out
+
+    n_preds = [Prediction(receipt_id=p.receipt_id, fields=_norm_fields(p.fields))
+               for p in preds]
+    n_gts = [Receipt(image_path=r.image_path, fields=_norm_fields(r.fields))
+             for r in gts]
+    return n_preds, n_gts
 
 
 def _load(model_path: str) -> tuple[Any, Any, str]:
@@ -87,8 +142,12 @@ def eval_donut(config: ExpConfig, test: list[Receipt]) -> Metrics:
             parsed = _token2json_safe(processor, tokens)
             fields = [Field(name=k, value=v) for k, v in parsed.items()]
             predictions.append(Prediction(receipt_id=rec.image_path.stem, fields=fields))
+    # Symmetric numeric normalization for the TOTAL field (DONUT only):
+    # matches the paper's "normalized numeric comparison for the Total field"
+    # so F1/EM/NED measure semantic match rather than incidental formatting.
+    norm_preds, norm_test = _apply_total_normalizer(predictions, test)
     metrics = compute_metrics(EvalBundle(
-        predictions=predictions, receipts=test, fields=config.fields,
+        predictions=norm_preds, receipts=norm_test, fields=config.fields,
     ))
     out_dir = os.path.dirname(model_path)
     with open(os.path.join(out_dir, "donut_metrics.json"), "w") as f:

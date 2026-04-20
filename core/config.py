@@ -54,6 +54,7 @@ def load_config(path: str, defaults: dict[str, Any] | None = None) -> ExpConfig:
         "assigner_hidden", "assigner_n_layers_level2",
         "emit_hidden", "emit_vocab_size", "emit_max_len", "emit_beam_width",
         "kd_attn_weight", "kd_logits_weight",
+        "assigner_patience", "assigner_min_delta",
     }
     known = set(_REQUIRED) | _optional
     extra = {k: v for k, v in raw.items() if k not in known}
@@ -106,5 +107,7 @@ def load_config(path: str, defaults: dict[str, Any] | None = None) -> ExpConfig:
         emit_beam_width=int(raw.get("emit_beam_width", 4)),
         kd_attn_weight=float(raw.get("kd_attn_weight", 0.0)),
         kd_logits_weight=float(raw.get("kd_logits_weight", 0.0)),
+        assigner_patience=int(raw.get("assigner_patience", 7)),
+        assigner_min_delta=float(raw.get("assigner_min_delta", 1e-3)),
         extra=extra,
     )

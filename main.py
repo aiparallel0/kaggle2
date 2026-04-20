@@ -9,6 +9,10 @@ from core.seed import seed_everything
 from stages import stage_eval, stage_eval_rulebased_gold, stage_paper, stage_train
 
 
+def _parse_seeds(value: str) -> list[int]:
+    return [int(s) for s in value.split(",") if s.strip()]
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="kaggle2 KIE pipeline")
     parser.add_argument(
@@ -23,6 +27,12 @@ def main() -> None:
         help="Skip DONUT training/eval (Phase 1 / vast.ai pipeline-only run). "
         "Overrides the 'skip_donut' key in config.json. Requires kd_*_weight=0.",
     )
+    parser.add_argument(
+        "--seeds",
+        default="",
+        help="Comma-separated seeds for the eval stage multi-seed harness "
+        "(e.g. '42,123,2024'). Default = single run with config.seed.",
+    )
     parser.add_argument("--log-level", default="INFO")
     args = parser.parse_args()
     logging.basicConfig(
@@ -32,11 +42,12 @@ def main() -> None:
     config = load_config(args.config)
     if args.skip_donut:
         config.skip_donut = True
+    seeds = _parse_seeds(args.seeds) if args.seeds else None
     seed_everything(config.seed)
     if args.stage in ("train", "all"):
         stage_train(config)
     if args.stage in ("eval", "all"):
-        stage_eval(config)
+        stage_eval(config, seeds=seeds)
     if args.stage == "eval_rulebased_gold":
         stage_eval_rulebased_gold(config)
     if args.stage in ("paper", "all"):
