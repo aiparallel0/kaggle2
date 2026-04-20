@@ -6,13 +6,15 @@ import logging
 
 from core.config import load_config
 from core.seed import seed_everything
-from stages import stage_eval, stage_paper, stage_train
+from stages import stage_eval, stage_eval_rulebased_gold, stage_paper, stage_train
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="kaggle2 KIE pipeline")
     parser.add_argument(
-        "--stage", choices=["train", "eval", "paper", "all"], default="all",
+        "--stage",
+        choices=["train", "eval", "eval_rulebased_gold", "paper", "all"],
+        default="all",
     )
     parser.add_argument("--config", default="config.json")
     parser.add_argument(
@@ -35,6 +37,8 @@ def main() -> None:
         stage_train(config)
     if args.stage in ("eval", "all"):
         stage_eval(config)
+    if args.stage == "eval_rulebased_gold":
+        stage_eval_rulebased_gold(config)
     if args.stage in ("paper", "all"):
         stage_paper(config)
 
