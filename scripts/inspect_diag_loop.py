@@ -7,7 +7,7 @@ from typing import Any
 
 from core.types import ExpConfig, Field, PipelinePaths, Prediction, Receipt
 from models.attention_assign import text_priors
-from models.pipeline_assign import assign_learned
+from models.pipeline_assign import _assign_learned
 from models.pipeline_detect import _is_usable_region
 from models.rule_based import rule_based_assign
 
@@ -45,12 +45,12 @@ def load_pipeline_models(
     from transformers import TrOCRProcessor, VisionEncoderDecoderModel
     from ultralytics import YOLO
 
-    from models.attention_assign import load_assigner
+    from models.attention_assign import _load_assigner
 
     yolo = YOLO(paths.yolo)
     trocr_proc = TrOCRProcessor.from_pretrained(paths.trocr)
     trocr_model = VisionEncoderDecoderModel.from_pretrained(paths.trocr)
-    assigner = load_assigner(paths.assigner, n_fields=n_fields)
+    assigner = _load_assigner(paths.assigner, n_fields=n_fields)
     device = "cuda" if torch.cuda.is_available() else "cpu"
     trocr_model = trocr_model.to(device)
     assigner = assigner.to(device)
@@ -114,7 +114,7 @@ def inspect_receipt(
         bboxes = [[0.0, 0.0, 1.0, 1.0]]
         regions.append({"bbox": [0.0, 0.0, 1.0, 1.0], "text": full_text,
                         "_fallback": True, "usable": True})
-    learned = assign_learned(assigner, texts, feats, bboxes, config.fields, device)
+    learned = _assign_learned(assigner, texts, feats, bboxes, config.fields, device)
     rule = rule_based_assign(texts, bboxes)
     for r in regions[:3]:
         if r.get("usable"):

@@ -72,7 +72,7 @@ def extract_date(region_texts: list[str]) -> tuple[int, str] | None:
     return None
 
 
-def pick_company(
+def _pick_company(
     region_texts: list[str], bbox_list: list[list[float]], used: set[int],
 ) -> tuple[int, str] | None:
     """Top-most region that is not junk, a header, a date, or money."""
@@ -92,7 +92,7 @@ def pick_company(
     return None
 
 
-def pick_address(
+def _pick_address(
     region_texts: list[str], bbox_list: list[list[float]],
     used: set[int], company_y: float, total_y: float, date_y: float,
     max_lines: int = 6,

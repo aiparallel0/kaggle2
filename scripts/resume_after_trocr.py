@@ -52,7 +52,7 @@ def _remaining_train_steps(config: ExpConfig) -> None:
     """Run the train-stage steps that crashed short of: assigner + meta."""
     data_path = download_sroie(config)
     split_cache = Path(config.output_dir) / "split.json"
-    data = load_or_create_split(data_path, config.seed, split_cache)
+    data = load_or_create_split(config, data_path)
     log.info("Split cache %s → %d train / %d val / %d test",
              split_cache, len(data.train), len(data.val), len(data.test))
     crops = extract_crops(data.train, config.fields)

@@ -9,7 +9,7 @@ from typing import Any
 
 from core.config import load_config
 from core.metrics import compute_metrics
-from core.types import PipelinePaths, Prediction
+from core.types import EvalBundle, PipelinePaths, Prediction
 from data.sroie import download_sroie, load_or_create_split
 from scripts.inspect_diag_loop import inspect_receipt, load_pipeline_models
 
@@ -29,8 +29,7 @@ def _run_diagnose(args: argparse.Namespace) -> None:
 
     config = load_config(args.config)
     data_path = download_sroie(config)
-    split_cache = Path(config.output_dir) / "split.json"
-    data = load_or_create_split(data_path, config.seed, split_cache)
+    data = load_or_create_split(config, data_path)
     paths = _paths(config)
     yolo, proc, trocr, assigner, device = load_pipeline_models(paths, len(config.fields))
     meta_path = Path(config.output_dir) / "pipeline_meta.json"
@@ -65,8 +64,8 @@ def _run_diagnose(args: argparse.Namespace) -> None:
             preds_r.append(pred_r)
             out_receipts.append(dump)
 
-    m_r = compute_metrics(preds_r, subset, config.fields)
-    m_l = compute_metrics(preds_l, subset, config.fields)
+    m_r = compute_metrics(EvalBundle(predictions=preds_r, receipts=subset, fields=config.fields))
+    m_l = compute_metrics(EvalBundle(predictions=preds_l, receipts=subset, fields=config.fields))
     summary = {
         "n_receipts": n, "split": args.split,
         "avg_boxes_per_receipt": round(total_boxes / n, 2) if n else 0.0,

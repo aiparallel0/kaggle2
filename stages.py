@@ -7,7 +7,7 @@ import os
 from pathlib import Path
 
 from core.errors import EvalError, TrainError
-from core.types import AssignerData, DataSplit, ExpConfig, Metrics, PipelinePaths, PipelineResult
+from core.types import AssignerData, DataSplit, ExpConfig, Metrics, PipelineResult
 from core.validate import validate_f1
 from data.sroie import download_sroie, extract_crops, extract_receipt_regions, load_or_create_split
 from models.assigner_train import train_assigner
@@ -22,20 +22,25 @@ from report.pdflatex import compile_paper_pdf
 log = logging.getLogger("kaggle2")
 
 
-def _split_cache(config: ExpConfig) -> Path:
-    return Path(config.output_dir) / "split.json"
-
-
 def _write_pipeline_meta(config: ExpConfig) -> None:
     Path(config.output_dir).mkdir(parents=True, exist_ok=True)
     with open(os.path.join(config.output_dir, "pipeline_meta.json"), "w") as f:
         json.dump({"yolo_img_size": config.yolo_img_size}, f)
 
 
+def _warn_below_expected(metrics: Metrics, config: ExpConfig, arch: str) -> None:
+    """Soft-warn when F1 is below ``config.expected_f1_warn`` (not an error)."""
+    if metrics.global_f1 < config.expected_f1_warn:
+        log.warning(
+            "%s F1=%.4f below expected_f1_warn=%.2f (not an error).",
+            arch, metrics.global_f1, config.expected_f1_warn,
+        )
+
+
 def stage_train(config: ExpConfig) -> None:
     log.info("=== Stage: train ===")
     data_path = download_sroie(config)
-    data = load_or_create_split(data_path, config.seed, _split_cache(config))
+    data = load_or_create_split(config, data_path)
     log.info("Split: %d train / %d val / %d test",
              len(data.train), len(data.val), len(data.test))
     if config.skip_donut:
@@ -81,8 +86,9 @@ def _eval_donut_or_skip(config: ExpConfig, data: DataSplit) -> Metrics:
             f"DONUT checkpoint not found at {donut_model}. Either run train "
             "stage first, or set skip_donut=true for a Phase-1 pipeline-only run.",
         )
-    dm = eval_donut(donut_model, data.test, config)
-    validate_f1(dm.global_f1, "donut", config)
+    dm = eval_donut(config, data.test)
+    validate_f1(dm, "donut")
+    _warn_below_expected(dm, config, "donut")
     return dm
 
 
@@ -112,16 +118,12 @@ def _combined_metrics(config: ExpConfig, dm: Metrics, pm: PipelineResult) -> dic
 def stage_eval(config: ExpConfig) -> None:
     log.info("=== Stage: eval ===")
     data_path = download_sroie(config)
-    data = load_or_create_split(data_path, config.seed, _split_cache(config))
+    data = load_or_create_split(config, data_path)
     dm = _eval_donut_or_skip(config, data)
     log.info("DONUT F1=%.4f", dm.global_f1)
-    paths = PipelinePaths(
-        yolo=os.path.join(config.output_dir, "yolo", "run", "weights", "best.pt"),
-        trocr=os.path.join(config.output_dir, "trocr"),
-        assigner=os.path.join(config.output_dir, "assigner.pt"),
-    )
-    pm = eval_pipeline(paths, data.test, config)
-    validate_f1(pm.assigner.global_f1, "pipeline", config)
+    pm = eval_pipeline(config, data.test)
+    validate_f1(pm.assigner, "pipeline")
+    _warn_below_expected(pm.assigner, config, "pipeline")
     log.info("Pipeline (assigner)  F1=%.4f", pm.assigner.global_f1)
     log.info("Pipeline (rulebased) F1=%.4f", pm.rulebased.global_f1)
     Path(config.output_dir).mkdir(parents=True, exist_ok=True)

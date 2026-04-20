@@ -53,7 +53,7 @@ def postprocess_value(name: str, value: str) -> str:
     return out
 
 
-def assign_learned(
+def _assign_learned(
     assigner: AttentionAssigner, texts: list[str],
     feats: list[torch.Tensor], bboxes: list[list[float]],
     fields: list[str], device: str,

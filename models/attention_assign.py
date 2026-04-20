@@ -25,7 +25,7 @@ __all__ = [
     "DEFAULT_N_LAYERS",
     "N_TEXT_PRIORS",
     "AttentionAssigner",
-    "load_assigner",
+    "_load_assigner",
     "save_assigner",
     "text_priors",
 ]
@@ -54,7 +54,7 @@ def save_assigner(model: AttentionAssigner, path: str) -> None:
     )
 
 
-def load_assigner(
+def _load_assigner(
     path: str, n_fields: int | None = None, hidden_dim: int | None = None,
 ) -> AttentionAssigner:
     """Load an ``AttentionAssigner`` from ``path``.
@@ -63,6 +63,10 @@ def load_assigner(
     legacy bare-state-dict format. For the legacy format we infer
     ``hidden_dim`` / ``n_fields`` from the ``field_queries`` shape; all other
     architectural knobs fall back to the new defaults.
+
+    This helper is intentionally private (leading underscore): it is
+    consumed only by :mod:`models.pipeline_eval` and carries the legacy
+    shape-inference overrides that do not fit a 2-in/1-out contract.
     """
     blob = torch.load(path, map_location="cpu", weights_only=True)
     cfg: dict[str, int]

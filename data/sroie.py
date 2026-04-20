@@ -133,8 +133,15 @@ def split_sroie(data_path: Path, seed: int) -> DataSplit:
     return DataSplit(train=train, val=val, test=test)
 
 
-def load_or_create_split(data_path: Path, seed: int, cache: Path) -> DataSplit:
-    """Reuse the saved split if present, else create+persist (prevents drift)."""
+def load_or_create_split(config: ExpConfig, data_path: Path) -> DataSplit:
+    """Reuse the saved split if present, else create+persist (prevents drift).
+
+    The split cache is stored at ``{config.output_dir}/split.json`` so that
+    re-runs with the same output directory reuse identical train/val/test
+    partitions (critical for reproducibility across the train/eval stages).
+    """
+    cache = Path(config.output_dir) / "split.json"
+    seed = config.seed
     groups = ("train", "val", "test")
     if cache.exists():
         raw = json.loads(cache.read_text())

@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from core.errors import TrainError
 from core.types import ExpConfig
 
 _REQUIRED = [
@@ -30,9 +31,19 @@ def load_config(path: str, defaults: dict[str, Any] | None = None) -> ExpConfig:
         raise ValueError(f"config.json missing required keys: {missing}")
 
     if raw["epochs_trocr"] < 5:  # Bug 6 prevention
-        raise ValueError(
+        raise TrainError(
             f"epochs_trocr={raw['epochs_trocr']} < 5 — "
-            "TrOCR will underfit (Bug 6). Set epochs_trocr >= 5."
+            "TrOCR will underfit (Bug 6). Set epochs_trocr >= 5.",
+        )
+
+    # Bug 4: fp16 without gradient clipping overflows → NaN loss. bf16 is safe
+    # because its dynamic range matches fp32. Enforce the invariant at load
+    # time so a stale config surfaces the error before any GPU work starts.
+    if raw["precision"] == "fp16" and float(raw["max_grad_norm"]) <= 0.0:
+        raise TrainError(
+            "precision='fp16' requires max_grad_norm > 0 to prevent "
+            "loss=NaN from gradient overflow (Bug 4). Set max_grad_norm=1.0 "
+            "or switch to precision='bf16' on Ampere+ GPUs.",
         )
 
     _optional = {

@@ -15,7 +15,7 @@ These priors collectively lift a pure-spatial baseline from F1 ≈ 0.35 to
 """
 from __future__ import annotations
 
-from models.rule_fields import extract_date, extract_total, pick_address, pick_company
+from models.rule_fields import _pick_address, _pick_company, extract_date, extract_total
 from models.rule_regex import DATE_RE, MONEY_RE
 
 __all__ = ["DATE_RE", "MONEY_RE", "rule_based_assign"]
@@ -45,7 +45,7 @@ def rule_based_assign(
         assigned["total"] = v
         used.add(i)
 
-    company_pick = pick_company(region_texts, bbox_list, used)
+    company_pick = _pick_company(region_texts, bbox_list, used)
     company_y = 0.0
     if company_pick is not None:
         i, v = company_pick
@@ -61,7 +61,7 @@ def rule_based_assign(
         bbox_list[date_pick[0]][1]
         if date_pick is not None and date_pick[0] < len(bbox_list) else 0.0
     )
-    addr = pick_address(region_texts, bbox_list, used, company_y, total_y, date_y)
+    addr = _pick_address(region_texts, bbox_list, used, company_y, total_y, date_y)
     if addr:
         assigned["address"] = addr
     return assigned
