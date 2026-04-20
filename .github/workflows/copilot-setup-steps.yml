@@ -1,0 +1,31 @@
+name: "Copilot Setup Steps"
+
+# Pre-install the static analysis and smoke-test tools (mypy, ruff, Pillow)
+# so that `make check` works immediately in the agent environment without
+# requiring a separate install step.  Pillow is needed for the import
+# smoke-test that validates core/types and core/config load cleanly.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  copilot-setup-steps:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install static-analysis tools
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install \
+            "mypy==1.10.0" \
+            "ruff==0.4.4" \
+            "Pillow==11.1.0"

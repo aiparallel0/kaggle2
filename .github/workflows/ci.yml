@@ -29,7 +29,7 @@ jobs:
         run: ruff check .
 
       - name: mypy --strict
-        run: mypy --strict core/ data/ models/ report/ main.py
+        run: mypy --strict core/ data/ models/ report/ stages.py main.py
 
       - name: import smoke test
         run: |
