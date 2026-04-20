@@ -45,7 +45,7 @@ def extract_total(
     typically printed two or three times (line-total, subtotal+tax sum,
     receipt-footer recap), whereas distractors (change, GST, rounding)
     appear once. Switching from bottom-most-y to frequency+magnitude lifts
-    rule-based ``total`` F1 on gold OCR from ~0.11 to ~0.47 on the SROIE
+    rule-based ``total`` F1 on gold OCR from ~0.111 to ~0.429 on the SROIE
     test split without affecting date/company/address.
     """
     candidates: list[tuple[int, int, float, str]] = []
