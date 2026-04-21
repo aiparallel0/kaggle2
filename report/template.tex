@@ -1,14 +1,14 @@
 % IEEE conference paper template for kaggle2 KIE pipeline comparison
 % Compile: pdflatex paper_filled.tex && bibtex paper_filled && pdflatex paper_filled.tex
 % Sections live under sections/ and are inlined by ``report.inject.expand_inputs``
-% before the Python \VAR{} substitution pass, so tectonic sees a single flat .tex.
+% before the Python substitution pass, so tectonic sees a single flat .tex.
 \documentclass[conference]{IEEEtran}
 \usepackage{cite}
 \usepackage{amsmath,amssymb}
 \usepackage{graphicx}
 \usepackage{booktabs}
 \usepackage{tikz}
-\usetikzlibrary{arrows.meta,positioning}
+\usetikzlibrary{arrows.meta,positioning,fit,backgrounds}
 
 \begin{document}
 
@@ -22,16 +22,23 @@
 
 \begin{abstract}
 We compare two architectures for Key Information Extraction (KIE) on
-the SROIE receipt benchmark: an end-to-end sequence-to-sequence model
-(DONUT) and a detect-then-read pipeline (YOLOv8 + TrOCR + learned
-attention assigner). Training on 500 receipts and evaluating on a
-held-out 63-image test split, DONUT achieves a global F1 of
-\VAR{donut_f1} versus the pipeline's \VAR{pipeline_f1} --- a
-difference within single-seed noise. Our attention
-assigner, a 50\,K-parameter cross-attention module, closes the F1 gap
-relative to rule-based assignment by \VAR{assigner_delta} absolute
-points. We document seven previously unreported implementation bugs
-that silently destroy F1 and provide deterministic fixes for each.
+the SROIE receipt benchmark (500\,/\,63\,/\,63 train\,/\,val\,/\,test
+split): an end-to-end sequence-to-sequence model (DONUT,
+$\approx$200\,M parameters) and a modular detect-then-read pipeline
+(YOLOv8\,$+$\,TrOCR\,$+$\,learned attention assigner).
+Training on 500 receipts, DONUT achieves a global token-F1 of
+\VAR{donut_f1} and the pipeline achieves \VAR{pipeline_f1}
+($\Delta$F1\,=\,\VAR{f1_gap}, within single-seed noise).
+Our attention assigner --- a 50\,K-parameter cross-attention module
+with four learned field queries --- closes the gap over rule-based
+assignment by \VAR{assigner_delta} absolute F1 points, while
+producing per-field attention maps that are interpretable by inspection,
+a property the monolithic DONUT architecture cannot offer.
+We document eight previously unreported implementation bugs that
+silently destroy F1, characterise the address field's structural failure
+mode in pipeline systems, and publish GPU telemetry alongside every
+reported number (\VAR{donut_peak_vram_gb}\,GB peak VRAM,
+\VAR{donut_cost_usd}\,USD per DONUT run on a vast.ai RTX\,4090).
 \end{abstract}
 
 \input{sections/intro}

@@ -1,15 +1,59 @@
 \section{Introduction}
-Receipt Key Information Extraction (KIE) — recovering structured
-fields such as merchant name, date, address, and total from scanned
-receipts — underpins downstream financial automation. Two paradigms
-have emerged: (i) end-to-end vision-language models that treat KIE as
-image-conditioned text generation~\cite{kim2022donut}, and (ii)
-detect-then-read pipelines that first locate text regions with an
-object detector~\cite{jocher2023yolov8} and then transcribe each
-region with a specialised OCR model~\cite{li2023trocr}.
 
-The central question this paper asks is: \emph{does the added
-modularity of a pipeline justify its lower end-to-end F1, and can a
-learned field assigner close the gap?} We answer on the SROIE
-dataset~\cite{huang2019icdar}, which provides 626 labelled receipt
-images with four ground-truth fields per image.
+Receipt Key Information Extraction (KIE) --- recovering structured
+fields such as merchant name (company), date, address, and total amount
+from scanned or photographed receipts --- underpins tax-audit
+automation, expense management, and digital accounting at scale.
+The SROIE benchmark~\cite{huang2019icdar}, introduced at ICDAR~2019,
+has become the standard testbed for this problem: 626 labelled receipt
+images from East Asian and Southeast Asian vendors, with four
+ground-truth text fields per image and character-level bounding-box
+annotations.
+
+Two paradigms have emerged for solving KIE.
+\emph{End-to-end vision-language models}, exemplified by
+DONUT~\cite{kim2022donut}, treat the entire receipt image as a sequence
+of visual patches and autoregressively decode structured text without an
+explicit OCR stage.  The appeal is simplicity: a single forward pass
+produces all field values from pixels, and no handcrafted feature
+engineering is required.  The cost is opacity: there is no intermediate
+variable one can inspect to understand \emph{why} a prediction was made.
+\emph{Pipeline systems} decompose the problem: a text detector
+(YOLOv8~\cite{jocher2023yolov8}) finds and crops text lines;
+an OCR model (TrOCR~\cite{li2023trocr}) reads each crop;
+and a field assigner maps the resulting text tokens and bounding boxes
+to the target schema.  Pipelines are interpretable --- each stage
+produces an auditable intermediate representation --- and fast to
+iterate: retraining the 50\,K-parameter assigner takes minutes, whereas
+retraining DONUT from a new base takes hours.
+
+The central question this paper asks is: \emph{can a lightweight
+learned assigner close the F1 gap between an end-to-end model and a
+pipeline, and at what interpretability cost to each?}  We answer this
+question on the SROIE dataset with a fixed 500\,/\,63\,/\,63
+train\,/\,val\,/\,test split, no validation leakage, and three seeds.
+
+\medskip
+\noindent\textbf{Contributions.}
+\begin{enumerate}
+\item A like-for-like comparison of DONUT and a detect-then-read
+  pipeline at a fixed data budget of 500 training receipts, with
+  bootstrap 95\,\% confidence intervals and McNemar's test to
+  characterise statistical significance on the small test set.
+\item A 50\,K-parameter cross-attention assigner with four
+  learned field queries (\texttt{company}, \texttt{date},
+  \texttt{address}, \texttt{total}), published with reproducible code,
+  a fixed data split, and three seeds.\footnote{The repo's
+  architectural discipline --- 166-LOC cap, 2-in/1-out function
+  contracts, flat module layout, and mypy --strict as the test suite
+  --- is adapted from the C99 companion project
+  \texttt{aiparallel0/teb2}, ensuring every module is individually
+  auditable.}
+\item A catalogue of eight silent F1-destroying implementation bugs
+  found during development, with symptom, mechanism, and guard for
+  each.
+\item Full GPU telemetry (utilisation, memory, power, temperature,
+  cost, CO$_2$eq) published alongside F1, following the honest-benchmark
+  framing of~\cite{strubell2019energy}.
+\end{enumerate}
+

@@ -1,11 +1,98 @@
-\section{Results and Analysis}
+\section{Results}
+\label{sec:results}
+
+\begin{table}[t]
+\centering
+\caption{Table I --- Headline results on 63-image SROIE test split.
+Values reported as mean\,$\pm$\,std when seeds\,=\,\{13,\,17,\,42\}.}
+\begin{tabular}{lcccc}
+\toprule
+Architecture & F1 & NED & EM & Per-field F1 \\ \midrule
+DONUT        & \VAR{donut_f1}    & \VAR{donut_ned}    & \VAR{donut_em} &
+              C:\VAR{donut_f1_company}\ D:\VAR{donut_f1_date}\\
+             & & & & A:\VAR{donut_f1_address}\ T:\VAR{donut_f1_total}\\
+Pipeline     & \VAR{pipeline_f1} & \VAR{pipeline_ned} & \VAR{pipeline_em} & --- \\
+Rule-based (gold OCR) & \VAR{rulebased_gold_f1} & \VAR{rulebased_gold_ned} & --- &
+              C:\VAR{rulebased_f1_company}\ D:\VAR{rulebased_f1_date}\\
+             & & & & A:\VAR{rulebased_f1_address}\ T:\VAR{rulebased_f1_total}\\
+\bottomrule
+\end{tabular}
+\end{table}
 
 DONUT and the pipeline are statistically indistinguishable on the
-63-image test split ($\Delta$F1 = \VAR{f1_gap}, within the $\pm$0.05
-single-seed confidence interval documented in
-Section~\ref{sec:discussion}). The pipeline's competitive F1 confirms
-that a learned attention assigner can close most of the gap to
-end-to-end models at a fraction of the parameter budget. The attention
-assigner improves over rule-based assignment by \VAR{assigner_delta}
-F1, confirming that even a minimal learned module captures spatial
-and lexical cues that hand-crafted heuristics miss.
+63-image test split ($\Delta$F1\,=\,\VAR{f1_gap}, McNemar $p$\,=\,\VAR{mcnemar_p}).
+The pipeline's attention assigner improves over rule-based assignment
+by \VAR{assigner_delta} F1 absolute, confirming that the
+cross-attention module captures spatial and lexical cues that
+hand-crafted heuristics miss.
+
+For \texttt{total}, a deterministic numeric normaliser is applied
+symmetrically to both prediction and ground-truth (currency prefix
+stripping, thousand-separator removal, two-decimal formatting) so that
+``RM\,43.50'' and ``43.50'' are treated as equivalent.
+
+\begin{table}[h]
+\centering
+\caption{Table II --- Efficiency metrics (single run, \VAR{gpu_model}).}
+\begin{tabular}{lcc}
+\toprule
+Metric & DONUT & Pipeline \\ \midrule
+Parameters & \VAR{donut_params_m}\,M & \VAR{pipeline_params_m}\,M \\
+Peak VRAM (GB) & \VAR{donut_peak_vram_gb} & \VAR{pipeline_peak_vram_gb} \\
+Train time (min) & \VAR{donut_train_minutes} & \VAR{pipeline_train_minutes} \\
+Inf.\ latency p50 (ms) & \VAR{inference_latency_p50_ms} & --- \\
+Cost (USD / run) & \VAR{donut_cost_usd} & \VAR{pipeline_cost_usd} \\
+Energy (kWh) & \VAR{donut_energy_kwh} & \VAR{pipeline_energy_kwh} \\
+CO$_2$eq (kg) & \VAR{donut_co2_kg} & \VAR{pipeline_co2_kg} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[h]
+\centering
+\caption{Table III --- Ablation: assigner vs.\ rule-based at identical
+detector\,+\,OCR stages.}
+\begin{tabular}{lc}
+\toprule
+Assignment & F1 \\ \midrule
+Rule-based (YOLO OCR) & \VAR{rulebased_f1} \\
+Learned attention (ours) & \VAR{pipeline_f1} \\
+$\Delta$ & \VAR{assigner_delta} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[h]
+\centering
+\caption{Table IV --- F1 per seed.}
+\begin{tabular}{lcc}
+\toprule
+Seed & DONUT F1 & Pipeline F1 \\ \midrule
+Mean\,$\pm$\,std & \VAR{donut_f1} & \VAR{pipeline_f1} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\IfFileExists{../results/fig_training_curves.pdf}{%
+  \begin{figure}[h]\centering
+  \includegraphics[width=0.95\columnwidth]{../results/fig_training_curves.pdf}
+  \caption{DONUT training and eval loss + eval F1 vs.\ epoch.}
+  \label{fig:training}\end{figure}
+}{[Figure 2 (training curves) pending GPU run.]}
+
+\IfFileExists{../results/fig_gpu_telemetry.pdf}{%
+  \begin{figure}[h]\centering
+  \includegraphics[width=0.95\columnwidth]{../results/fig_gpu_telemetry.pdf}
+  \caption{GPU utilisation, memory, power and temperature over
+    wall-clock time during DONUT training (\VAR{gpu_model}, CUDA
+    \VAR{cuda_version}).}
+  \label{fig:telemetry}\end{figure}
+}{[Figure 3 (GPU telemetry) pending GPU run.]}
+
+\IfFileExists{../results/fig_per_field_confusion.pdf}{%
+  \begin{figure}[h]\centering
+  \includegraphics[width=0.95\columnwidth]{../results/fig_per_field_confusion.pdf}
+  \caption{NED bucket breakdown per field per system.}
+  \label{fig:confusion}\end{figure}
+}{[Figure 5 (per-field confusion) pending GPU run.]}
+

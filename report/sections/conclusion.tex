@@ -1,8 +1,17 @@
 \section{Conclusion}
 
-We demonstrate that DONUT consistently outperforms a YOLO+TrOCR
-pipeline on SROIE, and that a 50\,K-parameter attention assigner
-closes a meaningful share of the gap. Crucially, we enumerate seven
-implementation bugs that have silently degraded published F1 scores
-and provide deterministic fixes. Future work includes multi-dataset
-training, LayoutLMv3 baselines, and multi-seed evaluation.
+At 500 SROIE receipts, DONUT and a YOLOv8\,+\,TrOCR\,+\,attention-assigner
+pipeline achieve statistically indistinguishable global token-F1.
+The pipeline's 50\,K-parameter cross-attention assigner closes
+\VAR{assigner_delta} F1 absolute over rule-based assignment, produces
+human-readable per-field attention maps, and retrains in minutes ---
+properties DONUT cannot offer at this data scale.
+We catalogue ten silent F1-destroying implementation bugs and publish
+GPU telemetry alongside every reported number.
+
+\textbf{Future work.}
+Scale the test set (current $n=63$ gives $\approx\pm0.05$\,F1 CIs),
+add LayoutLMv3 and GCN baselines, evaluate on multilingual receipts
+(WildReceipt, CORD), and investigate on-device quantised pipeline
+inference for mobile deployment.
+

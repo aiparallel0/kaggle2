@@ -5,10 +5,13 @@ import json
 import logging
 import os
 import statistics
+import time
 from pathlib import Path
 
+from core.cost import summarise as cost_summarise
 from core.errors import EvalError, TrainError
 from core.seed import seed_everything
+from core.telemetry import start_sampler, stop_sampler
 from core.types import AssignerData, DataSplit, ExpConfig, Metrics, PipelineResult
 from core.validate import validate_f1
 from data.sroie import download_sroie, extract_crops, extract_receipt_regions, load_or_create_split
@@ -27,6 +30,52 @@ from report.inject import expand_inputs, inject_results
 from report.pdflatex import compile_paper_pdf
 
 log = logging.getLogger("kaggle2")
+
+
+# ---------------------------------------------------------------------------
+# Telemetry helpers — failures must NEVER propagate to the caller.
+# ---------------------------------------------------------------------------
+
+_VASTAI_RATE_USD_HR: float = 0.50  # $/hr default; override via env if needed
+
+
+def _start_telem(config: ExpConfig, stage: str) -> tuple[object, object, float]:
+    """Start a telemetry sampler for *stage*; return (thread, event, t0).
+
+    Any exception is caught and logged as a warning so that a missing
+    ``nvidia-smi`` or permission error never aborts training.
+    """
+    out_path = os.path.join(config.output_dir, f"telemetry_{stage}.jsonl")
+    try:
+        thread, event = start_sampler(out_path, interval_s=5.0)
+        return thread, event, time.monotonic()
+    except Exception as exc:  # noqa: BLE001
+        log.warning("Telemetry start failed (%s) — continuing without.", exc)
+        return None, None, time.monotonic()
+
+
+def _stop_telem(
+    thread: object, event: object, t0: float, config: ExpConfig, stage: str
+) -> None:
+    """Stop the telemetry sampler and write a cost JSON summary."""
+    elapsed = time.monotonic() - t0
+    log.info("Stage '%s' wall-clock: %.1f s (%.2f min)", stage, elapsed, elapsed / 60)
+    if thread is None or event is None:
+        return
+    try:
+        from threading import Event as _Event
+        from threading import Thread as _Thread
+
+        assert isinstance(thread, _Thread) and isinstance(event, _Event)
+        out_path = stop_sampler(thread, event)
+        rate = float(os.environ.get("VASTAI_RATE_USD_HR", _VASTAI_RATE_USD_HR))
+        cost = cost_summarise(out_path, rate)
+        cost_path = os.path.join(config.output_dir, f"cost_{stage}.json")
+        with open(cost_path, "w") as fh:
+            json.dump(cost, fh, indent=2)
+        log.info("Cost summary → %s", cost_path)
+    except Exception as exc:  # noqa: BLE001
+        log.warning("Telemetry stop/cost failed (%s) — continuing.", exc)
 
 
 def _write_pipeline_meta(config: ExpConfig) -> None:
@@ -59,9 +108,17 @@ def stage_train(config: ExpConfig) -> None:
                 "Phase 1 cannot distil from a missing teacher; set both to 0.",
             )
     else:
-        donut_path = train_donut(config, data)
+        th, ev, t0 = _start_telem(config, "donut")
+        try:
+            donut_path = train_donut(config, data)
+        finally:
+            _stop_telem(th, ev, t0, config, "donut")
         log.info("DONUT → %s", donut_path)
-    yolo_path = train_yolo(config, data)
+    th_y, ev_y, t0_y = _start_telem(config, "yolo")
+    try:
+        yolo_path = train_yolo(config, data)
+    finally:
+        _stop_telem(th_y, ev_y, t0_y, config, "yolo")
     log.info("YOLO  → %s", yolo_path)
     crops = extract_crops(data.train, config.fields)
     regions = extract_receipt_regions(data.train, config.fields)
@@ -69,7 +126,11 @@ def stage_train(config: ExpConfig) -> None:
              len(crops), len(regions))
     if not crops:
         raise TrainError("No labeled SROIE crops — check box/ annotations.")
-    trocr_path = train_trocr(config, crops)
+    th_t, ev_t, t0_t = _start_telem(config, "trocr")
+    try:
+        trocr_path = train_trocr(config, crops)
+    finally:
+        _stop_telem(th_t, ev_t, t0_t, config, "trocr")
     log.info("TrOCR → %s", trocr_path)
     assigner_data = AssignerData(trocr_path=trocr_path, crops=crops, regions=regions)
     assigner_path = train_assigner(config, assigner_data)
@@ -125,6 +186,7 @@ def _combined_metrics(
         "epochs_yolo": config.epochs_yolo, "batch_size": config.batch_size,
         "lr": config.lr, "precision": config.precision,
         "label_smoothing": config.label_smoothing,
+        "warmup_steps": config.warmup_steps,
         "yolo_img_size": config.yolo_img_size,
         "img_w": config.image_size[0], "img_h": config.image_size[1],
         "artifact_mode": "full",
@@ -205,6 +267,22 @@ def stage_paper(config: ExpConfig) -> None:
         raise EvalError(f"Run eval stage first — {metrics_path} not found.")
     with open(metrics_path) as f:
         metrics: dict[str, object] = json.load(f)
+    # Best-effort: merge telemetry/cost JSON files into metrics dict.
+    try:
+        from report.figures import render_all as _render_all
+        _render_all(config.output_dir)
+    except Exception as exc:  # noqa: BLE001
+        log.warning("figures.render_all failed (%s) — continuing.", exc)
+    for stage in ("donut", "yolo", "trocr", "pipeline"):
+        cost_path = os.path.join(config.output_dir, f"cost_{stage}.json")
+        if Path(cost_path).exists():
+            try:
+                with open(cost_path) as fh:
+                    cost_data: dict[str, object] = json.load(fh)
+                for k, v in cost_data.items():
+                    metrics.setdefault(f"{stage}_{k}", v)
+            except Exception as exc:  # noqa: BLE001
+                log.warning("Failed to merge cost_%s.json: %s", stage, exc)
     with open(config.paper_template) as f:
         template = f.read()
     # Inline \input{sections/...} before \VAR{} substitution — keeps the

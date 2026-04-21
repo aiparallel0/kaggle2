@@ -1,8 +1,15 @@
-"""Shared metric computation: token-F1, NED, EM — used by both eval modules."""
+"""Shared metric computation: token-F1, NED, EM — used by both eval modules.
+
+Re-exports statistical helpers from ``core.statistics`` so callers can do
+``from core.metrics import bootstrap_ci`` without a separate import chain.
+"""
 from __future__ import annotations
 
 from typing import TypedDict
 
+from core.statistics import bootstrap_ci as bootstrap_ci  # noqa: PLC0414
+from core.statistics import mcnemar as mcnemar  # noqa: PLC0414
+from core.statistics import ned_buckets as ned_buckets  # noqa: PLC0414
 from core.types import EvalBundle, Metrics
 
 
@@ -42,6 +49,7 @@ class CombinedMetrics(TypedDict, total=False):
     lr: float
     precision: str
     label_smoothing: float
+    warmup_steps: int
     yolo_img_size: int
     img_w: int
     img_h: int
@@ -51,6 +59,36 @@ class CombinedMetrics(TypedDict, total=False):
     pipeline_f1_mean: float
     pipeline_f1_std: float
     seeds_used: list[int]
+    # --- Bootstrap CIs ---
+    donut_f1_ci_lo: float
+    donut_f1_ci_hi: float
+    pipeline_f1_ci_lo: float
+    pipeline_f1_ci_hi: float
+    mcnemar_p: float
+    # --- Parameter counts ---
+    donut_params_m: float
+    pipeline_params_m: float
+    assigner_params_k: float
+    # --- Hardware / efficiency ---
+    donut_peak_vram_gb: float
+    pipeline_peak_vram_gb: float
+    donut_train_minutes: float
+    pipeline_train_minutes: float
+    donut_samples_per_sec: float
+    inference_latency_p50_ms: float
+    inference_latency_p95_ms: float
+    inference_latency_p99_ms: float
+    # --- Cost / energy ---
+    donut_cost_usd: float
+    pipeline_cost_usd: float
+    donut_energy_kwh: float
+    pipeline_energy_kwh: float
+    donut_co2_kg: float
+    pipeline_co2_kg: float
+    # --- Environment ---
+    gpu_model: str
+    cuda_version: str
+    vastai_host_id: str
 
 
 def edit_distance(a: str, b: str) -> int:

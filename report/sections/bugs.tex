@@ -1,22 +1,81 @@
 \section{F1-Destroying Bugs and Fixes}
+\label{sec:bugs}
 
-We identified seven implementation bugs that silently degrade F1:
+We identified the following ten implementation bugs during development.
+Each is a silent failure: the code runs to completion and the loss
+decreases, but the final F1 is drastically degraded.
 
 \begin{enumerate}
-\item \textbf{lm\_head deduplication} (F1 $\approx$ 0.42): safetensors
-  drops the tied weight on reload. Fix: \texttt{tie\_word\_embeddings=False}
-  + clone before every checkpoint save.
-\item \textbf{Wrong decoder\_start\_token\_id} (F1 = 0.00): string-form
-  tokeniser returns the ID of \texttt{<} not the full special token.
-  Fix: always use list form.
-\item \textbf{token2json returns list} (F1 $\approx$ 0.008): CORD-style
-  multi-page output. Fix: merge pages into a single dict.
-\item \textbf{fp16 overflow} (loss NaN): use bf16 on Ampere+, fp16 with
-  \texttt{max\_grad\_norm} otherwise.
-\item \textbf{YOLO imgsz mismatch} (0\% detection): inference defaults
-  to 640; if training used 512, zero boxes are produced.
-\item \textbf{TrOCR undertrained} (all empty): val\_loss~$\approx$~9.1 at
-  1 epoch; requires $\geq$5 epochs.
-\item \textbf{Val\,==\,Test leakage}: physically separate val and test
-  splits.
+
+\item \textbf{lm\_head safetensors deduplication} (F1\,$\approx$\,0.42).
+  Safetensors deduplicates tied weights on save and drops the
+  \texttt{lm\_head} tensor.  On reload the head is re-tied at the
+  wrong dimension, yielding nonsense output.
+  \emph{Guard}: set \texttt{tie\_word\_embeddings=False} before
+  saving and clone the head weights explicitly.
+
+\item \textbf{Wrong decoder\_start\_token\_id} (F1\,=\,0.00).
+  Passing the tokeniser prompt as a string to \texttt{convert\_tokens\_to\_ids}
+  returns the ID of the first character (\texttt{<}) rather than the
+  special token.  \emph{Guard}: always use the list form
+  \texttt{processor.tokenizer.convert\_tokens\_to\_ids(["<task\_start>"])}.
+
+\item \textbf{token2json returns a list on CORD-style prompts}
+  (F1\,$\approx$\,0.008).
+  The DONUT helper \texttt{token2json} wraps output in a list when it
+  detects multi-page structure.  \emph{Guard}: if the return value is
+  a list, merge pages into a single dict before field extraction.
+
+\item \textbf{fp16 loss overflow} (loss\,=\,NaN).
+  fp16's dynamic range is insufficient for the DONUT cross-entropy
+  loss on long sequences.  \emph{Guard}: use bf16 on Ampere\,+
+  GPUs; use fp16 only with \texttt{max\_grad\_norm}\,$>$\,0
+  (the config loader enforces this invariant at load time).
+
+\item \textbf{YOLO imgsz mismatch at inference} (0\,\% detection).
+  YOLOv8 inference defaults to \texttt{imgsz=640}; if training
+  used \texttt{512}, the model's anchor priors are scaled to the
+  wrong resolution and no boxes are produced.  \emph{Guard}: always
+  pass \texttt{imgsz} explicitly to both \texttt{model.train()} and
+  \texttt{model.predict()}.
+
+\item \textbf{TrOCR undertrained} (all-empty predictions).
+  Validation loss at epoch~1 is $\approx$9.1, far above the
+  convergence threshold.  Predictions are empty strings, propagating
+  zero-length texts to the assigner.  \emph{Guard}: require at least
+  5 epochs; the config loader raises \texttt{TrainError} if
+  \texttt{epochs\_trocr}\,$<$\,5.
+
+\item \textbf{Validation equals test leakage}.
+  An earlier data-split implementation drew val and test from the same
+  shuffled pool, causing the same images to appear in both.
+  \emph{Guard}: the split is computed once, persisted to
+  \texttt{results/split.json}, and checked for overlap at load time.
+
+\item \textbf{YOLO project-path collision} (\texttt{ultralytics}\,$\geq$\,8.3).
+  Ultralytics~8.3 changed the default \texttt{project} directory to an
+  absolute path that collides with a pre-existing \texttt{runs/} tree,
+  causing \texttt{FileExistsError} on re-runs.  \emph{Guard}: always
+  pass an explicit \texttt{project} and \texttt{name} to
+  \texttt{model.train()}.
+
+\item \textbf{Stale generation\_config on reload}.
+  After fine-tuning, the \texttt{generation\_config.json} saved in the
+  checkpoint retains the base model's beam-search defaults, including a
+  \texttt{max\_new\_tokens} that is often too short for SROIE output.
+  \emph{Guard}: overwrite \texttt{generation\_config} after loading the
+  checkpoint and before calling \texttt{model.generate()}.
+
+\item \textbf{tie\_word\_embeddings=False subtlety}.
+  Setting \texttt{tie\_word\_embeddings=False} (the Bug~1 fix) creates
+  an independent \texttt{lm\_head} but also means that subsequent
+  \texttt{resize\_token\_embeddings()} calls no longer automatically
+  resize the output projection.  If new task tokens are added after
+  this flag is set, \texttt{lm\_head} must be resized and
+  re-initialised explicitly.  \emph{Guard}: call
+  \texttt{model.lm\_head = torch.nn.Linear(...)} after any token
+  vocabulary expansion that follows the \texttt{tie\_word\_embeddings}
+  flag change.
+
 \end{enumerate}
+
