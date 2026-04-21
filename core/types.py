@@ -154,4 +154,6 @@ class ExpConfig:
     emit_beam_width: int = 4
     kd_attn_weight: float = 0.0
     kd_logits_weight: float = 0.0
+    assigner_patience: int = 7
+    assigner_min_delta: float = 1e-3
     extra: dict[str, object] = field(default_factory=dict)

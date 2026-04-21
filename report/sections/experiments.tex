@@ -32,7 +32,8 @@ Precision    & \VAR{precision} \\ \bottomrule
 \subsection{Results}
 \begin{table}[h]
 \centering
-\caption{Main results on 63-image SROIE test split}
+\caption{Main results on 63-image SROIE test split. Values reported
+as mean $\pm$ standard deviation when multiple seeds are available.}
 \begin{tabular}{lccc}
 \toprule
 Architecture & F1 & NED & EM \\ \midrule
@@ -42,6 +43,13 @@ Rule-based (gold OCR) & \VAR{rulebased_gold_f1} & \VAR{rulebased_ned} & --- \\
 \bottomrule
 \end{tabular}
 \end{table}
+
+For the \texttt{TOTAL} field, we apply a deterministic numeric
+normalizer symmetrically to predictions and ground-truth before
+computing F1/NED/EM (currency prefix stripping, thousand-separator
+removal, two-decimal formatting). This ensures the metric measures
+semantic match, not incidental formatting differences such as
+``RM 43.50'' vs.~``43.50''.
 
 The rule-based row uses SROIE's gold-OCR box-file text as input to
 \texttt{rule\_based\_assign}, isolating the assignment heuristic from

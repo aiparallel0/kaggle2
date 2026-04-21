@@ -1,8 +1,11 @@
 \section{Results and Analysis}
 
-DONUT outperforms the pipeline by \VAR{f1_gap} absolute F1 points,
-consistent with prior work showing that eliminating OCR errors
-propagation benefits end-to-end models. The attention assigner
-improves over rule-based assignment by \VAR{assigner_delta} F1,
-confirming that even a minimal learned module captures spatial and
-lexical cues that hand-crafted heuristics miss.
+DONUT and the pipeline are statistically indistinguishable on the
+63-image test split ($\Delta$F1 = \VAR{f1_gap}, within the $\pm$0.05
+single-seed confidence interval documented in
+Section~\ref{sec:discussion}). The pipeline's competitive F1 confirms
+that a learned attention assigner can close most of the gap to
+end-to-end models at a fraction of the parameter budget. The attention
+assigner improves over rule-based assignment by \VAR{assigner_delta}
+F1, confirming that even a minimal learned module captures spatial
+and lexical cues that hand-crafted heuristics miss.

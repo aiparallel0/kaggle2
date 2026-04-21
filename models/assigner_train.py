@@ -90,20 +90,37 @@ def train_assigner(config: ExpConfig, data: AssignerData) -> str:
     ).to(device)
     opt = torch.optim.AdamW(assigner.parameters(), lr=1e-3, weight_decay=1e-4)
     best_val = float("inf")
+    best_epoch = -1
     best_state: dict[str, Tensor] | None = None
+    patience = config.assigner_patience
+    min_delta = config.assigner_min_delta
+    no_improve = 0
+    stopped_at = config.epochs_assigner
     for epoch in range(config.epochs_assigner):
         train_loss = _train_epoch(assigner, opt, train_groups, config.seed, epoch, device)
         val_loss = _evaluate(assigner, val_groups, device)
-        if val_loss < best_val:
+        improved = val_loss < best_val - min_delta
+        if improved:
             best_val = val_loss
+            best_epoch = epoch
             best_state = {
                 k: v.detach().cpu().clone() for k, v in assigner.state_dict().items()
             }
+            no_improve = 0
+        else:
+            no_improve += 1
         print(
             f"  Assigner epoch {epoch + 1}/{config.epochs_assigner} "
             f"train_loss={train_loss:.3f} val_loss={val_loss:.3f}"
-            + (" *best*" if val_loss == best_val else "")
+            + (" *best*" if improved else "")
         )
+        if no_improve >= patience:
+            stopped_at = epoch + 1
+            print(
+                f"  Assigner early-stopped at epoch {stopped_at}, "
+                f"best val_loss={best_val:.3f} @ epoch {best_epoch + 1}"
+            )
+            break
     if best_state is not None:
         assigner.load_state_dict(best_state)
     out_path = os.path.join(config.output_dir, "assigner.pt")
@@ -113,9 +130,13 @@ def train_assigner(config: ExpConfig, data: AssignerData) -> str:
         json.dump(
             {
                 "best_val_loss": best_val if best_val != float("inf") else None,
+                "best_epoch": best_epoch + 1 if best_epoch >= 0 else None,
+                "stopped_at_epoch": stopped_at,
                 "n_train_groups": len(train_groups),
                 "n_val_groups": len(val_groups),
                 "epochs": config.epochs_assigner,
+                "patience": patience,
+                "min_delta": min_delta,
             },
             f, indent=2,
         )
