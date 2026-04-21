@@ -74,11 +74,21 @@ def _train_epoch(
 
 
 def train_assigner(config: ExpConfig, data: AssignerData) -> str:
-    """Train AttentionAssigner with held-out val split + best-by-val save.
+    """Train :class:`AttentionAssigner` with a held-out validation split.
 
-    Reports ``train_loss`` and ``val_loss`` every epoch; the saved checkpoint
-    is the one with the lowest val loss observed during training (not the
-    last epoch).
+    The optimisation objective is the multi-instance *positive-mass*
+    loss defined in Section III of the paper: for each receipt and each
+    of the four field queries, the negative log of the attention mass
+    the cross-attention places on the line(s) whose ground-truth label
+    is that field.  This formulation --- rather than plain
+    cross-entropy --- is what lets the assigner tackle multi-line
+    fields such as ``address``.
+
+    Per-epoch ``train_loss`` / ``val_loss`` trajectories are persisted
+    to ``assigner_metrics.json`` alongside ``best_epoch`` and
+    ``best_val_loss``, so the paper's assigner-loss-curve figure
+    (Fig.~\\ref{fig:assigner_loss}) can be emitted from real data.
+    The saved checkpoint is the lowest-val-loss one, not the last.
     """
     device = "cuda" if torch.cuda.is_available() else "cpu"
     field_to_idx = {f.lower(): i for i, f in enumerate(config.fields)}
@@ -96,9 +106,13 @@ def train_assigner(config: ExpConfig, data: AssignerData) -> str:
     min_delta = config.assigner_min_delta
     no_improve = 0
     stopped_at = config.epochs_assigner
+    train_loss_history: list[float] = []
+    val_loss_history: list[float] = []
     for epoch in range(config.epochs_assigner):
         train_loss = _train_epoch(assigner, opt, train_groups, config.seed, epoch, device)
         val_loss = _evaluate(assigner, val_groups, device)
+        train_loss_history.append(train_loss)
+        val_loss_history.append(val_loss)
         improved = val_loss < best_val - min_delta
         if improved:
             best_val = val_loss
@@ -139,6 +153,8 @@ def train_assigner(config: ExpConfig, data: AssignerData) -> str:
                 "patience": patience,
                 "min_delta": min_delta,
                 "n_params": n_params,
+                "train_loss": train_loss_history,
+                "val_loss": val_loss_history,
             },
             f, indent=2,
         )

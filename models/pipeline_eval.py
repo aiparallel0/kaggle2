@@ -20,7 +20,8 @@ from core.types import (
     Receipt,
 )
 from models.attention_assign import _load_assigner
-from models.pipeline_assign import _assign_learned
+from models.pipeline_assign import _assign_learned_with_attn
+from models.pipeline_attn import DEFAULT_SAMPLE_K, AttentionSampler
 from models.pipeline_detect import _detect_and_read, _fallback_full_image
 from models.rule_based import rule_based_assign
 
@@ -85,6 +86,7 @@ def eval_pipeline(config: ExpConfig, test: list[Receipt]) -> PipelineResult:
     preds_r: list[Prediction] = []
     n_empty_detect = 0  # receipts where YOLO found zero boxes → full-image fallback
     n_receipt_err = 0  # receipts where per-receipt try/except caught a failure
+    attn_sampler = AttentionSampler(k=DEFAULT_SAMPLE_K)
     with torch.no_grad():
         for rec in test:
             rid = rec.image_path.stem
@@ -109,9 +111,11 @@ def eval_pipeline(config: ExpConfig, test: list[Receipt]) -> PipelineResult:
                     texts, feats, bboxes = _fallback_full_image(
                         trocr_proc, trocr_model, img, config, device,
                     )
-                learned = _assign_learned(
+                learned, attn = _assign_learned_with_attn(
                     assigner, texts, feats, bboxes, config.fields, device,
                 )
+                if attn is not None and not attn_sampler.full:
+                    attn_sampler.capture(str(rec.image_path), bboxes, attn)
                 rule = rule_based_assign(texts, bboxes) if texts else {}
             except (OSError, RuntimeError, ValueError):
                 n_receipt_err += 1
@@ -132,6 +136,7 @@ def eval_pipeline(config: ExpConfig, test: list[Receipt]) -> PipelineResult:
     ))
     out_dir = Path(paths.yolo).parent.parent
     n_total = max(len(test), 1)
+    attn_sampler.write(out_dir)
     with open(out_dir / "pipeline_metrics.json", "w") as f:
         json.dump({
             "assigner_f1": m_l.global_f1, "rulebased_f1": m_r.global_f1,

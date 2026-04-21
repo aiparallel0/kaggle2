@@ -17,7 +17,9 @@ of visual patches and autoregressively decode structured text without an
 explicit OCR stage.  The appeal is simplicity: a single forward pass
 produces all field values from pixels, and no handcrafted feature
 engineering is required.  The cost is opacity: there is no intermediate
-variable one can inspect to understand \emph{why} a prediction was made.
+variable one can inspect to understand \emph{why} a prediction was made,
+and every parameter --- including the large majority that never fire on
+any given receipt --- is carried through every forward pass.
 \emph{Pipeline systems} decompose the problem: a text detector
 (YOLOv8~\cite{jocher2023yolov8}) finds and crops text lines;
 an OCR model (TrOCR~\cite{li2023trocr}) reads each crop;
@@ -27,6 +29,14 @@ produces an auditable intermediate representation --- and fast to
 iterate: retraining the $\approx\VAR{assigner_params_k}\,$K-parameter
 assigner takes minutes, whereas
 retraining DONUT from a new base takes hours.
+At roughly half the end-to-end parameter cost of DONUT, the analytical
+route with a learned cross-attention assigner effectively \emph{discards
+the unused parameters} DONUT carries: the heavy perceptual work is
+delegated to YOLOv8 (a parametrically cheap detector) and TrOCR (a
+crop-level OCR decoder), while the $\approx\VAR{assigner_params_k}\,$K
+attention assigner concentrates its capacity on the single hard problem
+of line-to-field assignment.  This re-budgeting is the central
+efficiency argument we make on SROIE.
 
 The central question this paper asks is: \emph{can a lightweight
 learned assigner close the F1 gap between an end-to-end model and a

@@ -1,0 +1,111 @@
+% -----------------------------------------------------------------------
+% Training-path bugs (7–13): OCR, early-stopping, HF internals.
+% Project: kaggle2 — End-to-End vs. Pipeline Receipt KIE on SROIE.
+% Role: split out of bugs.tex to honour the 166-LOC per-file cap.
+% -----------------------------------------------------------------------
+
+\item \textbf{Validation$\equiv$test leakage}
+  (illusory F1\,$\approx$\,0.85 before the fix).
+  \textit{Mechanism.} An earlier split drew val and test from the same
+  shuffled pool with independent seeds, so $\approx$\,15\,\% of test
+  images also appeared in validation and were effectively memorised
+  by the best-val checkpoint selector.  \textit{F1 impact.} The
+  \emph{reported} F1 was inflated by $\approx$0.10 absolute; when the
+  leak was closed the held-out F1 dropped to \VAR{donut_f1}, which
+  reflects true generalisation.  \textit{Guard.} The split is
+  computed once from a single seed and persisted to
+  \texttt{results/split.json}; the loader asserts empty overlap at
+  load time and raises \texttt{DataError} on violation.
+
+\item \textbf{YOLO project-path collision} (\texttt{FileExistsError}).
+  \textit{Mechanism.} \texttt{ultralytics}\,$\geq$\,8.3 defaults
+  \texttt{project} to an absolute path that pre-exists on resumed
+  runs, so the second \texttt{model.train()} call aborts before the
+  first backward pass.  \textit{F1 impact.} No training occurs, so
+  F1 is 0.000 across the board; however the original silent symptom
+  was a \emph{stale} checkpoint being evaluated (F1 looked
+  unchanged between configurations because no training had taken
+  place).  \textit{Guard.} \texttt{models.yolo\_train} passes an
+  explicit \texttt{project} and \texttt{name} tied to
+  \texttt{config.output\_dir}, so reruns overwrite deterministically.
+
+\item \textbf{Stale \texttt{generation\_config} on reload}
+  (eval\,F1\,$\equiv$\,0 with healthy \texttt{eval\_loss}).
+  \textit{Mechanism.} \texttt{Seq2SeqTrainer(predict\_with\_generate=True)}
+  reads \texttt{model.generation\_config}, which is snapshotted at
+  \texttt{from\_pretrained} time --- \emph{not} the live overrides
+  we place on \texttt{model.config}.  So
+  \texttt{decoder\_start\_token\_id} falls back to the base mBART
+  \texttt{<s>}, \texttt{token2json} receives a token stream with no
+  recognisable field tags, and returns \texttt{\{\}}; per-field F1
+  is a clean zero while \texttt{eval\_loss} descends normally.
+  \textit{F1 impact.} The single most expensive silent bug in the
+  codebase: F1\,$\approx$\,0 on every reload for weeks, while the
+  loss curves looked textbook.  \textit{Guard.}
+  \texttt{donut\_train.py} mirrors
+  \texttt{decoder\_start\_token\_id} / \texttt{pad\_token\_id} /
+  \texttt{eos\_token\_id} / \texttt{max\_new\_tokens} from
+  \texttt{model.config} into \texttt{model.generation\_config}
+  before the first \texttt{trainer.evaluate()}.
+
+\item \textbf{\texttt{tie\_word\_embeddings=False} resize trap}
+  (F1\,$\approx$\,0.31 on new-token runs).
+  \textit{Mechanism.} Setting \texttt{tie\_word\_embeddings=False}
+  (the Bug~1 fix) creates an independent \texttt{lm\_head}, but also
+  means that subsequent \texttt{resize\_token\_embeddings()} calls
+  no longer auto-resize the output projection.  New task tokens
+  (\texttt{<s\_sroie>}, per-field open/close tags) have nothing
+  connecting them to the decoder's output space and are emitted
+  essentially at random.  \textit{F1 impact.} F1 plateaus around
+  0.31: the three fields that the base DONUT tokeniser already
+  covers score normally, but fields that require the new tokens
+  score near zero.  \textit{Guard.} After every vocabulary expansion
+  we re-instantiate \texttt{model.lm\_head} as a matching-size
+  \texttt{nn.Linear} and re-initialise it with the embedding weights
+  (an explicit copy, not a tie).
+
+\item \textbf{\texttt{num\_items\_in\_batch} kwargs leak}
+  (\texttt{TypeError} on first batch).
+  \textit{Mechanism.} \texttt{transformers}\,$\geq$\,4.48 injects a
+  \texttt{num\_items\_in\_batch} kwarg into every training step's
+  \texttt{**kwargs}; it leaks through
+  \texttt{VisionEncoderDecoderModel.forward} into
+  \texttt{SwinModel.forward}, which accepts no \texttt{**kwargs},
+  raising before the first optimiser step.  \textit{F1 impact.}
+  Training never starts, so F1 is 0.000; but unlike Bug~8 this
+  failure is loud (the traceback includes the kwarg name).
+  \textit{Guard.} \texttt{donut\_train.py} sets
+  \texttt{model.accepts\_loss\_kwargs = False} on the
+  \texttt{VisionEncoderDecoderModel} wrapper so the HF trainer stops
+  injecting the kwarg at all.
+
+\item \textbf{Outer \texttt{<s\_sroie>} wrapper flattening}
+  (per-field F1\,=\,0 with healthy \texttt{eval\_loss}).
+  \textit{Mechanism.} Our training labels wrap each receipt in
+  \texttt{<s\_sroie>}\ldots\texttt{</s\_sroie>}, and the same tag
+  doubles as the task start/EOS token.  HF's \texttt{token2json}
+  therefore parses the root tag as a dict key, returning
+  \texttt{\{"sroie":\{"company":\ldots,\ldots\}\}};
+  \texttt{compute\_metrics} then sees ``missing keys'' for every
+  field and scores F1\,=\,0 while the cross-entropy loss descends
+  normally.  \textit{F1 impact.} Identical in character to Bug~9
+  (zero F1, healthy loss); distinguishable only by the fact that
+  \texttt{generation\_config} has been fixed and the problem
+  re-surfaces downstream.  \textit{Guard.}
+  \texttt{donut\_parse.\_flatten\_token2json} recursively unwraps
+  any single-key root dict whose key matches the task tag.
+
+\item \textbf{Warmup-steps-vs-ratio precedence} (F1\,$\approx$\,0.61).
+  \textit{Mechanism.} Hugging Face's \texttt{Trainer} consults
+  \texttt{warmup\_steps} first and uses it whenever it is $>$0,
+  silently overriding \texttt{warmup\_ratio}.  A non-zero
+  \texttt{warmup\_steps} left in a template config therefore
+  nullifies the ratio we intended to apply, and the effective
+  learning rate schedule shrinks the warmup period below the point
+  where the resized embedding rows can adapt cleanly.
+  \textit{F1 impact.} $\approx$\,0.10 absolute F1 drop versus the
+  intended ratio-based schedule on DONUT, concentrated in the
+  fields that rely on the new SROIE special tokens.
+  \textit{Guard.} \texttt{donut\_train.py} forces
+  \texttt{warmup\_steps\,=\,0} whenever
+  \texttt{warmup\_ratio\,>\,0}, restoring the intended behaviour.

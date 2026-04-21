@@ -59,14 +59,33 @@ def _assign_learned(
     fields: list[str], device: str,
 ) -> dict[str, str]:
     """Use the learned assigner's attention to pick one region per field."""
+    values, _attn = _assign_learned_with_attn(
+        assigner, texts, feats, bboxes, fields, device,
+    )
+    return values
+
+
+def _assign_learned_with_attn(
+    assigner: AttentionAssigner, texts: list[str],
+    feats: list[torch.Tensor], bboxes: list[list[float]],
+    fields: list[str], device: str,
+) -> tuple[dict[str, str], torch.Tensor | None]:
+    """Field-assign and also return the ``(F, N)`` cross-attention tensor.
+
+    Used by :mod:`models.pipeline_attn` to capture attention samples
+    for the paper's per-receipt heatmap figure.  Returns
+    ``(values, None)`` on the empty-text path so the caller can
+    uniformly ``if attn is not None``.
+    """
     if not texts:
-        return {}
+        return {}, None
     tf = torch.cat(feats, dim=0).unsqueeze(0)
     bf = torch.tensor(bboxes, dtype=torch.float32).unsqueeze(0).to(device)
     priors = torch.tensor(
         [text_priors(t) for t in texts], dtype=torch.float32,
     ).unsqueeze(0).to(device)
     _logits, attn_w = assigner(tf, bf, priors)
+    attn_sample = attn_w[0].detach().cpu()  # (F, N), kept for the sampler
     used: set[int] = set()
     out: dict[str, str] = {}
     for f_idx, name in enumerate(fields):
@@ -94,4 +113,4 @@ def _assign_learned(
             used.add(best)
             value = texts[best]
         out[name] = postprocess_value(name, value)
-    return out
+    return out, attn_sample
