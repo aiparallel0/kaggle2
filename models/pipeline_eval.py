@@ -34,11 +34,12 @@ from models.pipeline_attn import DEFAULT_SAMPLE_K, AttentionSampler
 from models.pipeline_detect import _detect_and_read, _fallback_full_image
 from models.rule_based import rule_based_assign
 
+_import_error: ImportError | None = None
 try:
     import torch
     from torch import Tensor as _Tensor  # noqa: F401  (silence ruff SIM105)
-except ImportError:  # lightweight CI — torch not installed
-    pass
+except ImportError as _exc:  # lightweight CI — torch not installed
+    _import_error = _exc
 
 
 def _nt(fields: list[Field]) -> list[Field]:
@@ -89,6 +90,11 @@ def _resolve_yolo_img(paths: PipelinePaths, config: ExpConfig) -> int:
 
 def eval_pipeline(config: ExpConfig, test: list[Receipt]) -> PipelineResult:
     """Run the three-stage pipeline; return assigner + rule-based Metrics."""
+    if _import_error is not None:
+        raise ImportError(
+            "torch is required for pipeline evaluation. "
+            "Run: pip install -r requirements.txt"
+        ) from _import_error
     paths = _paths_from_config(config)
     yolo, trocr_proc, trocr_model, assigner, device = _load(paths, config)
     yolo_img = _resolve_yolo_img(paths, config)

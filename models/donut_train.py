@@ -18,6 +18,7 @@ from core.types import DataSplit, ExpConfig
 from models.donut_dataset import _DonutCollator, _seed_worker, _SROIEDataset
 from models.donut_optim import _make_compute_metrics, _split_param_groups
 
+_import_error: ImportError | None = None
 try:
     import torch
     from transformers import (
@@ -27,8 +28,8 @@ try:
         Seq2SeqTrainingArguments,
         VisionEncoderDecoderModel,
     )
-except ImportError:  # lightweight CI — torch/transformers not installed
-    pass
+except ImportError as _exc:  # lightweight CI — torch/transformers not installed
+    _import_error = _exc
 
 __all__ = [
     "_DonutCollator",
@@ -128,6 +129,11 @@ def _build_args(config: ExpConfig, out_dir: str) -> Seq2SeqTrainingArguments:
 
 def train_donut(config: ExpConfig, data: DataSplit) -> str:
     """Train DONUT with differential LR; return saved model directory."""
+    if _import_error is not None:
+        raise ImportError(
+            "torch and transformers are required for DONUT training. "
+            "Run: pip install -r requirements.txt"
+        ) from _import_error
     proc, model = _prepare_model(config)
     out_dir = os.path.join(config.output_dir, "donut")
     args = _build_args(config, out_dir)

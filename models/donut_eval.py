@@ -20,11 +20,12 @@ from core.metrics import compute_metrics
 from core.types import EvalBundle, ExpConfig, Field, Metrics, Prediction, Receipt
 from models.donut_parse import token2json_safe as _token2json_safe
 
+_import_error: ImportError | None = None
 try:
     import torch
     from transformers import DonutProcessor, VisionEncoderDecoderModel
-except ImportError:  # lightweight CI — torch/transformers not installed
-    pass
+except ImportError as _exc:  # lightweight CI — torch/transformers not installed
+    _import_error = _exc
 
 __all__ = ["eval_donut", "_token2json_safe", "normalize_total"]
 
@@ -111,6 +112,11 @@ def _resolve_start_eos(processor: Any, model: Any) -> tuple[int, int | None]:
 
 def eval_donut(config: ExpConfig, test: list[Receipt]) -> Metrics:
     """Run DONUT inference on test receipts; return Metrics (2-in/1-out)."""
+    if _import_error is not None:
+        raise ImportError(
+            "torch and transformers are required for DONUT evaluation. "
+            "Run: pip install -r requirements.txt"
+        ) from _import_error
     model_path = os.path.join(config.output_dir, "donut")
     processor, model, device = _load(model_path)
     start_id, eos_id = _resolve_start_eos(processor, model)

@@ -24,11 +24,12 @@ from models.attention_assign import (
     save_assigner,
 )
 
+_import_error: ImportError | None = None
 try:
     import torch
     from torch import Tensor
-except ImportError:  # lightweight CI — torch not installed
-    pass
+except ImportError as _exc:  # lightweight CI — torch not installed
+    _import_error = _exc
 
 if TYPE_CHECKING:
     from torch import Tensor
@@ -111,6 +112,11 @@ def train_assigner(config: ExpConfig, data: AssignerData) -> str:
     val-loss with patience=config.assigner_patience.  Metrics written to
     assigner_metrics.json for fig_assigner_loss_curve.
     """
+    if _import_error is not None:
+        raise ImportError(
+            "torch is required for AssignTrainer training. "
+            "Run: pip install -r requirements.txt"
+        ) from _import_error
     device = "cuda" if torch.cuda.is_available() else "cpu"
     field_to_idx = {f.lower(): i for i, f in enumerate(config.fields)}
     prepared, text_feat_dim = _prepare_groups(
