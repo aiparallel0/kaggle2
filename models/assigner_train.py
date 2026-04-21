@@ -126,6 +126,7 @@ def train_assigner(config: ExpConfig, data: AssignerData) -> str:
     out_path = os.path.join(config.output_dir, "assigner.pt")
     Path(config.output_dir).mkdir(parents=True, exist_ok=True)
     save_assigner(assigner, out_path)
+    n_params = int(sum(p.numel() for p in assigner.parameters()))
     with open(os.path.join(config.output_dir, "assigner_metrics.json"), "w") as f:
         json.dump(
             {
@@ -137,6 +138,7 @@ def train_assigner(config: ExpConfig, data: AssignerData) -> str:
                 "epochs": config.epochs_assigner,
                 "patience": patience,
                 "min_delta": min_delta,
+                "n_params": n_params,
             },
             f, indent=2,
         )

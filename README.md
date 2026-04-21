@@ -9,8 +9,9 @@ Replaces 34K-line Python monolith. Trains both architectures, evaluates on
 
 Published DONUT-on-SROIE results land in **0.73 – 0.90** depending on
 epochs, resolution, auxiliary data, and seed. The tightened configuration
-in this repo (15 epochs, cosine schedule, beam-search decoding, best-F1
-checkpoint selection) typically lands in **0.78 – 0.85** on an RTX 4090 /
+in this repo (30 epochs, cosine schedule, differential encoder/decoder LR,
+beam-search decoding, best-F1 checkpoint selection) typically lands in
+**0.78 – 0.85** on an RTX 4090 /
 A6000. The pipeline (YOLO+TrOCR+Attention) typically achieves
 **0.50 – 0.60** F1, with YOLO text-line detection at **0.98 mAP@0.5**.
 **No specific F1 number can be guaranteed by code changes alone**:
@@ -137,7 +138,7 @@ All hyperparameters live in `config.json`. F1-affecting knobs:
 
 | Parameter | Default | Effect on expected F1 |
 |---|---|---|
-| `epochs_donut` | 15 | Longer training → higher F1, diminishing returns past 15. |
+| `epochs_donut` | 30 | Longer training → higher F1, diminishing returns past ~30 on 500 SROIE receipts. |
 | `image_size` | [1280, 960] | Higher resolution → better address/total recognition; more VRAM. |
 | `num_beams` | 4 | Beam search typically gains 2–4 F1 points over greedy. |
 | `lr_scheduler_type` | cosine | Cosine > linear for short SROIE runs. |
@@ -145,8 +146,8 @@ All hyperparameters live in `config.json`. F1-affecting knobs:
 | `gradient_checkpointing` | true | Lets batch 8 × 1280 × 960 fit in 24 GB. |
 | `patience` | 3 | EarlyStopping on plateau of eval F1. |
 | `precision` | bf16 | bf16 on Ampere+; fp16 with grad-clip otherwise (Bug 4). |
-| `yolo_img_size` | 512 | MUST match training and inference (Bug 5). |
-| `epochs_trocr` | 10 | Floor of 5 enforced in config.py (Bug 6). |
+| `yolo_img_size` | 1024 | MUST match training and inference (Bug 5). |
+| `epochs_trocr` | 12 | Floor of 5 enforced in config.py (Bug 6). |
 | `expected_f1_warn` | 0.75 | Soft WARN threshold (non-fatal). |
 
 ## F1-destroying bugs (all guarded in code)

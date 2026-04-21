@@ -34,6 +34,20 @@ _NEW_KEYS = [
     "cuda_version",
     "vastai_host_id",
     "assigner_delta",
+    # Paper-sprinkle keys: assigner telemetry, differential LR,
+    # pipeline diagnostics, KD hooks. Surfaced from
+    # assigner_metrics.json / pipeline_metrics.json / config.json.
+    "assigner_best_epoch",
+    "assigner_stopped_at",
+    "assigner_best_val_loss",
+    "lr_encoder",
+    "lr_decoder",
+    "empty_detection_fraction",
+    "per_receipt_error_fraction",
+    "parity_ok",
+    "kd_attn_weight",
+    "kd_logits_weight",
+    "epochs_assigner",
 ]
 
 

@@ -190,6 +190,17 @@ def _combined_metrics(
         "yolo_img_size": config.yolo_img_size,
         "img_w": config.image_size[0], "img_h": config.image_size[1],
         "artifact_mode": "full",
+        # Differential LR (encoder vs. decoder, see models.donut_optim):
+        # decoder is trained 10× faster to fit the resized embedding
+        # rows for <s_sroie>/<s_company>/... special tokens without
+        # destabilising the pretrained Swin encoder.
+        "lr_encoder": config.lr,
+        "lr_decoder": config.lr_decoder,
+        # KD scaffolding, currently off — reported explicitly so
+        # reviewers can see they did not influence results.
+        "kd_attn_weight": config.kd_attn_weight,
+        "kd_logits_weight": config.kd_logits_weight,
+        "epochs_assigner": config.epochs_assigner,
     }
     return out
 
@@ -260,6 +271,57 @@ def stage_eval_rulebased_gold(config: ExpConfig) -> None:
         json.dump(combined, f, indent=2)
 
 
+def _merge_assigner_metrics(config: ExpConfig, metrics: dict[str, object]) -> None:
+    """Surface ``assigner_metrics.json`` keys for paper \\VAR{} substitution."""
+    path = os.path.join(config.output_dir, "assigner_metrics.json")
+    if not Path(path).exists():
+        return
+    try:
+        with open(path) as fh:
+            am: dict[str, object] = json.load(fh)
+    except Exception as exc:  # noqa: BLE001
+        log.warning("Failed to merge assigner_metrics.json: %s", exc)
+        return
+    n_params = am.get("n_params")
+    if isinstance(n_params, int | float):
+        metrics.setdefault("assigner_params_k", round(float(n_params) / 1000.0, 1))
+    for src, dst in (
+        ("best_epoch", "assigner_best_epoch"),
+        ("stopped_at_epoch", "assigner_stopped_at"),
+        ("best_val_loss", "assigner_best_val_loss"),
+    ):
+        if am.get(src) is not None:
+            metrics.setdefault(dst, am[src])
+
+
+def _merge_pipeline_diagnostics(config: ExpConfig, metrics: dict[str, object]) -> None:
+    """Surface pipeline per-receipt diagnostic fractions + parity flag."""
+    path = os.path.join(config.output_dir, "pipeline_metrics.json")
+    if not Path(path).exists():
+        return
+    try:
+        with open(path) as fh:
+            pm: dict[str, object] = json.load(fh)
+    except Exception as exc:  # noqa: BLE001
+        log.warning("Failed to merge pipeline_metrics.json: %s", exc)
+        return
+    for key in ("empty_detection_fraction", "per_receipt_error_fraction"):
+        if key in pm:
+            metrics.setdefault(key, pm[key])
+    # Parity: pipeline_meta.json's yolo_img_size matches live config.
+    meta = Path(config.output_dir) / "pipeline_meta.json"
+    if meta.exists():
+        try:
+            with open(meta) as fh:
+                meta_data = json.load(fh)
+            metrics.setdefault(
+                "parity_ok",
+                int(meta_data.get("yolo_img_size", -1)) == config.yolo_img_size,
+            )
+        except Exception as exc:  # noqa: BLE001
+            log.warning("Failed to read pipeline_meta.json: %s", exc)
+
+
 def stage_paper(config: ExpConfig) -> None:
     log.info("=== Stage: paper ===")
     metrics_path = os.path.join(config.output_dir, "combined_metrics.json")
@@ -283,6 +345,8 @@ def stage_paper(config: ExpConfig) -> None:
                     metrics.setdefault(f"{stage}_{k}", v)
             except Exception as exc:  # noqa: BLE001
                 log.warning("Failed to merge cost_%s.json: %s", stage, exc)
+    _merge_assigner_metrics(config, metrics)
+    _merge_pipeline_diagnostics(config, metrics)
     with open(config.paper_template) as f:
         template = f.read()
     # Inline \input{sections/...} before \VAR{} substitution — keeps the

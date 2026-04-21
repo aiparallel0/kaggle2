@@ -69,6 +69,20 @@ class CombinedMetrics(TypedDict, total=False):
     donut_params_m: float
     pipeline_params_m: float
     assigner_params_k: float
+    # --- Assigner training telemetry (from assigner_metrics.json) ---
+    assigner_best_epoch: int
+    assigner_stopped_at: int
+    assigner_best_val_loss: float
+    # --- Differential learning rate (DONUT encoder vs decoder) ---
+    lr_encoder: float
+    lr_decoder: float
+    # --- Pipeline diagnostic fractions (from pipeline_metrics.json) ---
+    empty_detection_fraction: float
+    per_receipt_error_fraction: float
+    parity_ok: bool
+    # --- Knowledge-distillation hooks (off in reported runs) ---
+    kd_attn_weight: float
+    kd_logits_weight: float
     # --- Hardware / efficiency ---
     donut_peak_vram_gb: float
     pipeline_peak_vram_gb: float

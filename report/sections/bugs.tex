@@ -3,7 +3,8 @@
 
 We identified the following ten implementation bugs during development.
 Each is a silent failure: the code runs to completion and the loss
-decreases, but the final F1 is drastically degraded.
+decreases, but the final F1 is drastically degraded.  All are guarded
+in source; the guards are cited inline.
 
 \begin{enumerate}
 
@@ -34,10 +35,12 @@ decreases, but the final F1 is drastically degraded.
 
 \item \textbf{YOLO imgsz mismatch at inference} (0\,\% detection).
   YOLOv8 inference defaults to \texttt{imgsz=640}; if training
-  used \texttt{512}, the model's anchor priors are scaled to the
+  used a different size, the model's anchor priors are scaled to the
   wrong resolution and no boxes are produced.  \emph{Guard}: always
   pass \texttt{imgsz} explicitly to both \texttt{model.train()} and
-  \texttt{model.predict()}.
+  \texttt{model.predict()}, and assert train/eval parity via
+  \texttt{pipeline\_meta.json}
+  (\texttt{parity\_ok}\,=\,\VAR{parity_ok}).
 
 \item \textbf{TrOCR undertrained} (all-empty predictions).
   Validation loss at epoch~1 is $\approx$9.1, far above the
@@ -59,12 +62,23 @@ decreases, but the final F1 is drastically degraded.
   pass an explicit \texttt{project} and \texttt{name} to
   \texttt{model.train()}.
 
-\item \textbf{Stale generation\_config on reload}.
-  After fine-tuning, the \texttt{generation\_config.json} saved in the
-  checkpoint retains the base model's beam-search defaults, including a
-  \texttt{max\_new\_tokens} that is often too short for SROIE output.
-  \emph{Guard}: overwrite \texttt{generation\_config} after loading the
-  checkpoint and before calling \texttt{model.generate()}.
+\item \textbf{Stale generation\_config on reload} (eval\_F1\,$\equiv$\,0
+  with healthy eval\_loss).
+  \texttt{Seq2SeqTrainer(predict\_with\_generate=True)} reads
+  \texttt{model.generation\_config}, which is snapshotted at
+  \texttt{from\_pretrained} time --- \emph{not} the live overrides we
+  place on \texttt{model.config}.  So \texttt{decoder\_start\_token\_id}
+  falls back to the base mBART \texttt{<s>},
+  \texttt{token2json} receives a token stream with no recognisable
+  field tags, and returns \texttt{\{\}}; per-field F1 is a clean zero
+  while the cross-entropy loss decreases normally.  This is the single
+  most expensive silent bug in the codebase.
+  \emph{Guard}: after loading a checkpoint, mirror the relevant ids
+  (\texttt{decoder\_start\_token\_id}, \texttt{pad\_token\_id},
+  \texttt{eos\_token\_id}, \texttt{max\_new\_tokens}) from
+  \texttt{model.config} into \texttt{model.generation\_config}
+  before the first \texttt{trainer.evaluate()} or
+  \texttt{model.generate()} call.
 
 \item \textbf{tie\_word\_embeddings=False subtlety}.
   Setting \texttt{tie\_word\_embeddings=False} (the Bug~1 fix) creates
@@ -78,4 +92,31 @@ decreases, but the final F1 is drastically degraded.
   flag change.
 
 \end{enumerate}
+
+\paragraph{Additional guards (not separate bugs, but worth documenting).}
+
+\textbf{(a) \texttt{accepts\_loss\_kwargs}.}
+\texttt{transformers}\,$\geq$\,4.48 injects \texttt{num\_items\_in\_batch}
+into the training step's \texttt{**kwargs}, which leaks through
+\texttt{VisionEncoderDecoderModel.forward} into
+\texttt{SwinModel.forward}, which has no \texttt{**kwargs}, raising
+\texttt{TypeError} on the first batch.  Our \texttt{donut\_train.py}
+sets \texttt{accepts\_loss\_kwargs\,=\,False} on the model wrapper to
+suppress the injection.
+
+\textbf{(b) Outer \texttt{<s\_sroie>} wrapper flattening.}
+Our training labels wrap each receipt in
+\texttt{<s\_sroie>...</s\_sroie>}; HF's \texttt{token2json} parses the
+root tag as a dict key, yielding
+\texttt{\{"sroie": \{"company": ..., ...\}\}}.  \texttt{compute\_metrics}
+then sees ``missing keys'' for every field and reports per-field
+F1\,=\,0 with a healthy eval\_loss.  \emph{Guard}:
+\texttt{donut\_parse.py}'s \texttt{\_flatten\_token2json} recursively
+unwraps a single-key root dict whose key matches the task tag.
+
+\textbf{(c) Warmup precedence.}
+Hugging Face's \texttt{Trainer} uses \texttt{warmup\_steps} when
+it is $>$\,0, silently overriding \texttt{warmup\_ratio}.
+\texttt{donut\_train.py} forces \texttt{warmup\_steps\,=\,0} whenever
+\texttt{warmup\_ratio\,$>$\,0} so the ratio actually takes effect.
 

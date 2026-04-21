@@ -83,6 +83,8 @@ def eval_pipeline(config: ExpConfig, test: list[Receipt]) -> PipelineResult:
     yolo_img = _resolve_yolo_img(paths, config)
     preds_l: list[Prediction] = []
     preds_r: list[Prediction] = []
+    n_empty_detect = 0  # receipts where YOLO found zero boxes → full-image fallback
+    n_receipt_err = 0  # receipts where per-receipt try/except caught a failure
     with torch.no_grad():
         for rec in test:
             rid = rec.image_path.stem
@@ -103,6 +105,7 @@ def eval_pipeline(config: ExpConfig, test: list[Receipt]) -> PipelineResult:
                 # dark scans. Without it the receipt contributes 0 to all
                 # four field F1s.
                 if not texts:
+                    n_empty_detect += 1
                     texts, feats, bboxes = _fallback_full_image(
                         trocr_proc, trocr_model, img, config, device,
                     )
@@ -111,6 +114,7 @@ def eval_pipeline(config: ExpConfig, test: list[Receipt]) -> PipelineResult:
                 )
                 rule = rule_based_assign(texts, bboxes) if texts else {}
             except (OSError, RuntimeError, ValueError):
+                n_receipt_err += 1
                 learned, rule = {}, {}
             preds_l.append(Prediction(
                 receipt_id=rid,
@@ -127,11 +131,15 @@ def eval_pipeline(config: ExpConfig, test: list[Receipt]) -> PipelineResult:
         predictions=preds_r, receipts=test, fields=config.fields,
     ))
     out_dir = Path(paths.yolo).parent.parent
+    n_total = max(len(test), 1)
     with open(out_dir / "pipeline_metrics.json", "w") as f:
         json.dump({
             "assigner_f1": m_l.global_f1, "rulebased_f1": m_r.global_f1,
             "assigner_ned": m_l.global_ned, "assigner_em": m_l.global_em,
             "per_field_f1": m_l.per_field_f1,
             "rulebased_per_field_f1": m_r.per_field_f1,
+            "empty_detection_fraction": n_empty_detect / n_total,
+            "per_receipt_error_fraction": n_receipt_err / n_total,
+            "n_test_receipts": len(test),
         }, f, indent=2)
     return PipelineResult(assigner=m_l, rulebased=m_r)

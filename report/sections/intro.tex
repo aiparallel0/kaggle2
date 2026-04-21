@@ -24,7 +24,8 @@ an OCR model (TrOCR~\cite{li2023trocr}) reads each crop;
 and a field assigner maps the resulting text tokens and bounding boxes
 to the target schema.  Pipelines are interpretable --- each stage
 produces an auditable intermediate representation --- and fast to
-iterate: retraining the 50\,K-parameter assigner takes minutes, whereas
+iterate: retraining the $\approx\VAR{assigner_params_k}\,$K-parameter
+assigner takes minutes, whereas
 retraining DONUT from a new base takes hours.
 
 The central question this paper asks is: \emph{can a lightweight
@@ -40,16 +41,18 @@ train\,/\,val\,/\,test split, no validation leakage, and three seeds.
   pipeline at a fixed data budget of 500 training receipts, with
   bootstrap 95\,\% confidence intervals and McNemar's test to
   characterise statistical significance on the small test set.
-\item A 50\,K-parameter cross-attention assigner with four
+\item A $\approx\VAR{assigner_params_k}\,$K-parameter
+  Transformer-encoder\,$+$\,cross-attention assigner with four
   learned field queries (\texttt{company}, \texttt{date},
-  \texttt{address}, \texttt{total}), published with reproducible code,
-  a fixed data split, and three seeds.\footnote{The repo's
+  \texttt{address}, \texttt{total}), 6-d handcrafted text priors,
+  and a multi-instance negative-log pos-mass loss; published with
+  reproducible code, a fixed data split, and three seeds.\footnote{The repo's
   architectural discipline --- 166-LOC cap, 2-in/1-out function
   contracts, flat module layout, and mypy --strict as the test suite
   --- is adapted from the C99 companion project
   \texttt{aiparallel0/teb2}, ensuring every module is individually
   auditable.}
-\item A catalogue of eight silent F1-destroying implementation bugs
+\item A catalogue of ten silent F1-destroying implementation bugs
   found during development, with symptom, mechanism, and guard for
   each.
 \item Full GPU telemetry (utilisation, memory, power, temperature,
