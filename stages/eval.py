@@ -29,7 +29,11 @@ from models.rule_eval import (
     per_field_injection,
 )
 from report.combine import build_combined
-from stages._common import warn_below_expected
+from stages._common import (
+    assert_pipeline_beats_rulebased_gold,
+    warn_below_expected,
+    warn_pipeline_diagnostics,
+)
 
 log = logging.getLogger("kaggle2")
 
@@ -81,6 +85,7 @@ def stage_eval(config: ExpConfig, seeds: list[int] | None = None) -> None:
         pm = eval_pipeline(config, data.test)
         validate_f1(pm.assigner, "pipeline")
         warn_below_expected(pm.assigner, config, "pipeline")
+        warn_pipeline_diagnostics(config)
         log.info("Pipeline (assigner)  F1=%.4f", pm.assigner.global_f1)
         log.info("Pipeline (rulebased) F1=%.4f", pm.rulebased.global_f1)
         # Rule-based on gold OCR isolates assignment-heuristic quality
@@ -88,6 +93,11 @@ def stage_eval(config: ExpConfig, seeds: list[int] | None = None) -> None:
         # runs, so we always compute it here too.
         rb_gold = eval_rulebased_gold(config, data.test)
         log.info("Rule-based (gold OCR) F1=%.4f", rb_gold.global_f1)
+        # Regression gate: a learned model on YOLO+TrOCR features must not
+        # score below a heuristic on gold OCR — otherwise something is
+        # wrong upstream (bad assigner checkpoint, stale TrOCR features,
+        # or an eval-fairness bug).
+        assert_pipeline_beats_rulebased_gold(pm.assigner, rb_gold)
         donut_f1s.append(dm.global_f1)
         pipeline_f1s.append(pm.assigner.global_f1)
         last = build_combined(config, dm, pm, rb_gold)

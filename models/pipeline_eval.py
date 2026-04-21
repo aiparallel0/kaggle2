@@ -28,6 +28,7 @@ from core.types import (
     Receipt,
 )
 from models.attention_assign import _load_assigner
+from models.donut_eval import normalize_total
 from models.pipeline_assign import _assign_learned_with_attn
 from models.pipeline_attn import DEFAULT_SAMPLE_K, AttentionSampler
 from models.pipeline_detect import _detect_and_read, _fallback_full_image
@@ -38,6 +39,12 @@ try:
     from torch import Tensor as _Tensor  # noqa: F401  (silence ruff SIM105)
 except ImportError:  # lightweight CI — torch not installed
     pass
+
+
+def _nt(fields: list[Field]) -> list[Field]:
+    """Normalize the TOTAL field symmetrically (matches ``eval_donut``)."""
+    return [Field(name=f.name, value=normalize_total(f.value))
+            if f.name.lower() == "total" else f for f in fields]
 
 
 def _paths_from_config(config: ExpConfig) -> PipelinePaths:
@@ -131,12 +138,15 @@ def eval_pipeline(config: ExpConfig, test: list[Receipt]) -> PipelineResult:
                 receipt_id=rid,
                 fields=[Field(name=k, value=v) for k, v in rule.items()],
             ))
-    m_l = compute_metrics(EvalBundle(
-        predictions=preds_l, receipts=test, fields=config.fields,
-    ))
-    m_r = compute_metrics(EvalBundle(
-        predictions=preds_r, receipts=test, fields=config.fields,
-    ))
+    # Symmetric TOTAL normalization (learned + rule-based + GT) matches
+    # ``eval_donut`` so pipeline F1 is directly comparable to DONUT F1.
+    n_preds_l = [Prediction(receipt_id=p.receipt_id, fields=_nt(p.fields))
+                 for p in preds_l]
+    n_preds_r = [Prediction(receipt_id=p.receipt_id, fields=_nt(p.fields))
+                 for p in preds_r]
+    n_test = [Receipt(image_path=r.image_path, fields=_nt(r.fields)) for r in test]
+    m_l = compute_metrics(EvalBundle(n_preds_l, n_test, config.fields))
+    m_r = compute_metrics(EvalBundle(n_preds_r, n_test, config.fields))
     out_dir = Path(paths.yolo).parent.parent
     n_total = max(len(test), 1)
     attn_sampler.write(out_dir)
