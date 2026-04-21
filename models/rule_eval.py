@@ -98,6 +98,14 @@ def combined_from_rulebased(
     paper template tolerates zeros here: every \\VAR{} placeholder still
     receives a real value, and the discussion explicitly calls out that
     the DONUT/pipeline rows are blank in gold-OCR-only artefacts.
+
+    Every key surfaced by the full-pipeline ``_combined_metrics`` is
+    also emitted here (with honest zeros / config defaults) so the
+    CPU-only artefact does not silently fall back to ``---`` for
+    differential-LR, KD weights, assigner-telemetry, or pipeline
+    diagnostic placeholders.  ``stage_paper`` still overlays richer
+    values from ``assigner_metrics.json`` / ``pipeline_metrics.json``
+    when those JSONs are present.
     """
     zero_fields = _empty_field_map(config.fields)
     return {
@@ -115,13 +123,31 @@ def combined_from_rulebased(
         "epochs_donut": config.epochs_donut,
         "epochs_trocr": config.epochs_trocr,
         "epochs_yolo": config.epochs_yolo,
+        "epochs_assigner": config.epochs_assigner,
         "batch_size": config.batch_size,
         "lr": config.lr,
+        "lr_encoder": config.lr,
+        "lr_decoder": config.lr_decoder,
         "precision": config.precision,
         "label_smoothing": config.label_smoothing,
+        "warmup_steps": config.warmup_steps,
         "yolo_img_size": config.yolo_img_size,
         "img_w": config.image_size[0],
         "img_h": config.image_size[1],
+        "kd_attn_weight": config.kd_attn_weight,
+        "kd_logits_weight": config.kd_logits_weight,
+        # Pipeline-diagnostic placeholders: real values are merged from
+        # pipeline_metrics.json by stage_paper when it exists.  Zeros
+        # here mean "no pipeline run executed in this artefact".
+        "empty_detection_fraction": 0.0,
+        "per_receipt_error_fraction": 0.0,
+        "parity_ok": True,
+        # Assigner-telemetry placeholders: real values merged by
+        # stage_paper from assigner_metrics.json when available.
+        "assigner_params_k": 0.0,
+        "assigner_best_epoch": 0,
+        "assigner_stopped_at": 0,
+        "assigner_best_val_loss": 0.0,
         "artifact_mode": "rulebased_gold_only",
     }
 

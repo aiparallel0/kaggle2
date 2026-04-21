@@ -136,9 +136,7 @@ def _pick_address(
         if y <= company_y or y >= lower_bound:
             continue
         t = region_texts[i].strip()
-        if _is_short_junk(t):
-            continue
-        if _DATE_RE.search(t) or _MONEY_RE.search(t):
+        if _is_short_junk(t) or _DATE_RE.search(t) or _MONEY_RE.search(t):
             continue
         if _ADDR_EXCLUDE.search(t) or _HEADER_JUNK.match(t):
             continue
@@ -158,9 +156,7 @@ def _pick_address(
         t = region_texts[i].strip()
         if _MONEY_RE.search(t) or _DATE_RE.search(t):
             continue
-        if _ADDR_EXCLUDE.search(t) or _HEADER_JUNK.match(t):
-            continue
-        if _is_short_junk(t):
+        if _ADDR_EXCLUDE.search(t) or _HEADER_JUNK.match(t) or _is_short_junk(t):
             continue
         fallback.append(t)
         if len(fallback) >= 4:

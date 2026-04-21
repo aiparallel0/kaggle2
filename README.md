@@ -150,19 +150,30 @@ All hyperparameters live in `config.json`. F1-affecting knobs:
 | `epochs_trocr` | 12 | Floor of 5 enforced in config.py (Bug 6). |
 | `expected_f1_warn` | 0.75 | Soft WARN threshold (non-fatal). |
 
-## F1-destroying bugs (all guarded in code)
+## F1-destroying bugs (all thirteen guarded in code)
 
-1. lm_head weight deduplication (safetensors drops tied weights)
-2. Wrong decoder_start_token_id (string-form tokeniser)
-3. token2json list return (CORD-style multi-page output); merge prefers
-   longest non-empty value per field
-4. fp16 gradient overflow (bf16 on Ampere+, else fp16 + max_grad_norm)
-5. YOLO imgsz mismatch (inference default ≠ training size)
-6. TrOCR undertrained (<5 epochs produces all-empty outputs)
-7. Val == Test leakage (physically separate splits, persisted to disk)
-8. YOLO project path resolution (ultralytics ≥8.3 relative-path bug)
-9. Stale generation_config (saved decoder_start_token_id ≠ model.config;
-   affects both DONUT and TrOCR — mirror ids into generation_config)
+ 1. lm_head weight deduplication (safetensors drops tied weights)
+ 2. Wrong decoder_start_token_id (string-form tokeniser)
+ 3. token2json list return (CORD-style multi-page output); merge prefers
+    longest non-empty value per field
+ 4. fp16 gradient overflow (bf16 on Ampere+, else fp16 + max_grad_norm)
+ 5. YOLO imgsz mismatch (inference default ≠ training size;
+    train/eval parity asserted via `pipeline_meta.json`)
+ 6. TrOCR undertrained (<5 epochs produces all-empty outputs)
+ 7. Val == Test leakage (physically separate splits, persisted to disk)
+ 8. YOLO project path resolution (ultralytics ≥8.3 relative-path bug)
+ 9. Stale `generation_config` on reload (eval_F1 ≡ 0 with healthy
+    eval_loss; `Seq2SeqTrainer(predict_with_generate=True)` reads the
+    snapshot, not live overrides on `model.config`)
+10. `tie_word_embeddings=False` subtlety (post-resize `lm_head` must
+    be re-initialised explicitly)
+11. `num_items_in_batch` kwargs leak into `SwinModel.forward`
+    (transformers ≥4.48); guarded via `accepts_loss_kwargs=False`
+12. Outer `<s_sroie>` wrapper flattening in `token2json` (per-field
+    F1 = 0 with healthy eval_loss); `_flatten_token2json` recursively
+    unwraps the root tag
+13. Warmup-steps-vs-ratio precedence in HF `Trainer`; we force
+    `warmup_steps=0` when `warmup_ratio > 0`
 
 ## Testing
 

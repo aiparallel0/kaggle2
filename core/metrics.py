@@ -1,7 +1,12 @@
 """Shared metric computation: token-F1, NED, EM — used by both eval modules.
 
-Re-exports statistical helpers from ``core.statistics`` so callers can do
-``from core.metrics import bootstrap_ci`` without a separate import chain.
+Project: kaggle2 — End-to-End vs. Pipeline Receipt KIE on SROIE.
+Article: "End-to-End vs. Pipeline Receipt KIE: DONUT Against
+    YOLO+TrOCR+Attention on SROIE" (IEEE/ICDAR submission).
+Role: canonical implementations of Levenshtein edit distance, token-F1,
+    and the :func:`compute_metrics` reducer over an :class:`EvalBundle`.
+    Also re-exports the ``core.statistics`` helpers so callers can write
+    ``from core.metrics import bootstrap_ci`` without a second import.
 """
 from __future__ import annotations
 
@@ -21,7 +26,6 @@ class CombinedMetrics(TypedDict, total=False):
     incrementally (e.g. multi-seed mean/std only appear when the
     ``--seeds`` harness aggregates more than one run).
     """
-
     donut_f1: float
     donut_ned: float
     donut_em: float
@@ -45,6 +49,7 @@ class CombinedMetrics(TypedDict, total=False):
     epochs_donut: int
     epochs_trocr: int
     epochs_yolo: int
+    epochs_assigner: int
     batch_size: int
     lr: float
     precision: str
@@ -59,30 +64,28 @@ class CombinedMetrics(TypedDict, total=False):
     pipeline_f1_mean: float
     pipeline_f1_std: float
     seeds_used: list[int]
-    # --- Bootstrap CIs ---
+    # --- Bootstrap CIs + significance ---
     donut_f1_ci_lo: float
     donut_f1_ci_hi: float
     pipeline_f1_ci_lo: float
     pipeline_f1_ci_hi: float
     mcnemar_p: float
-    # --- Parameter counts ---
+    # --- Parameter counts + assigner training telemetry ---
     donut_params_m: float
     pipeline_params_m: float
     assigner_params_k: float
-    # --- Assigner training telemetry (from assigner_metrics.json) ---
     assigner_best_epoch: int
     assigner_stopped_at: int
     assigner_best_val_loss: float
-    # --- Differential learning rate (DONUT encoder vs decoder) ---
+    # --- Differential LR + KD hooks (off in reported runs) ---
     lr_encoder: float
     lr_decoder: float
-    # --- Pipeline diagnostic fractions (from pipeline_metrics.json) ---
+    kd_attn_weight: float
+    kd_logits_weight: float
+    # --- Pipeline diagnostics (from pipeline_metrics.json) ---
     empty_detection_fraction: float
     per_receipt_error_fraction: float
     parity_ok: bool
-    # --- Knowledge-distillation hooks (off in reported runs) ---
-    kd_attn_weight: float
-    kd_logits_weight: float
     # --- Hardware / efficiency ---
     donut_peak_vram_gb: float
     pipeline_peak_vram_gb: float
@@ -92,14 +95,13 @@ class CombinedMetrics(TypedDict, total=False):
     inference_latency_p50_ms: float
     inference_latency_p95_ms: float
     inference_latency_p99_ms: float
-    # --- Cost / energy ---
+    # --- Cost / energy / environment ---
     donut_cost_usd: float
     pipeline_cost_usd: float
     donut_energy_kwh: float
     pipeline_energy_kwh: float
     donut_co2_kg: float
     pipeline_co2_kg: float
-    # --- Environment ---
     gpu_model: str
     cuda_version: str
     vastai_host_id: str
