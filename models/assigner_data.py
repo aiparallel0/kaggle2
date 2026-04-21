@@ -15,7 +15,8 @@ from PIL import Image
 
 from core.errors import TrainError
 from core.types import AssignerData, Crop
-from models.attention_assign import text_priors
+from models.attention_assign import text_priors, text_priors_v2
+from models.attention_priors import _MONEY_RE
 
 # Fraction of prepared receipts reserved for validation. 10 % is standard and
 # leaves enough training signal for a ~50k-param model on O(500) receipts.
@@ -52,6 +53,7 @@ def _encode_regions(
 
 def _prepare_groups(
     data: AssignerData, field_to_idx: dict[str, int], device: str,
+    priors_v2: bool = True,
 ) -> tuple[list[Group], int]:
     """Encode per-receipt regions via TrOCR encoder → training groups."""
     if not data.regions:
@@ -70,9 +72,21 @@ def _prepare_groups(
             if feats.shape[0] == 0:
                 continue
             bboxes = torch.tensor([list(r.bbox) for r in regions], dtype=torch.float32)
-            priors = torch.tensor(
-                [text_priors(r.text) for r in regions], dtype=torch.float32,
-            )
+            if priors_v2:
+                money_mask = [bool(_MONEY_RE.search(r.text)) for r in regions]
+                money_idxs = [i for i, m in enumerate(money_mask) if m]
+                last_money = max(money_idxs) if money_idxs else -1
+                y_vals = [r.bbox[3] for r in regions]
+                max_y = max(y_vals) if y_vals else 1.0
+                prior_list = [
+                    text_priors_v2(
+                        r.text, r.bbox[3] / max(max_y, 1e-6), i == last_money,
+                    )
+                    for i, r in enumerate(regions)
+                ]
+            else:
+                prior_list = [text_priors(r.text) for r in regions]
+            priors = torch.tensor(prior_list, dtype=torch.float32)
             targets: dict[int, list[int]] = {}
             for i, r in enumerate(regions):
                 fi = field_to_idx.get(r.field_label)

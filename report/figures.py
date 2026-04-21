@@ -5,14 +5,17 @@ Article: "End-to-End vs. Pipeline Receipt KIE: DONUT Against
     YOLO+TrOCR+Attention on SROIE" (IEEE/ICDAR submission).
 Role: produces fig_training_curves, fig_gpu_telemetry, fig_per_field_confusion
     from training_log.json, telemetry_donut.jsonl, combined_metrics.json.
-    2-in/1-out contract; missing source files emit warnings, never raise.
+    2-in/1-out contract; missing source files log at INFO, never raise.
 """
 from __future__ import annotations
 
 import json
+import logging
 import warnings
 from pathlib import Path
 from typing import Any
+
+log = logging.getLogger("kaggle2")
 
 try:
     import matplotlib
@@ -55,7 +58,10 @@ def render_training_curves(results_dir: str, out_dir: str) -> str | None:
         return None
     data = _load_json(Path(results_dir) / "training_log.json")
     if not data or not data.get("epochs"):
-        warnings.warn(f"training_log.json missing/empty in {results_dir}", stacklevel=2)
+        log.info(
+            "training_log.json missing/empty in %s — skipping training curves "
+            "(run: train)", results_dir,
+        )
         return None
     epochs = data["epochs"]
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(9, 3.5))
@@ -81,7 +87,10 @@ def render_gpu_telemetry(results_dir: str, out_dir: str) -> str | None:
         return None
     rows = _load_jsonl(Path(results_dir) / "telemetry_donut.jsonl")
     if not rows:
-        warnings.warn(f"telemetry_donut.jsonl not found or empty in {results_dir}", stacklevel=2)
+        log.info(
+            "telemetry_donut.jsonl not found or empty in %s — skipping GPU telemetry "
+            "(run: train)", results_dir,
+        )
         return None
     t0 = float(rows[0].get("ts", 0))
     ts = [(float(r.get("ts", t0)) - t0) / 60.0 for r in rows]
@@ -112,7 +121,10 @@ def render_per_field_confusion(results_dir: str, out_dir: str) -> str | None:
         return None
     data = _load_json(Path(results_dir) / "combined_metrics.json")
     if data is None:
-        warnings.warn(f"combined_metrics.json not found in {results_dir}", stacklevel=2)
+        log.info(
+            "combined_metrics.json not found in %s — skipping per-field confusion "
+            "(run: eval)", results_dir,
+        )
         return None
     fields = ["company", "date", "address", "total"]
     systems = [("DONUT", "donut_f1"), ("Pipeline", "pipeline_f1")]

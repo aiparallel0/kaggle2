@@ -1,11 +1,13 @@
-"""Handcrafted 6-d text-prior features for the AttentionAssigner.
+"""Handcrafted 6/9-d text-prior features for the AttentionAssigner.
 
 Project: kaggle2 — End-to-End vs. Pipeline Receipt KIE on SROIE.
 Article: "End-to-End vs. Pipeline Receipt KIE: DONUT Against
     YOLO+TrOCR+Attention on SROIE" (IEEE/ICDAR submission).
 Role: computes the 6-d prior vector (length_log, digit_ratio, upper_ratio,
     has_money, has_date, has_colon) that augments TrOCR features in the
-    AttentionAssigner's region encoder.  No torch dependency.
+    AttentionAssigner's region encoder.  With priors_v2=True, the vector
+    grows to 9-d by adding has_total_keyword, is_last_money_line, y_norm.
+    No torch dependency.
 """
 from __future__ import annotations
 
@@ -13,6 +15,7 @@ import math
 import re
 
 N_TEXT_PRIORS = 6
+N_TEXT_PRIORS_V2 = 9
 
 # Local copies of the rule_based regexes so this module stays importable
 # without rule_based (lightweight CI just needs the module to import).
@@ -23,6 +26,8 @@ _DATE_RE = re.compile(
     r"[\w/\-\.\s]*\d{2,4}\b",
     re.IGNORECASE,
 )
+_TOTAL_KW = re.compile(r"\b(total|amount|grand|due|payable)\b", re.IGNORECASE)
+_SUBTOTAL_KW = re.compile(r"\bsub[\s\-]?total\b|\bsubtotal\b", re.IGNORECASE)
 
 
 def text_priors(text: str) -> list[float]:
@@ -44,3 +49,13 @@ def text_priors(text: str) -> list[float]:
         1.0 if _DATE_RE.search(s) else 0.0,
         1.0 if ":" in s else 0.0,
     ]
+
+
+def text_priors_v2(text: str, y_norm: float, is_last_money: bool) -> list[float]:
+    """9-d priors: base 6-d + has_total_keyword, is_last_money_line, y_norm."""
+    base = text_priors(text)
+    s = text.strip()
+    has_total = (
+        1.0 if _TOTAL_KW.search(s) and not _SUBTOTAL_KW.search(s) else 0.0
+    )
+    return base + [has_total, 1.0 if is_last_money else 0.0, float(y_norm)]

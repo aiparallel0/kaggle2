@@ -17,7 +17,12 @@ from typing import TYPE_CHECKING, Any, cast
 
 from core.types import AssignerData, ExpConfig
 from models.assigner_data import Group, _prepare_groups, split_train_val
-from models.attention_assign import DEFAULT_HIDDEN_DIM, AttentionAssigner, save_assigner
+from models.attention_assign import (
+    DEFAULT_HIDDEN_DIM,
+    N_TEXT_PRIORS_V2,
+    AttentionAssigner,
+    save_assigner,
+)
 
 try:
     import torch
@@ -63,6 +68,20 @@ def _evaluate(assigner: AttentionAssigner, groups: list[Group], device: str) -> 
     return total / len(groups)
 
 
+def _augment(
+    f: Tensor, b: Tensor, p: Tensor, t: dict[int, list[int]], gen: Any,
+) -> tuple[Tensor, Tensor, Tensor, dict[int, list[int]]]:
+    """Bbox jitter ±2 % and region-order shuffle for train-time augmentation."""
+    n = f.shape[0]
+    if n > 1:
+        pi = torch.randperm(n, generator=gen).tolist()
+        inv = {o: i for i, o in enumerate(pi)}
+        f, b, p = f[pi], b[pi], p[pi]
+        t = {k: [inv[x] for x in v] for k, v in t.items()}
+    jitter = (torch.rand(b.shape, generator=gen) * 2 - 1) * 0.02
+    return f, (b + jitter).clamp(0.0, 1.0), p, t
+
+
 def _train_epoch(
     assigner: AttentionAssigner, opt: Any, groups: list[Group], seed: int, epoch: int,
     device: str,
@@ -73,6 +92,7 @@ def _train_epoch(
     total, steps = 0.0, 0
     for idx in perm:
         feats, bboxes, priors, targets = groups[idx]
+        feats, bboxes, priors, targets = _augment(feats, bboxes, priors, targets, gen)
         opt.zero_grad()
         loss = _group_loss(assigner, feats, bboxes, priors, targets, device)
         cast(Any, loss).backward()
@@ -93,13 +113,22 @@ def train_assigner(config: ExpConfig, data: AssignerData) -> str:
     """
     device = "cuda" if torch.cuda.is_available() else "cpu"
     field_to_idx = {f.lower(): i for i, f in enumerate(config.fields)}
-    prepared, text_feat_dim = _prepare_groups(data, field_to_idx, device)
+    prepared, text_feat_dim = _prepare_groups(
+        data, field_to_idx, device, priors_v2=config.priors_v2,
+    )
     train_groups, val_groups = split_train_val(prepared, config.seed)
+    n_priors = N_TEXT_PRIORS_V2 if config.priors_v2 else 6
     assigner = AttentionAssigner(
         hidden_dim=DEFAULT_HIDDEN_DIM, n_fields=len(config.fields),
-        text_feat_dim=text_feat_dim,
+        text_feat_dim=text_feat_dim, dropout=config.dropout_assigner,
+        n_text_priors=n_priors,
     ).to(device)
-    opt = torch.optim.AdamW(assigner.parameters(), lr=1e-3, weight_decay=1e-4)
+    opt = torch.optim.AdamW(
+        assigner.parameters(), lr=1e-3, weight_decay=config.weight_decay_assigner,
+    )
+    sched = torch.optim.lr_scheduler.CosineAnnealingLR(
+        opt, T_max=config.epochs_assigner,
+    )
     best_val = float("inf")
     best_epoch = -1
     best_state: dict[str, Tensor] | None = None
@@ -136,6 +165,7 @@ def train_assigner(config: ExpConfig, data: AssignerData) -> str:
                 f"best val_loss={best_val:.3f} @ epoch {best_epoch + 1}"
             )
             break
+        sched.step()
     if best_state is not None:
         assigner.load_state_dict(best_state)
     out_path = os.path.join(config.output_dir, "assigner.pt")
@@ -153,6 +183,10 @@ def train_assigner(config: ExpConfig, data: AssignerData) -> str:
                 "epochs": config.epochs_assigner,
                 "patience": patience,
                 "min_delta": min_delta,
+                "weight_decay": config.weight_decay_assigner,
+                "dropout": config.dropout_assigner,
+                "scheduler": "cosine",
+                "priors_v2": config.priors_v2,
                 "n_params": n_params,
                 "train_loss": train_loss_history,
                 "val_loss": val_loss_history,

@@ -30,6 +30,25 @@ from report.pdflatex import compile_paper_pdf
 log = logging.getLogger("kaggle2")
 
 
+def _warn_missing_artifacts(config: ExpConfig) -> None:
+    """Emit one consolidated INFO log if pipeline artifacts are absent."""
+    results = Path(config.output_dir)
+    missing = []
+    if not (results / "training_log.json").exists():
+        missing.append("training_log.json (run: train)")
+    has_attn = (results / "attention_samples.npz").exists() or \
+               (results / "attention_samples.json").exists()
+    if not has_attn:
+        missing.append("attention_samples.npz (run: eval)")
+    if not (results / "pipeline_metrics.json").exists():
+        missing.append("pipeline_metrics.json (run: eval)")
+    if missing:
+        log.info(
+            "Some figures will be skipped — missing artifacts: %s",
+            "; ".join(missing),
+        )
+
+
 def _render_figures(config: ExpConfig) -> None:
     """Drive every figure emitter across the four ``report.figures_*`` modules.
 
@@ -77,6 +96,7 @@ def stage_paper(config: ExpConfig) -> None:
     with open(metrics_path) as f:
         metrics: dict[str, object] = json.load(f)
     _seed_bug_timeline_fixture(config)
+    _warn_missing_artifacts(config)
     _render_figures(config)
     merge_cost_json(config, metrics)
     merge_assigner_metrics(config, metrics)

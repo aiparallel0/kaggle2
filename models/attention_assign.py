@@ -21,17 +21,19 @@ from models.attention_model import (
     DEFAULT_N_LAYERS,
     AttentionAssigner,
 )
-from models.attention_priors import N_TEXT_PRIORS, text_priors
+from models.attention_priors import N_TEXT_PRIORS, N_TEXT_PRIORS_V2, text_priors, text_priors_v2
 
 __all__ = [
     "DEFAULT_HIDDEN_DIM",
     "DEFAULT_N_HEADS",
     "DEFAULT_N_LAYERS",
     "N_TEXT_PRIORS",
+    "N_TEXT_PRIORS_V2",
     "AttentionAssigner",
     "_load_assigner",
     "save_assigner",
     "text_priors",
+    "text_priors_v2",
 ]
 
 

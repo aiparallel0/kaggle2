@@ -85,7 +85,9 @@ class AttentionAssigner(_NN_BASE):  # type: ignore[misc]
             d_model=hidden_dim, nhead=heads, dim_feedforward=hidden_dim * 2,
             dropout=dropout, batch_first=True, activation="gelu", norm_first=True,
         )
-        self.encoder = nn.TransformerEncoder(encoder_layer, num_layers=n_layers)
+        self.encoder = nn.TransformerEncoder(
+            encoder_layer, num_layers=n_layers, enable_nested_tensor=False,
+        )
 
         self.cross_attn = nn.MultiheadAttention(
             hidden_dim, num_heads=heads, dropout=dropout, batch_first=True,
