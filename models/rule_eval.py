@@ -15,6 +15,7 @@ from pathlib import Path
 from core.metrics import compute_metrics
 from core.types import EvalBundle, ExpConfig, Field, Metrics, Prediction, Receipt
 from data.sroie_crops import _parse_box_file
+from models.donut_eval import normalize_total
 from models.rule_based import rule_based_assign
 
 
@@ -41,8 +42,17 @@ def eval_rulebased_gold(config: ExpConfig, test: list[Receipt]) -> Metrics:
             receipt_id=rec.image_path.stem,
             fields=[Field(name=k, value=v) for k, v in assigned.items()],
         ))
+    # Symmetric TOTAL normalization — match ``eval_donut`` / ``eval_pipeline``
+    # so rulebased_gold_f1 is comparable across systems (same "RM 43.50" ==
+    # "43.50" semantics).
+    def _nt(fs: list[Field]) -> list[Field]:
+        return [Field(name=f.name, value=normalize_total(f.value))
+                if f.name.lower() == "total" else f for f in fs]
+    n_preds = [Prediction(receipt_id=p.receipt_id, fields=_nt(p.fields))
+               for p in predictions]
+    n_test = [Receipt(image_path=r.image_path, fields=_nt(r.fields)) for r in test]
     metrics = compute_metrics(EvalBundle(
-        predictions=predictions, receipts=test, fields=config.fields,
+        predictions=n_preds, receipts=n_test, fields=config.fields,
     ))
     out_dir = Path(config.output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)

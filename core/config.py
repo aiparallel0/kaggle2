@@ -116,7 +116,7 @@ def load_config(path: str, defaults: dict[str, Any] | None = None) -> ExpConfig:
         emit_beam_width=int(raw.get("emit_beam_width", 4)),
         kd_attn_weight=float(raw.get("kd_attn_weight", 0.0)),
         kd_logits_weight=float(raw.get("kd_logits_weight", 0.0)),
-        assigner_patience=int(raw.get("assigner_patience", 7)),
-        assigner_min_delta=float(raw.get("assigner_min_delta", 1e-3)),
+        assigner_patience=int(raw.get("assigner_patience", 15)),
+        assigner_min_delta=float(raw.get("assigner_min_delta", 0.02)),
         extra=extra,
     )
