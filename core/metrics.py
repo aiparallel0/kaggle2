@@ -1,114 +1,40 @@
-"""Shared metric computation: token-F1, NED, EM — used by both eval modules.
+"""Canonical F1 / NED / EM computation over an :class:`EvalBundle`.
 
 Project: kaggle2 — End-to-End vs. Pipeline Receipt KIE on SROIE.
 Article: "End-to-End vs. Pipeline Receipt KIE: DONUT Against
     YOLO+TrOCR+Attention on SROIE" (IEEE/ICDAR submission).
-Role: canonical implementations of Levenshtein edit distance, token-F1,
-    and the :func:`compute_metrics` reducer over an :class:`EvalBundle`.
-    Also re-exports the ``core.statistics`` helpers so callers can write
-    ``from core.metrics import bootstrap_ci`` without a second import.
+Role: single source of truth for the three headline quantities
+    reported in the paper — token-F1, Normalised Edit Distance (NED),
+    and Exact Match (EM) — together with the Levenshtein edit-distance
+    primitive they share.  All evaluation paths (DONUT, the learned
+    pipeline arm, the rule-based baseline, and the gold-OCR ablation)
+    route through :func:`compute_metrics` so cross-system numbers are
+    directly comparable and traceable to one implementation.
+
+    For backwards compatibility the module also re-exports the
+    statistical helpers from :mod:`core.statistics` (``bootstrap_ci``,
+    ``mcnemar``, ``ned_buckets``) and the :class:`CombinedMetrics`
+    schema from :mod:`core.combined_metrics`, so callers written
+    before the 166-LOC split continue to import from this module.
 """
 from __future__ import annotations
 
-from typing import TypedDict
-
+from core.combined_metrics import CombinedMetrics as CombinedMetrics  # noqa: PLC0414
 from core.statistics import bootstrap_ci as bootstrap_ci  # noqa: PLC0414
 from core.statistics import mcnemar as mcnemar  # noqa: PLC0414
 from core.statistics import ned_buckets as ned_buckets  # noqa: PLC0414
 from core.types import EvalBundle, Metrics
 
 
-class CombinedMetrics(TypedDict, total=False):
-    """Typed view of ``results/combined_metrics.json``.
-
-    Single source of truth for every number surfaced in the paper via
-    ``\\VAR{}`` substitution. ``total=False`` because keys are populated
-    incrementally (e.g. multi-seed mean/std only appear when the
-    ``--seeds`` harness aggregates more than one run).
-    """
-    donut_f1: float
-    donut_ned: float
-    donut_em: float
-    pipeline_f1: float
-    pipeline_ned: float
-    pipeline_em: float
-    rulebased_f1: float
-    rulebased_ned: float
-    rulebased_gold_f1: float
-    rulebased_gold_ned: float
-    f1_gap: float
-    assigner_delta: float
-    donut_f1_company: float
-    donut_f1_date: float
-    donut_f1_address: float
-    donut_f1_total: float
-    rulebased_f1_company: float
-    rulebased_f1_date: float
-    rulebased_f1_address: float
-    rulebased_f1_total: float
-    epochs_donut: int
-    epochs_trocr: int
-    epochs_yolo: int
-    epochs_assigner: int
-    batch_size: int
-    lr: float
-    precision: str
-    label_smoothing: float
-    warmup_steps: int
-    yolo_img_size: int
-    img_w: int
-    img_h: int
-    artifact_mode: str
-    donut_f1_mean: float
-    donut_f1_std: float
-    pipeline_f1_mean: float
-    pipeline_f1_std: float
-    seeds_used: list[int]
-    # --- Bootstrap CIs + significance ---
-    donut_f1_ci_lo: float
-    donut_f1_ci_hi: float
-    pipeline_f1_ci_lo: float
-    pipeline_f1_ci_hi: float
-    mcnemar_p: float
-    # --- Parameter counts + assigner training telemetry ---
-    donut_params_m: float
-    pipeline_params_m: float
-    assigner_params_k: float
-    assigner_best_epoch: int
-    assigner_stopped_at: int
-    assigner_best_val_loss: float
-    # --- Differential LR + KD hooks (off in reported runs) ---
-    lr_encoder: float
-    lr_decoder: float
-    kd_attn_weight: float
-    kd_logits_weight: float
-    # --- Pipeline diagnostics (from pipeline_metrics.json) ---
-    empty_detection_fraction: float
-    per_receipt_error_fraction: float
-    parity_ok: bool
-    # --- Hardware / efficiency ---
-    donut_peak_vram_gb: float
-    pipeline_peak_vram_gb: float
-    donut_train_minutes: float
-    pipeline_train_minutes: float
-    donut_samples_per_sec: float
-    inference_latency_p50_ms: float
-    inference_latency_p95_ms: float
-    inference_latency_p99_ms: float
-    # --- Cost / energy / environment ---
-    donut_cost_usd: float
-    pipeline_cost_usd: float
-    donut_energy_kwh: float
-    pipeline_energy_kwh: float
-    donut_co2_kg: float
-    pipeline_co2_kg: float
-    gpu_model: str
-    cuda_version: str
-    vastai_host_id: str
-
-
 def edit_distance(a: str, b: str) -> int:
-    """Compute Levenshtein edit distance between two strings."""
+    """Levenshtein edit distance between two strings.
+
+    Classical two-row dynamic-programming formulation: O(mn) time,
+    O(min(m, n)) memory.  Returned unit is the count of insertions,
+    deletions, and substitutions that turn *a* into *b*; used both
+    directly (for NED) and as an input to the bucketised NED analysis
+    reported in the paper's robustness sub-section.
+    """
     m, n = len(a), len(b)
     dp = list(range(n + 1))
     for i in range(1, m + 1):
@@ -123,7 +49,13 @@ def edit_distance(a: str, b: str) -> int:
 
 
 def ned(a: str, b: str) -> float:
-    """Normalised Edit Distance: 1.0 = identical, 0.0 = completely different."""
+    """Normalised Edit Distance as a similarity score in ``[0, 1]``.
+
+    Defined as ``1 − edit_distance(a, b) / max(|a|, |b|)`` so that
+    ``1.0`` denotes identical strings and ``0.0`` denotes maximally
+    different strings of equal length.  Two empty strings return
+    ``1.0`` (the convention used by the SROIE leaderboard).
+    """
     if not a and not b:
         return 1.0
     dist = edit_distance(a, b)
@@ -131,7 +63,13 @@ def ned(a: str, b: str) -> float:
 
 
 def token_f1(a: str, b: str) -> float:
-    """Token-level F1 between ground-truth *a* and prediction *b*."""
+    """Whitespace-token F1 between ground-truth *a* and prediction *b*.
+
+    Tokens are compared as a *set* so repeated tokens inside a field
+    value do not artificially inflate recall.  Two empty strings
+    return ``1.0``; any asymmetric empty/non-empty pair returns
+    ``0.0``.  This matches the public SROIE evaluation script.
+    """
     ta, tb = set(a.split()), set(b.split())
     if not ta and not tb:
         return 1.0
@@ -144,7 +82,14 @@ def token_f1(a: str, b: str) -> float:
 
 
 def compute_metrics(bundle: EvalBundle) -> Metrics:
-    """Compute per-field and global F1 / NED / EM from an :class:`EvalBundle`."""
+    """Reduce an :class:`EvalBundle` to per-field and global F1/NED/EM.
+
+    Each ``(receipt, prediction)`` pair is reduced field-by-field
+    after case-folding the expected and predicted values.  Global
+    scores are the unweighted mean over the four SROIE fields, which
+    matches the reference implementation and keeps the four fields
+    equally weighted regardless of their relative prevalence.
+    """
     pf1: dict[str, list[float]] = {f: [] for f in bundle.fields}
     pned: dict[str, list[float]] = {f: [] for f in bundle.fields}
     pem: dict[str, list[float]] = {f: [] for f in bundle.fields}
