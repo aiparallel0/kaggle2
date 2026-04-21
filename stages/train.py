@@ -16,7 +16,10 @@ from core.errors import TrainError
 from core.telem_stage import start_telem, stop_telem
 from core.types import AssignerData, ExpConfig
 from data.sroie import (
-    download_sroie, extract_crops, extract_receipt_regions, load_or_create_split,
+    download_sroie,
+    extract_crops,
+    extract_receipt_regions,
+    load_or_create_split,
 )
 from models.assigner_train import train_assigner
 from models.donut_train import train_donut

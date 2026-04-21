@@ -5,7 +5,7 @@
 all: check train eval paper
 
 check:
-	mypy --strict core/ data/ models/ report/ stages.py main.py
+	mypy --strict core/ data/ models/ report/ stages/ main.py
 	ruff check .
 	python -c "from core.types import Receipt, Metrics; from core.config import load_config"
 
