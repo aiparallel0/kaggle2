@@ -61,12 +61,12 @@ def warn_pipeline_diagnostics(config: ExpConfig) -> None:
         return
     err = float(pm.get("per_receipt_error_fraction", 0.0) or 0.0)
     empty = float(pm.get("empty_detection_fraction", 0.0) or 0.0)
+    n_test = int(pm.get("n_test_receipts", 0) or 0)
     if err > 0:
         log.warning(
-            "pipeline per_receipt_error_fraction=%.3f — %s receipt(s) "
+            "pipeline per_receipt_error_fraction=%.3f — ~%d receipt(s) "
             "silently crashed in the per-receipt try/except path and "
-            "contribute F1=0 each.", err, round(err * int(pm.get(
-                "n_test_receipts", 0))),
+            "contribute F1=0 each.", err, round(err * n_test),
         )
     if empty > 0:
         log.warning(
