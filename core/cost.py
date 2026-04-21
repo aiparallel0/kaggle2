@@ -21,7 +21,6 @@ def _read_log(log_path: str) -> list[dict[str, object]]:
 
     Args:
         log_path: Path to the JSONL file written by core.telemetry.
-        _sentinel: Unused placeholder to keep a 2-in shape at call sites.
 
     Returns:
         List of parsed JSON objects (empty list if file is absent or empty).
@@ -47,7 +46,6 @@ def _integrate_power(rows: list[dict[str, object]]) -> tuple[float, float]:
 
     Args:
         rows: Telemetry row dicts with 'ts' (Unix epoch) and 'gpu_power_w'.
-        _sentinel: Unused; satisfies the 2-arg shape for internal helpers.
 
     Returns:
         ``(run_hours, energy_kwh)`` — (0, 0) when fewer than 2 GPU samples.
