@@ -1,8 +1,10 @@
 """Disk cleanup helpers for the post-TrOCR recovery script.
 
-Wipes DONUT checkpoints, YOLO staging images, and package caches so the
-subsequent ``_promote_trocr`` step has enough free space to rename the best
-TrOCR checkpoint into place without doubling disk usage.
+Project: kaggle2 — End-to-End vs. Pipeline Receipt KIE on SROIE.
+Article: "End-to-End vs. Pipeline Receipt KIE: DONUT Against
+    YOLO+TrOCR+Attention on SROIE" (IEEE/ICDAR submission).
+Role: wipes DONUT checkpoints, YOLO staging images, and package caches
+    to free disk before promoting the best TrOCR checkpoint.
 """
 from __future__ import annotations
 
@@ -17,7 +19,7 @@ log = logging.getLogger("resume")
 
 
 def checkpoint_step(path: Path) -> int:
-    """Extract the integer step from ``checkpoint-<step>`` directory names."""
+    """Extract integer step from checkpoint-<step> directory names."""
     try:
         return int(path.name.split("-", 1)[1])
     except (IndexError, ValueError):
@@ -25,7 +27,7 @@ def checkpoint_step(path: Path) -> int:
 
 
 def rmtree_quiet(path: Path) -> int:
-    """``shutil.rmtree`` that returns bytes freed and ignores ENOENT."""
+    """shutil.rmtree that returns bytes freed and ignores ENOENT."""
     if not path.exists():
         return 0
     try:
@@ -37,7 +39,7 @@ def rmtree_quiet(path: Path) -> int:
 
 
 def cleanup_disk(config: ExpConfig) -> None:
-    """Free disk: drop DONUT per-epoch checkpoints, YOLO staging, pip/apt caches."""
+    """Free disk: DONUT per-epoch checkpoints, YOLO staging, pip/apt caches."""
     root = Path(config.output_dir)
     freed = 0
     donut_dir = root / "donut"
@@ -63,7 +65,7 @@ def cleanup_disk(config: ExpConfig) -> None:
 
 
 def print_disk(prefix: str) -> None:
-    """Log current disk-free / total in GiB, tolerating OSError on odd FSes."""
+    """Log current disk-free/total in GiB (tolerates OSError)."""
     try:
         usage = shutil.disk_usage(".")
         log.info(

@@ -1,4 +1,12 @@
-"""Train TrOCR on SROIE crops for text transcription."""
+"""Train TrOCR-small-printed on SROIE crops for text transcription.
+
+Project: kaggle2 — End-to-End vs. Pipeline Receipt KIE on SROIE.
+Article: "End-to-End vs. Pipeline Receipt KIE: DONUT Against
+    YOLO+TrOCR+Attention on SROIE" (IEEE/ICDAR submission).
+Role: fine-tunes TrOCR with Bug 1 (lm_head dedup), Bug 6 (epochs < 5 guard),
+    Bug 7 (kwargs leak), and Bug 9 (stale generation_config) guardrails.
+    Token-F1 eval drives load_best_model_at_end.
+"""
 from __future__ import annotations
 
 import os
@@ -61,7 +69,7 @@ class _CropDataset(_DATASET_BASE):  # type: ignore[misc]
 
 
 def train_trocr(config: ExpConfig, crops: list[Crop]) -> str:
-    """Fine-tune TrOCR on receipt crops; return path to saved model."""
+    """Fine-tune TrOCR on SROIE crops; return saved model directory."""
     # Bug 6: TrOCR needs >= 5 epochs; config.py enforces this at load time
     if config.epochs_trocr < 5:
         raise TrainError(
@@ -75,10 +83,7 @@ def train_trocr(config: ExpConfig, crops: list[Crop]) -> str:
     model: VisionEncoderDecoderModel = VisionEncoderDecoderModel.from_pretrained(
         config.trocr_model
     )
-    # Bug 1 (TrOCR variant): untie output_projection from embed_tokens so
-    # safetensors does not dedup/drop it at save time. On reload HuggingFace
-    # would reinit the projection randomly → gibberish output → pipeline F1=0.
-    # Clone to a fresh allocation so data_ptr() never collides with embed_tokens.
+    # Bug 1: untie output_projection so safetensors doesn't dedup/drop it
     model.config.tie_word_embeddings = False
     model.config.decoder.tie_word_embeddings = False
     if hasattr(model.decoder, "output_projection"):
@@ -89,31 +94,20 @@ def train_trocr(config: ExpConfig, crops: list[Crop]) -> str:
     model.config.eos_token_id = processor.tokenizer.sep_token_id
     model.config.pad_token_id = processor.tokenizer.pad_token_id
     model.config.vocab_size = model.config.decoder.vocab_size
-    # Bug 9 (TrOCR): mirror decoder-start/EOS/pad ids into generation_config so
-    # the saved generation_config.json does not overwrite our overrides with the
-    # stale trocr-small-printed snapshot at reload time. Without this, pipeline
-    # inference starts decoding from </s> (id 2) → empty strings for every crop.
+    # Bug 9: mirror ids into generation_config so saved config doesn't overwrite
     gc = model.generation_config
     gc.decoder_start_token_id = model.config.decoder_start_token_id
     gc.eos_token_id = model.config.eos_token_id
     gc.pad_token_id = model.config.pad_token_id
     gc.bos_token_id = model.config.decoder_start_token_id
-    # Bug 7: transformers ≥4.48 forwards num_items_in_batch into model inputs
-    # when forward() has **kwargs; VisionEncoderDecoderModel then passes it to
-    # the encoder (SwinModel / ViT) which has no **kwargs → TypeError.
+    # Bug 7: transformers ≥4.48 leaks num_items_in_batch to encoder → TypeError
     model.accepts_loss_kwargs = False
 
     out_dir = os.path.join(config.output_dir, "trocr")
     cuda = torch.cuda.is_available()
     use_bf16 = cuda and config.precision == "bf16" and torch.cuda.is_bf16_supported()
-    use_fp16 = cuda and config.precision == "fp16"  # Bug 4 fix: only enable when explicitly configured
-    # Bug 9: ``crops[:split], crops[split:]`` carves the validation set out of
-    # the *last* 10 % of the input order, which is itself sorted by receipt
-    # filename.  That means val is dominated by receipts whose stems begin
-    # with high-numbered prefixes — a non-representative slice that biases
-    # eval_f1 by ~0.05 and routinely picks a worse "best" checkpoint.
-    # Shuffle deterministically (Random(seed)) so the split is uncorrelated
-    # with filename ordering but still reproducible.
+    use_fp16 = cuda and config.precision == "fp16"  # Bug 4: only when explicit
+    # Shuffle deterministically so val split is uncorrelated with filename order
     import random as _random
     shuffled = list(crops)
     _random.Random(config.seed).shuffle(shuffled)

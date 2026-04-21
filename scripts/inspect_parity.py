@@ -1,4 +1,11 @@
-"""``parity`` sub-command — run eval_pipeline on the full split."""
+"""parity sub-command: run eval_pipeline on the full test split.
+
+Project: kaggle2 — End-to-End vs. Pipeline Receipt KIE on SROIE.
+Article: "End-to-End vs. Pipeline Receipt KIE: DONUT Against
+    YOLO+TrOCR+Attention on SROIE" (IEEE/ICDAR submission).
+Role: verifies that the pipeline F1 from this script matches the F1
+    reported by main.py --stage eval (same eval_pipeline function).
+"""
 from __future__ import annotations
 
 import argparse

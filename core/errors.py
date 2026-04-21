@@ -1,13 +1,21 @@
-"""Custom exceptions — DataError, TrainError, EvalError."""
+"""Custom exceptions encoding the paper's failure taxonomy.
+
+Project: kaggle2 — End-to-End vs. Pipeline Receipt KIE on SROIE.
+Article: "End-to-End vs. Pipeline Receipt KIE: DONUT Against
+    YOLO+TrOCR+Attention on SROIE" (IEEE/ICDAR submission).
+Role: three exception classes map to distinct failure modes in the Bugs
+    section — DataError (SROIE download/parse), TrainError (divergence or
+    silent F1-destroying bug guardrail trip), EvalError (metric sanity).
+"""
 
 
 class DataError(RuntimeError):
-    """Raised when SROIE download or parsing fails."""
+    """SROIE download or parsing failure (corrupted archive, missing files)."""
 
 
 class TrainError(RuntimeError):
-    """Raised when training diverges or a guardrail trips."""
+    """Training diverged or a Bug-class guardrail tripped (Bug 4/6/7/8)."""
 
 
 class EvalError(RuntimeError):
-    """Raised when evaluation metrics fail sanity checks."""
+    """Post-eval F1 fell below the architecture-specific bug floor."""

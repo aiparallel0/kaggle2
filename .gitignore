@@ -22,6 +22,7 @@ env/
 
 # Training outputs (large, not versioned)
 results/
+!results/bug_timeline.json
 data/sroie_cache/
 
 # YOLO run artefacts

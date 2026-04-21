@@ -1,7 +1,11 @@
-"""Matplotlib figure generators for the paper.  Best-effort: missing source
-files emit warnings, never raise.  Public API (2-in / 1-out):
-render_training_curves, render_gpu_telemetry, render_per_field_confusion,
-render_all.
+"""Matplotlib figure generators for the paper (best-effort, no raise).
+
+Project: kaggle2 — End-to-End vs. Pipeline Receipt KIE on SROIE.
+Article: "End-to-End vs. Pipeline Receipt KIE: DONUT Against
+    YOLO+TrOCR+Attention on SROIE" (IEEE/ICDAR submission).
+Role: produces fig_training_curves, fig_gpu_telemetry, fig_per_field_confusion
+    from training_log.json, telemetry_donut.jsonl, combined_metrics.json.
+    2-in/1-out contract; missing source files emit warnings, never raise.
 """
 from __future__ import annotations
 
@@ -45,15 +49,7 @@ def _load_jsonl(path: Path) -> list[dict[str, Any]]:
 
 
 def render_training_curves(results_dir: str, out_dir: str) -> str | None:
-    """Plot DONUT train/eval loss + eval F1 vs epoch.
-
-    Args:
-        results_dir: Directory containing training_log.json.
-        out_dir: Directory to write fig_training_curves.pdf.
-
-    Returns:
-        Output path, or None if data is absent or matplotlib unavailable.
-    """
+    """Plot DONUT train/eval loss + eval F1 vs epoch for the paper."""
     if not _HAS_MPL:
         warnings.warn("matplotlib unavailable — skipping training curves", stacklevel=2)
         return None
@@ -79,15 +75,7 @@ def render_training_curves(results_dir: str, out_dir: str) -> str | None:
 
 
 def render_gpu_telemetry(results_dir: str, out_dir: str) -> str | None:
-    """Plot GPU util, memory, power, temperature over wall-clock time.
-
-    Args:
-        results_dir: Directory containing telemetry_donut.jsonl.
-        out_dir: Directory to write fig_gpu_telemetry.pdf.
-
-    Returns:
-        Output path, or None if data is absent or matplotlib unavailable.
-    """
+    """Plot GPU util/memory/power/temp over wall-clock time (Table II data)."""
     if not _HAS_MPL:
         warnings.warn("matplotlib unavailable — skipping GPU telemetry", stacklevel=2)
         return None
@@ -118,15 +106,7 @@ def render_gpu_telemetry(results_dir: str, out_dir: str) -> str | None:
 
 
 def render_per_field_confusion(results_dir: str, out_dir: str) -> str | None:
-    """Stacked bar of per-field F1 scores per system.
-
-    Args:
-        results_dir: Directory containing combined_metrics.json.
-        out_dir: Directory to write fig_per_field_confusion.pdf.
-
-    Returns:
-        Output path, or None if data is absent or matplotlib unavailable.
-    """
+    """Stacked bar of per-field F1 per system (DONUT vs Pipeline)."""
     if not _HAS_MPL:
         warnings.warn("matplotlib unavailable — skipping confusion figure", stacklevel=2)
         return None
@@ -151,15 +131,7 @@ def render_per_field_confusion(results_dir: str, out_dir: str) -> str | None:
 
 
 def render_all(results_dir: str, out_dir: str = "") -> list[str]:
-    """Render all available figures; skip silently when data is missing.
-
-    Args:
-        results_dir: Directory containing source metrics/telemetry files.
-        out_dir: Output directory (defaults to results_dir when empty string).
-
-    Returns:
-        List of paths of successfully written PDF files.
-    """
+    """Render all available paper figures; skip silently when data is missing."""
     out = out_dir or results_dir
     Path(out).mkdir(parents=True, exist_ok=True)
     fns = (render_training_curves, render_gpu_telemetry, render_per_field_confusion)

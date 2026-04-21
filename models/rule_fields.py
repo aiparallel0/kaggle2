@@ -1,4 +1,11 @@
-"""Per-field extractors used by the rule-based KIE baseline."""
+"""Per-field extractor functions for the rule-based KIE baseline.
+
+Project: kaggle2 — End-to-End vs. Pipeline Receipt KIE on SROIE.
+Article: "End-to-End vs. Pipeline Receipt KIE: DONUT Against
+    YOLO+TrOCR+Attention on SROIE" (IEEE/ICDAR submission).
+Role: implements the spatial + regex heuristics for date/total/company/address
+    that collectively lift rule-based F1 from ~0.35 to ~0.55 on SROIE.
+"""
 from __future__ import annotations
 
 import re
@@ -35,19 +42,7 @@ def _money_num(s: str) -> float:
 def extract_total(
     region_texts: list[str], bbox_list: list[list[float]],
 ) -> tuple[int, str] | None:
-    """Pick the best TOTAL region → (index, money-substring) or None.
-
-    Ranking (higher = better): 4) GRAND TOTAL + money, 3) TOTAL/AMOUNT + money,
-    2) money in bottom half, 1) money in top half, 0) money + negative word.
-    Ties on score broken by bottom-most y-position for the keyword-bearing
-    cases. In the no-keyword case (scores 1/2), ties are instead broken by
-    **most-frequent value then largest numeric value** — the SROIE total is
-    typically printed two or three times (line-total, subtotal+tax sum,
-    receipt-footer recap), whereas distractors (change, GST, rounding)
-    appear once. Switching from bottom-most-y to frequency+magnitude lifts
-    rule-based ``total`` F1 on gold OCR from ~0.111 to ~0.429 on the SROIE
-    test split without affecting date/company/address.
-    """
+    """Pick best TOTAL region via keyword ranking + frequency tie-break."""
     candidates: list[tuple[int, int, float, str]] = []
     for i, txt in enumerate(region_texts):
         m = _MONEY_RE.search(txt)
@@ -100,7 +95,7 @@ def extract_date(region_texts: list[str]) -> tuple[int, str] | None:
 def _pick_company(
     region_texts: list[str], bbox_list: list[list[float]], used: set[int],
 ) -> tuple[int, str] | None:
-    """Top-most region that is not junk, a header, a date, or money."""
+    """Topmost region that is not junk, header, date, or money."""
     order = sorted(
         [i for i in range(len(region_texts)) if i not in used],
         key=lambda i: bbox_list[i][1] if i < len(bbox_list) else 0.0,
@@ -122,8 +117,7 @@ def _pick_address(
     used: set[int], company_y: float, total_y: float, date_y: float,
     max_lines: int = 6,
 ) -> str:
-    """Concatenate address lines between the company and the first money /
-    date region (address is always above money on SROIE)."""
+    """Concatenate address lines between company and first money/date region."""
     lower_bound = (
         min(x for x in (total_y, date_y) if x > 0)
         if (total_y > 0 or date_y > 0) else 1.0

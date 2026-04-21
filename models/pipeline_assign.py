@@ -1,4 +1,12 @@
-"""Field-assignment head: AttentionAssigner → ``{field: value}`` dict."""
+"""Field assignment via the learned AttentionAssigner's cross-attention.
+
+Project: kaggle2 — End-to-End vs. Pipeline Receipt KIE on SROIE.
+Article: "End-to-End vs. Pipeline Receipt KIE: DONUT Against
+    YOLO+TrOCR+Attention on SROIE" (IEEE/ICDAR submission).
+Role: performs inference-time field assignment by picking regions whose
+    attention exceeds half of max for multi-line fields (address), then
+    postprocessing date/total through regex to match SROIE GT format.
+"""
 from __future__ import annotations
 
 import re
@@ -30,17 +38,7 @@ _FIELD_REGEX = {"date": DATE_RE, "total": MONEY_RE}
 
 
 def postprocess_value(name: str, value: str) -> str:
-    """Strip the picked region's text down to the SROIE GT substring.
-
-    SROIE's ``date`` and ``total`` ground truth contain only the matched
-    pattern (e.g. ``"01/01/2024"``, ``"12.30"``), but TrOCR returns the full
-    region text — typically ``"DATE: 01/01/2024"`` or ``"TOTAL    12.30"``.
-    Without stripping, every correct prediction scores token-F1 ≈ 0.5.
-    The regex prior is non-destructive: on no match, return the raw text.
-
-    For ``total`` we additionally strip currency prefixes (``"RM12.30"`` →
-    ``"12.30"``) because SROIE ground truth omits them.
-    """
+    """Strip region text to SROIE GT format (date/total regex extraction)."""
     pattern = _FIELD_REGEX.get(name)
     if pattern is None:
         return value
@@ -58,7 +56,7 @@ def _assign_learned(
     feats: list[torch.Tensor], bboxes: list[list[float]],
     fields: list[str], device: str,
 ) -> dict[str, str]:
-    """Use the learned assigner's attention to pick one region per field."""
+    """Use AttentionAssigner cross-attention to pick regions per field."""
     values, _attn = _assign_learned_with_attn(
         assigner, texts, feats, bboxes, fields, device,
     )
@@ -70,12 +68,11 @@ def _assign_learned_with_attn(
     feats: list[torch.Tensor], bboxes: list[list[float]],
     fields: list[str], device: str,
 ) -> tuple[dict[str, str], torch.Tensor | None]:
-    """Field-assign and also return the ``(F, N)`` cross-attention tensor.
+    """Field-assign and return (F, N) cross-attention for fig_attn_heatmap.
 
-    Used by :mod:`models.pipeline_attn` to capture attention samples
-    for the paper's per-receipt heatmap figure.  Returns
-    ``(values, None)`` on the empty-text path so the caller can
-    uniformly ``if attn is not None``.
+    Multi-line fields (address) pick all regions with attn ≥ 0.5 × max
+    because the pos-mass loss spreads attention across positive regions
+    at train time.  Returns (values, None) on empty text.
     """
     if not texts:
         return {}, None

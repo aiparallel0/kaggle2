@@ -1,4 +1,13 @@
-"""Load and validate config.json → ExpConfig."""
+"""Load experiment hyperparameters and validate against silent F1-destroying bugs.
+
+Project: kaggle2 — End-to-End vs. Pipeline Receipt KIE on SROIE.
+Article: "End-to-End vs. Pipeline Receipt KIE: DONUT Against
+    YOLO+TrOCR+Attention on SROIE" (IEEE/ICDAR submission).
+Role: single source of truth for every hyperparameter surfaced in the
+    paper (epochs, batch size, differential LR, warmup, label smoothing,
+    precision, patience). Encodes two Bug-class guardrails at load time:
+    Bug 6 (TrOCR undertrained) and Bug 4 (fp16 NaN without grad clip).
+"""
 from __future__ import annotations
 
 import json
@@ -19,7 +28,7 @@ _REQUIRED = [
 
 
 def load_config(path: str, defaults: dict[str, Any] | None = None) -> ExpConfig:
-    """Load config.json, merge defaults, validate required keys → ExpConfig."""
+    """Parse config.json into a typed ExpConfig, enforcing Bug 4 and Bug 6 guardrails."""
     raw: dict[str, Any] = {}
     if defaults:
         raw.update(defaults)

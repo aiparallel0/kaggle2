@@ -1,12 +1,12 @@
-"""Cost and energy accounting from telemetry JSONL logs.
+"""Compute training cost, energy, and CO₂ from GPU telemetry logs.
 
-Pure functions — no side effects, no environment variable magic.
-Energy is integrated from ``gpu_power_w`` samples using the trapezoidal rule.
-CO₂ uses a configurable carbon-intensity factor (default 0.4 kg CO₂ / kWh,
-the global average from Strubell et al. 2019~\\cite{strubell2019energy}).
-
-Public API (2-in / 1-out per function):
-  summarise(log_path, rate_usd_per_hr) -> dict[str, float]
+Project: kaggle2 — End-to-End vs. Pipeline Receipt KIE on SROIE.
+Article: "End-to-End vs. Pipeline Receipt KIE: DONUT Against
+    YOLO+TrOCR+Attention on SROIE" (IEEE/ICDAR submission).
+Role: integrates ``gpu_power_w`` samples via trapezoidal rule to produce
+    the run_hours/energy_kwh/cost_usd/co2_kg columns in Table II of the
+    paper's Results section.  Carbon intensity defaults to 0.4 kg CO₂/kWh
+    (Strubell et al. 2019).  Pure functions; 2-in/1-out contract.
 """
 from __future__ import annotations
 
@@ -17,14 +17,7 @@ _DEFAULT_INTENSITY_KG_KWH: float = 0.4  # Strubell et al. 2019 world average
 
 
 def _read_log(log_path: str) -> list[dict[str, object]]:
-    """Parse a JSONL telemetry file into a list of row dicts.
-
-    Args:
-        log_path: Path to the JSONL file written by core.telemetry.
-
-    Returns:
-        List of parsed JSON objects (empty list if file is absent or empty).
-    """
+    """Parse JSONL telemetry into row dicts (empty list if absent/empty)."""
     path = Path(log_path)
     if not path.exists():
         return []
@@ -42,14 +35,7 @@ def _read_log(log_path: str) -> list[dict[str, object]]:
 
 
 def _integrate_power(rows: list[dict[str, object]]) -> tuple[float, float]:
-    """Trapezoidal integration of gpu_power_w samples.
-
-    Args:
-        rows: Telemetry row dicts with 'ts' (Unix epoch) and 'gpu_power_w'.
-
-    Returns:
-        ``(run_hours, energy_kwh)`` — (0, 0) when fewer than 2 GPU samples.
-    """
+    """Trapezoidal integration of gpu_power_w → (run_hours, energy_kwh)."""
     times: list[float] = []
     powers: list[float] = []
     for row in rows:
@@ -74,16 +60,7 @@ def summarise(
     rate_usd_per_hr: float,
     intensity_kg_per_kwh: float = _DEFAULT_INTENSITY_KG_KWH,
 ) -> dict[str, float]:
-    """Compute cost, energy and CO₂ from a telemetry JSONL log.
-
-    Args:
-        log_path: Path to the JSONL telemetry file.
-        rate_usd_per_hr: GPU instance cost in USD / hour.
-
-    Returns:
-        Dict with keys ``run_hours``, ``energy_kwh``, ``cost_usd``,
-        ``co2_kg``.
-    """
+    """Reduce telemetry to run_hours/energy_kwh/cost_usd/co2_kg for Table II."""
     rows = _read_log(log_path)
     run_h, energy_kwh = _integrate_power(rows)
     return {

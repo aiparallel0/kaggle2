@@ -1,4 +1,12 @@
-"""Train YOLO on SROIE bounding-box layout for text-region detection."""
+"""Train YOLOv8n on SROIE bounding-box annotations for text-line detection.
+
+Project: kaggle2 — End-to-End vs. Pipeline Receipt KIE on SROIE.
+Article: "End-to-End vs. Pipeline Receipt KIE: DONUT Against
+    YOLO+TrOCR+Attention on SROIE" (IEEE/ICDAR submission).
+Role: converts SROIE 4-corner-point box annotations to YOLO format and
+    trains a single-class text-line detector.  Bug 5 and Bug 8 guardrails
+    ensure imgsz consistency and absolute project path.
+"""
 from __future__ import annotations
 
 import os
@@ -16,7 +24,7 @@ from core.types import DataSplit, ExpConfig, Receipt
 
 
 def _yolo_lines_from_sroie_box(box_path: Path, img_w: int, img_h: int) -> list[str]:
-    """Convert SROIE 4-corner-point box lines → YOLO (class cx cy w h) normalised."""
+    """Convert SROIE 4-corner-point boxes → YOLO (class cx cy w h) format."""
     lines: list[str] = []
     for raw in box_path.read_text(errors="replace").splitlines():
         parts = raw.split(",", 8)
@@ -63,7 +71,7 @@ def _write_yolo_labels(receipts: list[Receipt], img_dst: Path, lbl_dst: Path) ->
 
 
 def train_yolo(config: ExpConfig, data: DataSplit) -> str:
-    """Train YOLOv8 on SROIE; return path to best.pt weights."""
+    """Train YOLOv8n on SROIE with Bug 5/8 guards; return best.pt path."""
     try:
         from ultralytics import YOLO
     except ImportError as exc:

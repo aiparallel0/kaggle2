@@ -1,4 +1,11 @@
-"""Shared helpers + rsync filter lists for the ``fetch`` sub-command."""
+"""Shared helpers + rsync filter lists for the fetch sub-command.
+
+Project: kaggle2 — End-to-End vs. Pipeline Receipt KIE on SROIE.
+Article: "End-to-End vs. Pipeline Receipt KIE: DONUT Against
+    YOLO+TrOCR+Attention on SROIE" (IEEE/ICDAR submission).
+Role: defines rsync include/exclude patterns to pull metrics without
+    transferring heavy model weights unless --with-weights is passed.
+"""
 from __future__ import annotations
 
 import argparse
@@ -53,7 +60,7 @@ _FETCH_WEIGHT_PATTERNS = [
 
 
 def build_ssh_cmd(args: argparse.Namespace) -> tuple[list[str], str]:
-    """Parse ``--ssh-cmd`` / (``--port``, ``target``) → (ssh-binary-args, host)."""
+    """Parse --ssh-cmd / (--port, target) → (ssh-binary-args, host)."""
     if args.ssh_cmd:
         parts = shlex.split(args.ssh_cmd)
         if not parts:
@@ -72,7 +79,7 @@ def build_ssh_cmd(args: argparse.Namespace) -> tuple[list[str], str]:
 
 
 def run_with_retry(cmd: list[str], retries: int) -> None:
-    """Run ``cmd`` with exponential-backoff retries on failure."""
+    """Run cmd with exponential-backoff retries (rsync network resilience)."""
     delay = 2.0
     attempts = 0
     while True:
@@ -107,7 +114,7 @@ def capture(cmd: list[str]) -> str:
 
 
 def rsync_filters(with_weights: bool) -> list[str]:
-    """Build rsync --include/--exclude args; final ``*`` denies everything else."""
+    """Build rsync --include/--exclude args; final * denies everything else."""
     includes = list(_FETCH_INCLUDES)
     excludes = list(_FETCH_EXCLUDES_BASE)
     if with_weights:
@@ -130,7 +137,7 @@ def rsync_filters(with_weights: bool) -> list[str]:
 
 
 def remote_env(ssh_binary: list[str], host: str, remote_root: str) -> str:
-    """Capture a brief remote env snapshot (date, uname, GPU, git HEAD, ls)."""
+    """Capture brief remote env snapshot (date, GPU, git HEAD, ls results)."""
     env_script = (
         "echo == date ==; date -u;"
         "echo == uname ==; uname -a;"

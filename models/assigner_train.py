@@ -1,4 +1,13 @@
-"""Train AttentionAssigner on per-receipt multi-region batches (best-by-val save)."""
+"""Train the AttentionAssigner with pos-mass NLL loss and best-by-val saving.
+
+Project: kaggle2 — End-to-End vs. Pipeline Receipt KIE on SROIE.
+Article: "End-to-End vs. Pipeline Receipt KIE: DONUT Against
+    YOLO+TrOCR+Attention on SROIE" (IEEE/ICDAR submission).
+Role: implements the multi-instance negative-log positive-mass loss that
+    lets the learned cross-attention assigner handle multi-line fields
+    (e.g. address).  Persists train/val loss trajectories for
+    fig_assigner_loss_curve.
+"""
 from __future__ import annotations
 
 import json
@@ -24,6 +33,7 @@ def _group_loss(
     assigner: AttentionAssigner, feats: Tensor, bboxes: Tensor, priors: Tensor,
     targets: dict[int, list[int]], device: str,
 ) -> Tensor:
+    """Per-receipt pos-mass NLL loss: −log(Σ attn over positive regions)."""
     tf = feats.to(device).unsqueeze(0)
     bf = bboxes.to(device).unsqueeze(0)
     pf = priors.to(device).unsqueeze(0)
@@ -37,7 +47,7 @@ def _group_loss(
 
 
 def _evaluate(assigner: AttentionAssigner, groups: list[Group], device: str) -> float:
-    """Mean per-receipt loss on *groups* with grads disabled, in eval mode."""
+    """Mean per-receipt pos-mass NLL on validation set (grads disabled)."""
     if not groups:
         return float("nan")
     was_training = assigner.training
@@ -74,21 +84,12 @@ def _train_epoch(
 
 
 def train_assigner(config: ExpConfig, data: AssignerData) -> str:
-    """Train :class:`AttentionAssigner` with a held-out validation split.
+    """Train AttentionAssigner with pos-mass NLL; return checkpoint path.
 
-    The optimisation objective is the multi-instance *positive-mass*
-    loss defined in Section III of the paper: for each receipt and each
-    of the four field queries, the negative log of the attention mass
-    the cross-attention places on the line(s) whose ground-truth label
-    is that field.  This formulation --- rather than plain
-    cross-entropy --- is what lets the assigner tackle multi-line
-    fields such as ``address``.
-
-    Per-epoch ``train_loss`` / ``val_loss`` trajectories are persisted
-    to ``assigner_metrics.json`` alongside ``best_epoch`` and
-    ``best_val_loss``, so the paper's assigner-loss-curve figure
-    (Fig.~\\ref{fig:assigner_loss}) can be emitted from real data.
-    The saved checkpoint is the lowest-val-loss one, not the last.
+    The loss spreads attention across all positive regions at train time,
+    enabling multi-line field handling (address).  Early-stopping on
+    val-loss with patience=config.assigner_patience.  Metrics written to
+    assigner_metrics.json for fig_assigner_loss_curve.
     """
     device = "cuda" if torch.cuda.is_available() else "cpu"
     field_to_idx = {f.lower(): i for i, f in enumerate(config.fields)}

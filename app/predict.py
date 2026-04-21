@@ -1,9 +1,10 @@
-"""DONUT single-image inference for the demo server.
+"""DONUT single-image inference for the demo server (Bug 2/3/9 safe).
 
-Loads the fine-tuned checkpoint from ``{config.output_dir}/donut`` when it
-exists, otherwise falls back to ``config.base_model`` so the demo is
-runnable *before* training finishes. All the Bug-2/3/9 guards from
-``models.donut_eval`` are reused verbatim.
+Project: kaggle2 — End-to-End vs. Pipeline Receipt KIE on SROIE.
+Article: "End-to-End vs. Pipeline Receipt KIE: DONUT Against
+    YOLO+TrOCR+Attention on SROIE" (IEEE/ICDAR submission).
+Role: loads the fine-tuned DONUT checkpoint (or falls back to base model)
+    and runs inference with all Bug 2/3/9 guardrails from models.donut_eval.
 """
 from __future__ import annotations
 
@@ -21,7 +22,7 @@ log = logging.getLogger(__name__)
 
 @dataclass
 class LoadedModel:
-    """Loaded DONUT + processor + runtime metadata."""
+    """Loaded DONUT processor + model + inference metadata."""
 
     processor: Any
     model: Any
@@ -46,7 +47,7 @@ def _resolve_path(config: ExpConfig) -> tuple[str, str]:
 
 
 def load_model(config: ExpConfig) -> LoadedModel:
-    """Load DONUT, add SROIE tokens if missing, resolve start/eos ids. 2-in/1-out."""
+    """Load DONUT with Bug 1/2/9 fixes; add SROIE tokens if missing."""
     import torch
     from transformers import DonutProcessor, VisionEncoderDecoderModel
 
@@ -87,7 +88,7 @@ def load_model(config: ExpConfig) -> LoadedModel:
 
 
 def predict(loaded: LoadedModel, image: Any) -> dict[str, str]:
-    """Run DONUT on a PIL image; return flat ``{field: value}`` dict. 2-in/1-out."""
+    """Run DONUT on a PIL image; return flat {field: value} dict."""
     import torch
 
     size_kwargs = {"size": {"height": 960, "width": 1280}}

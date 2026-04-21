@@ -1,4 +1,12 @@
-"""Evaluate YOLO + TrOCR + AttentionAssigner pipeline → PipelineResult."""
+"""Evaluate YOLOv8 + TrOCR + AttentionAssigner pipeline on SROIE test.
+
+Project: kaggle2 — End-to-End vs. Pipeline Receipt KIE on SROIE.
+Article: "End-to-End vs. Pipeline Receipt KIE: DONUT Against
+    YOLO+TrOCR+Attention on SROIE" (IEEE/ICDAR submission).
+Role: runs the three-stage pipeline (detect → read → assign) and produces
+    PipelineResult containing both learned-assigner and rule-based metrics.
+    Samples cross-attention tensors for fig_attention_heatmap.
+"""
 from __future__ import annotations
 
 import json
@@ -73,12 +81,7 @@ def _resolve_yolo_img(paths: PipelinePaths, config: ExpConfig) -> int:
 
 
 def eval_pipeline(config: ExpConfig, test: list[Receipt]) -> PipelineResult:
-    """Run YOLO→TrOCR pipeline with learned + rule-based assignment.
-
-    Pipeline checkpoint paths are derived from ``config.output_dir``; this
-    keeps the public surface at 2-in/1-out while still reading every path
-    from the single source of truth (``config.json``).
-    """
+    """Run the three-stage pipeline; return assigner + rule-based Metrics."""
     paths = _paths_from_config(config)
     yolo, trocr_proc, trocr_model, assigner, device = _load(paths, config)
     yolo_img = _resolve_yolo_img(paths, config)

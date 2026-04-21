@@ -1,4 +1,12 @@
-"""Evaluate DONUT on SROIE test split → Metrics."""
+"""Evaluate DONUT on SROIE test split with all Bug 2/3/8/9 guards.
+
+Project: kaggle2 — End-to-End vs. Pipeline Receipt KIE on SROIE.
+Article: "End-to-End vs. Pipeline Receipt KIE: DONUT Against
+    YOLO+TrOCR+Attention on SROIE" (IEEE/ICDAR submission).
+Role: runs DONUT inference with decoder_start_token_id=<s_sroie> (Bug 2),
+    flattens token2json output (Bug 3/8), disables forced EOS (Bug 9),
+    and normalizes TOTAL values for symmetric metric comparison.
+"""
 from __future__ import annotations
 
 import json
@@ -27,16 +35,7 @@ _NUMERIC_TOKEN_RE = re.compile(r"^\d+(\.\d{1,2})?$")
 
 
 def normalize_total(s: str) -> str:
-    """Deterministically normalize a SROIE ``TOTAL``-field string.
-
-    Applied symmetrically to DONUT predictions and ground-truth at eval
-    time so the metric measures semantic match, not formatting. Strips
-    ``RM``/``USD``/``MYR``/``$``/``₹``/``€``/``£`` prefixes, drops
-    thousand separators, keeps the **last** numeric token when the string
-    contains multiple candidates (receipt totals tend to appear last,
-    e.g. ``"TOTAL 43.50 CASH 50.00"``), and normalizes to two decimals
-    when parsing succeeds (``"12.5"`` → ``"12.50"``).
-    """
+    """Normalize TOTAL string for symmetric DONUT/GT comparison."""
     if not s:
         return s
     t = _CURRENCY_RE.sub("", s)
@@ -111,11 +110,7 @@ def _resolve_start_eos(processor: Any, model: Any) -> tuple[int, int | None]:
 
 
 def eval_donut(config: ExpConfig, test: list[Receipt]) -> Metrics:
-    """Run DONUT inference on test receipts; return :class:`Metrics`.
-
-    The model directory is resolved to ``{config.output_dir}/donut`` — the
-    same location ``train_donut`` writes to. Keeps eval_donut at 2-in/1-out.
-    """
+    """Run DONUT inference on test receipts; return Metrics (2-in/1-out)."""
     model_path = os.path.join(config.output_dir, "donut")
     processor, model, device = _load(model_path)
     start_id, eos_id = _resolve_start_eos(processor, model)

@@ -1,4 +1,12 @@
-"""YOLO detection + TrOCR recognition per receipt region (usability filters)."""
+"""YOLOv8 detection + TrOCR recognition per receipt region.
+
+Project: kaggle2 — End-to-End vs. Pipeline Receipt KIE on SROIE.
+Article: "End-to-End vs. Pipeline Receipt KIE: DONUT Against
+    YOLO+TrOCR+Attention on SROIE" (IEEE/ICDAR submission).
+Role: runs YOLOv8n to detect text-line bboxes, then TrOCR-small-printed
+    on each crop.  Filters label-only/noise regions and falls back to
+    full-image OCR when YOLO detects zero boxes (Bug 5 guard).
+"""
 from __future__ import annotations
 
 import re
@@ -33,7 +41,7 @@ _NOISE_ONLY_RE = re.compile(r"^[\s\W_]+$")
 
 
 def _is_usable_region(text: str) -> bool:
-    """False for empty, label-only, or pure-punctuation TrOCR transcriptions."""
+    """False for empty, label-only, or punctuation-only TrOCR output."""
     t = text.strip()
     if not t:
         return False
@@ -46,16 +54,7 @@ def _detect_and_read(
     yolo: Any, trocr_proc: Any, trocr_model: Any,
     img: Image.Image, img_path: str, cfg: ExpConfig, yolo_img: int, device: str,
 ) -> tuple[list[str], list[torch.Tensor], list[list[float]]]:
-    """Run YOLO to box the receipt, TrOCR on each crop; return usable regions.
-
-    Boxes are sorted top→bottom so downstream heuristics (rule_based,
-    multi-line address concatenation) can assume reading order. Regions
-    failing :func:`_is_usable_region` are silently dropped. A single
-    pathological crop that makes TrOCR raise (out-of-memory on a huge
-    region, generate-time assertion on an empty pixel tensor, …) is
-    skipped rather than aborting the whole receipt — one bad box
-    shouldn't cost us the other 40 lines of text on the same scan.
-    """
+    """YOLO → TrOCR on each crop; return usable (texts, feats, bboxes)."""
     results = yolo.predict(
         img_path, imgsz=yolo_img, conf=cfg.yolo_conf, verbose=False,
     )
@@ -103,7 +102,7 @@ def _detect_and_read(
 def _fallback_full_image(
     trocr_proc: Any, trocr_model: Any, img: Image.Image, cfg: ExpConfig, device: str,
 ) -> tuple[list[str], list[torch.Tensor], list[list[float]]]:
-    """Run TrOCR on the full image as a single region (empty-detection fallback)."""
+    """TrOCR on full image as single region (empty-detection fallback)."""
     pv = trocr_proc(images=img, return_tensors="pt").pixel_values.to(device)
     enc = trocr_model.encoder(pv).last_hidden_state
     out = trocr_model.generate(pv, max_new_tokens=cfg.trocr_max_new_tokens)

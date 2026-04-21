@@ -1,17 +1,10 @@
-"""Regex weak-labeller: assigns 4-class tags to every SROIE box line.
+"""Regex weak-labeller: assigns 4-class tags to SROIE box lines.
 
-Per-task decision (blocker Q1): we do not hand-label. All 200 receipts get
-regex-derived labels. Downstream YOLO training will consume the resulting
-``data/sroie/class_labels.json`` and expand its ``nc=1`` head to ``nc=4``.
-
-Classes (stable integer IDs, do not reorder — the YOLO head depends on this):
-    0  header        top band of the receipt (store name + address)
-    1  kv_line       any line with a ``:``-separated key/value pair
-    2  money_line    any line matching the currency/amount regex
-    3  address_line  everything else
-
-Run:
-    python scripts/weak_label_yolo.py --data data/sroie_cache --out data/sroie/class_labels.json
+Project: kaggle2 — End-to-End vs. Pipeline Receipt KIE on SROIE.
+Article: "End-to-End vs. Pipeline Receipt KIE: DONUT Against
+    YOLO+TrOCR+Attention on SROIE" (IEEE/ICDAR submission).
+Role: future multi-class YOLO head experiment (nc=4 instead of nc=1).
+    Currently unused in the paper's binary text-line detector.
 """
 from __future__ import annotations
 
@@ -33,12 +26,7 @@ HEADER_BAND = 0.15  # top fraction of the image considered header
 
 
 def _classify(text: str, cy_norm: float) -> int:
-    """Assign a class id to a single SROIE box line.
-
-    Priority: header band > money > kv > address. Header dominates because
-    store-name/address headers frequently contain currency-looking substrings
-    (e.g. branch codes) that would otherwise land in money_line.
-    """
+    """Assign 4-class id: header (0) > money (2) > kv (1) > address (3)."""
     if cy_norm < HEADER_BAND:
         return 0
     if _MONEY_RE.search(text):
@@ -49,7 +37,7 @@ def _classify(text: str, cy_norm: float) -> int:
 
 
 def _label_receipt(box_path: Path) -> list[int] | None:
-    """Return one class id per box line. None if box file is unreadable."""
+    """Return one class id per box line; None if unreadable."""
     try:
         raw_lines = box_path.read_text(errors="replace").splitlines()
     except OSError:

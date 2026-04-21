@@ -1,4 +1,11 @@
-"""kaggle2 orchestrator CLI: --stage train | eval | paper | all."""
+"""kaggle2 CLI orchestrator: --stage train | eval | paper | all.
+
+Project: kaggle2 — End-to-End vs. Pipeline Receipt KIE on SROIE.
+Article: "End-to-End vs. Pipeline Receipt KIE: DONUT Against
+    YOLO+TrOCR+Attention on SROIE" (IEEE/ICDAR submission).
+Role: entry point for training DONUT (~200M) and the YOLOv8n+TrOCR+Attention
+    pipeline, evaluating both systems, and generating the IEEE paper PDF.
+"""
 from __future__ import annotations
 
 import argparse

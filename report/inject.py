@@ -1,8 +1,11 @@
-"""Inject real metrics into LaTeX template by replacing \\VAR{name} placeholders.
+"""Inject experiment metrics into LaTeX template via \\VAR{} placeholders.
 
-Also resolves ``\\input{path}`` directives textually before substitution so
-\\VAR{} placeholders in section files are also replaced and the filled output
-is a single flat ``.tex`` (no extra files needed at compile time).
+Project: kaggle2 — End-to-End vs. Pipeline Receipt KIE on SROIE.
+Article: "End-to-End vs. Pipeline Receipt KIE: DONUT Against
+    YOLO+TrOCR+Attention on SROIE" (IEEE/ICDAR submission).
+Role: replaces \\VAR{key} tokens with formatted metric values from
+    combined_metrics.json.  Also resolves \\input{} directives so the
+    filled output is a single flat .tex needing no extra files.
 """
 from __future__ import annotations
 
@@ -26,12 +29,7 @@ def _read_section(base: Path, name: str) -> str:
 
 
 def expand_inputs(template: str, base: Path, max_depth: int = 4) -> str:
-    """Recursively inline ``\\input{path}`` directives in *template*.
-
-    Resolves relative paths against *base* (the directory containing the
-    top-level ``.tex`` file). Guards against cyclic / runaway inclusions
-    with a shallow depth limit — one level of section files is expected.
-    """
+    """Recursively inline \\input{path} directives in template."""
     if max_depth <= 0:
         return template
 
@@ -76,18 +74,7 @@ def _format_value(key: str, value: Any, metrics: dict[str, Any]) -> str:
 
 
 def inject_results(template: str, metrics: dict[str, Any]) -> str:
-    """Replace \\VAR{key} placeholders with formatted metric values.
-
-    Args:
-        template: LaTeX source containing \\VAR{key} placeholders.
-        metrics: Flat dict of metric name → value (``CombinedMetrics``).
-
-    Returns:
-        LaTeX source with all placeholders replaced. Any \\VAR{} key not
-        present in ``metrics`` is replaced by ``---`` so the resulting
-        LaTeX always compiles (unresolved macros otherwise produce
-        ``Undefined control sequence`` errors in pdflatex/tectonic).
-    """
+    """Replace \\VAR{key} placeholders with formatted metric values."""
     result = template
     for key, value in metrics.items():
         placeholder = f"\\VAR{{{key}}}"

@@ -1,13 +1,11 @@
-"""Lightweight GPU + system telemetry sampler for training runs.
+"""Background GPU/CPU telemetry sampler for the paper's efficiency analysis.
 
-Polls nvidia-smi (subprocess) once per ``interval_s`` and writes one JSONL
-line per tick.  Falls back to a ``{"note": "no-gpu"}`` line and exits
-cleanly when nvidia-smi is absent.  CPU / RAM / disk are sampled via
-``psutil`` when available.
-
-Public API (2-in / 1-out per function):
-  start_sampler(out_path, interval_s)  -> (Thread, Event)
-  stop_sampler(thread, stop_event)     -> str (out_path)
+Project: kaggle2 — End-to-End vs. Pipeline Receipt KIE on SROIE.
+Article: "End-to-End vs. Pipeline Receipt KIE: DONUT Against
+    YOLO+TrOCR+Attention on SROIE" (IEEE/ICDAR submission).
+Role: polls nvidia-smi at configurable intervals, writing JSONL rows that
+    drive fig_gpu_telemetry and the cost/energy columns in Table II.
+    Falls back gracefully on CPU-only runs.  2-in/1-out contract.
 """
 from __future__ import annotations
 
@@ -31,7 +29,7 @@ _NVIDIA_FIELDS = (
 
 
 def _query_gpu() -> dict[str, object]:
-    """Return GPU metrics dict from nvidia-smi, or {} on any failure."""
+    """Return GPU util/mem/power/temp from nvidia-smi, or {} on failure."""
     if not shutil.which("nvidia-smi"):
         return {}
     cmd = [
@@ -56,7 +54,7 @@ def _query_gpu() -> dict[str, object]:
 
 
 def _query_system() -> dict[str, object]:
-    """Return CPU / RAM / disk metrics dict, or {} if psutil is absent."""
+    """Return CPU/RAM/disk metrics, or {} if psutil unavailable."""
     if not _HAS_PSUTIL:
         return {}
     try:
@@ -72,7 +70,7 @@ def _query_system() -> dict[str, object]:
 
 
 def _run_loop(out_path: str, interval_s: float, stop_event: Event) -> None:
-    """Background sampling loop; writes JSONL to out_path until stop_event."""
+    """Daemon loop: poll GPU/system, append JSONL until stop_event."""
     if not shutil.which("nvidia-smi"):
         with open(out_path, "a") as fh:
             fh.write(json.dumps({"ts": time.time(), "note": "no-gpu"}) + "\n")
@@ -87,15 +85,7 @@ def _run_loop(out_path: str, interval_s: float, stop_event: Event) -> None:
 
 
 def start_sampler(out_path: str, interval_s: float = 5.0) -> tuple[Thread, Event]:
-    """Start a background telemetry-sampling thread.
-
-    Args:
-        out_path: Path for JSONL output (parent dirs created automatically).
-        interval_s: Sampling interval in seconds (default 5).
-
-    Returns:
-        ``(thread, stop_event)`` — pass both to :func:`stop_sampler`.
-    """
+    """Start background telemetry thread; returns (thread, stop_event)."""
     Path(out_path).parent.mkdir(parents=True, exist_ok=True)
     stop_event = Event()
     thread = Thread(
@@ -109,15 +99,7 @@ def start_sampler(out_path: str, interval_s: float = 5.0) -> tuple[Thread, Event
 
 
 def stop_sampler(thread: Thread, stop_event: Event) -> str:
-    """Stop the telemetry thread and return the output path.
-
-    Args:
-        thread: Thread returned by :func:`start_sampler`.
-        stop_event: Event returned by :func:`start_sampler`.
-
-    Returns:
-        The JSONL output path (stored as thread.name).
-    """
+    """Stop telemetry thread; return the JSONL path it wrote."""
     stop_event.set()
     thread.join(timeout=15.0)
     return str(thread.name)

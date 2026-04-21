@@ -1,4 +1,11 @@
-"""``diagnose`` sub-command — dump raw pipeline intermediates per-receipt."""
+"""diagnose sub-command: dump raw pipeline intermediates per-receipt.
+
+Project: kaggle2 — End-to-End vs. Pipeline Receipt KIE on SROIE.
+Article: "End-to-End vs. Pipeline Receipt KIE: DONUT Against
+    YOLO+TrOCR+Attention on SROIE" (IEEE/ICDAR submission).
+Role: exports per-receipt YOLO boxes, TrOCR transcripts, and both
+    assignment strategies to JSON for debugging silent F1-destroying bugs.
+"""
 from __future__ import annotations
 
 import argparse

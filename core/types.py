@@ -1,4 +1,13 @@
-"""Core dataclasses shared across all modules."""
+"""Typed data structures shared across the kaggle2 pipeline.
+
+Project: kaggle2 — End-to-End vs. Pipeline Receipt KIE on SROIE.
+Article: "End-to-End vs. Pipeline Receipt KIE: DONUT Against
+    YOLO+TrOCR+Attention on SROIE" (IEEE/ICDAR submission).
+Role: canonical definitions for Receipt, Field, Prediction, Metrics,
+    DataSplit (500/63/63 train/val/test), AssignerData (per-receipt
+    region groups for the AttentionAssigner), and ExpConfig (the full
+    hyperparameter surface documented in Section IV).
+"""
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -7,7 +16,7 @@ from pathlib import Path
 
 @dataclass
 class Field:
-    """One ground-truth or predicted KIE field."""
+    """One of the four SROIE KIE fields (company, date, address, total)."""
 
     name: str
     value: str
@@ -15,7 +24,7 @@ class Field:
 
 @dataclass
 class Receipt:
-    """One SROIE receipt with its image path and ground-truth fields."""
+    """One SROIE receipt: image path + ground-truth field annotations."""
 
     image_path: Path
     fields: list[Field]
@@ -23,7 +32,7 @@ class Receipt:
 
 @dataclass
 class Prediction:
-    """Model prediction for one receipt."""
+    """Model output for one receipt (DONUT, pipeline, or rule-based)."""
 
     receipt_id: str
     fields: list[Field]
@@ -31,7 +40,7 @@ class Prediction:
 
 @dataclass
 class Metrics:
-    """Evaluation metrics for one architecture."""
+    """Token-F1, NED, EM for one system (paper Table I source)."""
 
     global_f1: float
     global_ned: float
@@ -43,7 +52,7 @@ class Metrics:
 
 @dataclass
 class DataSplit:
-    """Train / val / test receipt lists."""
+    """500/63/63 train/val/test SROIE split (Bug 7: disjoint val/test)."""
 
     train: list[Receipt]
     val: list[Receipt]
@@ -52,7 +61,7 @@ class DataSplit:
 
 @dataclass
 class PipelinePaths:
-    """Filesystem paths for the three pipeline model checkpoints."""
+    """Checkpoint paths for YOLOv8, TrOCR, and AttentionAssigner."""
 
     yolo: str
     trocr: str
@@ -61,7 +70,7 @@ class PipelinePaths:
 
 @dataclass
 class Crop:
-    """One text-region crop extracted by YOLO or SROIE box annotations."""
+    """One text-line region for TrOCR training or AttentionAssigner input."""
 
     image_path: Path
     bbox: tuple[float, float, float, float]  # x1 y1 x2 y2 normalised
@@ -71,11 +80,11 @@ class Crop:
 
 @dataclass
 class AssignerData:
-    """Training payload for the attention-based field assigner.
+    """Per-receipt region groups for training the AttentionAssigner.
 
-    ``regions`` groups every Crop per-receipt (labeled + distractors) so the
-    assigner trains on realistic multi-region inputs. ``crops`` is retained
-    for callers that only need labeled crops.
+    ``regions`` bundles labeled+distractor crops per receipt so the
+    pos-mass NLL loss sees realistic multi-region inputs. ``crops`` is
+    kept for TrOCR fine-tuning (labeled crops only).
     """
 
     trocr_path: str
@@ -85,11 +94,7 @@ class AssignerData:
 
 @dataclass
 class EvalBundle:
-    """Predictions + ground-truth receipts + field list for metric computation.
-
-    Bundled to keep ``core.metrics.compute_metrics`` at a single argument so
-    every public function satisfies the 2-in/1-out contract.
-    """
+    """Predictions + ground-truth for compute_metrics (2-in/1-out contract)."""
 
     predictions: list[Prediction]
     receipts: list[Receipt]
@@ -98,7 +103,7 @@ class EvalBundle:
 
 @dataclass
 class PipelineResult:
-    """Evaluation results for the pipeline with both assignment strategies."""
+    """AttentionAssigner vs. rule-based assignment metrics from the pipeline."""
 
     assigner: Metrics
     rulebased: Metrics
@@ -106,7 +111,7 @@ class PipelineResult:
 
 @dataclass
 class ExpConfig:
-    """Full experiment configuration loaded from config.json."""
+    """Full hyperparameter surface (Section IV of the paper)."""
 
     seed: int
     base_model: str
