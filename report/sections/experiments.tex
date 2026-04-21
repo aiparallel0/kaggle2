@@ -1,6 +1,13 @@
 \section{Experiments}
 
-\subsection{Dataset Statistics}
+\subsection{Data}
+We use all 626 SROIE images with a fixed seed-42 shuffle:
+\textbf{500 train / 63 validation / 63 test}.
+The split is persisted to \texttt{results/split.json} at first
+use and reloaded on subsequent runs to guarantee reproducibility
+(Bug~7 in Section~\ref{sec:bugs}).  The four target fields are
+\texttt{company}, \texttt{date}, \texttt{address}, \texttt{total}.
+
 \begin{table}[h]
 \centering
 \caption{SROIE data splits}
@@ -8,15 +15,34 @@
 \toprule
 Split & Images & Fields \\ \midrule
 Train & 500 & 2000 \\
-Val   & 63  & 252  \\
-Test  & 63  & 252  \\ \bottomrule
+Val   &  63 &  252 \\
+Test  &  63 &  252 \\ \bottomrule
 \end{tabular}
 \end{table}
 
-\subsection{Hyperparameters}
+\subsection{Training Setup}
+
+\textbf{DONUT.}
+Fine-tuned for \VAR{epochs_donut} epochs, image resolution
+$\VAR{img_w}\times\VAR{img_h}$, batch~\VAR{batch_size},
+cosine LR schedule, \texttt{\VAR{precision}} precision,
+gradient checkpointing.
+
+\textbf{YOLOv8.}
+Trained for \VAR{epochs_yolo} epochs,
+\texttt{imgsz=\VAR{yolo_img_size}}, always explicit.
+
+\textbf{TrOCR.}
+Fine-tuned for \VAR{epochs_trocr} epochs on SROIE crops
+(minimum 5 enforced by config loader).
+
+\textbf{Attention Assigner.}
+20 epochs, AdamW at learning rate \VAR{lr}, 4 heads,
+$d=64$, $\approx$50\,K parameters.
+
 \begin{table}[h]
 \centering
-\caption{Training hyperparameters}
+\caption{Shared training hyperparameters}
 \begin{tabular}{ll}
 \toprule
 Parameter & Value \\ \midrule
@@ -29,57 +55,26 @@ Precision    & \VAR{precision} \\ \bottomrule
 \end{tabular}
 \end{table}
 
-\subsection{Results}
-\begin{table}[h]
-\centering
-\caption{Main results on 63-image SROIE test split. Values reported
-as mean $\pm$ standard deviation when multiple seeds are available.}
-\begin{tabular}{lccc}
-\toprule
-Architecture & F1 & NED & EM \\ \midrule
-DONUT        & \VAR{donut_f1}    & \VAR{donut_ned}    & \VAR{donut_em}    \\
-Pipeline     & \VAR{pipeline_f1} & \VAR{pipeline_ned} & \VAR{pipeline_em} \\
-Rule-based (gold OCR) & \VAR{rulebased_gold_f1} & \VAR{rulebased_ned} & --- \\
-\bottomrule
-\end{tabular}
-\end{table}
+\subsection{Evaluation Protocol}
+\textbf{Metrics.}
+Global token-F1 (macro-average over the four fields), per-field F1,
+Normalised Edit Distance (NED, 1.0\,=\,identical), and exact-match
+(all four fields correct) on the 63-image test split.
+Bootstrap 95\,\% CIs are computed from 1\,000 image-level resamples.
+McNemar's exact test compares per-image correctness between DONUT and
+pipeline.
 
-For the \texttt{TOTAL} field, we apply a deterministic numeric
-normalizer symmetrically to predictions and ground-truth before
-computing F1/NED/EM (currency prefix stripping, thousand-separator
-removal, two-decimal formatting). This ensures the metric measures
-semantic match, not incidental formatting differences such as
-``RM 43.50'' vs.~``43.50''.
+\textbf{Reproducibility.}
+Seeds \{13, 17, 42\} with \texttt{core.seed.seed\_everything} and
+\texttt{cudnn.deterministic=True}; we report mean\,$\pm$\,std when
+more than one seed is available.
 
-The rule-based row uses SROIE's gold-OCR box-file text as input to
-\texttt{rule\_based\_assign}, isolating the assignment heuristic from
-YOLO/TrOCR error propagation. When the artifact mode reported in the
-metrics JSON is \texttt{\VAR{artifact_mode}}, only the rule-based row
-contains measured values; the DONUT and Pipeline rows are placeholders
-awaiting a GPU run with Hugging Face access.
+\textbf{Hardware.}
+RTX\,4090 or A6000 on vast.ai (\VAR{gpu_model});
+CUDA~\VAR{cuda_version}.  All telemetry sampled at 5\,s intervals
+via \texttt{nvidia-smi} and \texttt{psutil}, written to
+\texttt{results/telemetry\_\textless stage\textgreater .jsonl}.
+Following~\cite{strubell2019energy}, we report energy (kWh) and
+CO$_2$eq (kg) using a default carbon intensity of
+0.4\,kg\,CO$_2$\,/\,kWh.
 
-\begin{table}[h]
-\centering
-\caption{Rule-based (gold OCR) per-field F1 on SROIE test split}
-\begin{tabular}{lc}
-\toprule
-Field   & F1 \\ \midrule
-Company & \VAR{rulebased_f1_company} \\
-Date    & \VAR{rulebased_f1_date}    \\
-Address & \VAR{rulebased_f1_address} \\
-Total   & \VAR{rulebased_f1_total}   \\ \bottomrule
-\end{tabular}
-\end{table}
-
-\begin{table}[h]
-\centering
-\caption{DONUT per-field F1}
-\begin{tabular}{lc}
-\toprule
-Field   & F1 \\ \midrule
-Company & \VAR{donut_f1_company} \\
-Date    & \VAR{donut_f1_date}    \\
-Address & \VAR{donut_f1_address} \\
-Total   & \VAR{donut_f1_total}   \\ \bottomrule
-\end{tabular}
-\end{table}

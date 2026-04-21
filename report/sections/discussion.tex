@@ -1,10 +1,41 @@
-\section{Discussion and Limitations}
+\section{Discussion}
 \label{sec:discussion}
 
-The 63-image test split is small; confidence intervals span
-$\pm$0.05 F1. Evaluation is run across \VAR{seeds_used} seeds (see
-Section~VI) and we report mean $\pm$ standard deviation across seeds
-in the main results table when more than one seed is available; the
-absolute F1 differences between architectures remain within
-single-seed noise. We do not compare against the official SROIE
-leaderboard, which uses a different evaluation protocol.
+\textbf{When to pick which architecture.}
+In the few-hundred-sample regime studied here, the pipeline wins on
+\emph{iteration speed and interpretability}: retraining the 50\,K-parameter
+assigner takes minutes versus hours for DONUT, and every failure mode
+is visible in the attention map.  DONUT wins once data is plentiful.
+Our predecessor work~\cite{aiparallel0kaggle} --- which combined the
+626 SROIE images with a large invoice dataset and applied 2$\times$
+oversampling --- reached DONUT\,F1\,=\,0.8982, confirming that the
+end-to-end approach scales strongly with data once the regime exceeds
+$\sim$1\,K training images.  At 500 receipts, neither architecture has
+a statistically significant advantage.
+
+\textbf{Why address is hard.}
+The \texttt{address} field spans multiple non-adjacent lines that vary
+in number and spatial arrangement across receipts.  TrOCR reads each
+detected crop in isolation, so it cannot ``see'' the vertical context
+that would allow it to recognise when two consecutive lines form a
+compound address.  A rule-based assigner aggregating lines by
+vertical proximity fails on Malaysian receipts where address blocks
+are interspersed with receipt metadata.
+This is the explicit structural explanation documented in our earlier
+pipeline work~\cite{aiparallel0kaggle}: ``TrOCR+YOLO address F1=0.000
+is structural --- address spans multiple lines, detector crops them
+individually, heuristic cannot recombine.''
+The learned attention assigner partially alleviates this by attending
+jointly to all lines, but a full solution requires a sequence model
+that can aggregate multi-line evidence.
+
+\textbf{Limitations and threats to validity.}
+The 63-image test set yields wide confidence intervals ($\approx\pm$0.05\,F1
+at the 95\,\% level); differences below this threshold are not
+statistically meaningful.  We evaluate on a single benchmark (SROIE);
+generalisation to WildReceipt or CORD is not established.  SROIE
+contains label noise (inconsistent spacing in address fields) that
+inflates NED error rates independent of model quality.  All experiments
+used a single GPU family (RTX\,4090 / A6000); results on consumer or
+server-grade hardware may differ.
+
