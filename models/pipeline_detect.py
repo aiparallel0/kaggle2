@@ -85,7 +85,11 @@ def _detect_and_read(
         try:
             pv = trocr_proc(images=crop, return_tensors="pt").pixel_values.to(device)
             enc = trocr_model.encoder(pv).last_hidden_state
-            out = trocr_model.generate(pv, max_new_tokens=cfg.trocr_max_new_tokens)
+            out = trocr_model.generate(
+                pv,
+                max_new_tokens=cfg.trocr_max_new_tokens,
+                decoder_start_token_id=trocr_proc.tokenizer.cls_token_id,
+            )
             txt = trocr_proc.batch_decode(out, skip_special_tokens=True)[0]
         except (RuntimeError, ValueError):
             # CUDA OOM, assertion-tripped generate, or preprocessor reject
@@ -105,6 +109,10 @@ def _fallback_full_image(
     """TrOCR on full image as single region (empty-detection fallback)."""
     pv = trocr_proc(images=img, return_tensors="pt").pixel_values.to(device)
     enc = trocr_model.encoder(pv).last_hidden_state
-    out = trocr_model.generate(pv, max_new_tokens=cfg.trocr_max_new_tokens)
+    out = trocr_model.generate(
+        pv,
+        max_new_tokens=cfg.trocr_max_new_tokens,
+        decoder_start_token_id=trocr_proc.tokenizer.cls_token_id,
+    )
     txt = trocr_proc.batch_decode(out, skip_special_tokens=True)[0]
     return [txt], [enc.mean(dim=1)], [[0.0, 0.0, 1.0, 1.0]]

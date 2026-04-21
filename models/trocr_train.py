@@ -162,5 +162,13 @@ def train_trocr(config: ExpConfig, crops: list[Crop]) -> str:
     )
     trainer.train()
     trainer.save_model(out_dir)
+    # Bug 9: _load_best_model restores the best checkpoint in-place, losing the
+    # patched token ids from lines 104-109.  Re-pin and persist explicitly so
+    # results/trocr/generation_config.json always has the correct values.
+    model.generation_config.decoder_start_token_id = processor.tokenizer.cls_token_id
+    model.generation_config.eos_token_id = processor.tokenizer.sep_token_id
+    model.generation_config.pad_token_id = processor.tokenizer.pad_token_id
+    model.generation_config.bos_token_id = processor.tokenizer.cls_token_id
+    model.generation_config.save_pretrained(out_dir)
     processor.save_pretrained(out_dir)
     return out_dir
