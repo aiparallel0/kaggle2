@@ -20,6 +20,11 @@ from models.rule_regex import (
     _TOTAL_WEAK,
 )
 
+_TOTAL_KW_RE = re.compile(
+    r"\b(total|amount|grand|due|payable)\b", re.IGNORECASE,
+)
+_SUBTOTAL_KW_RE = re.compile(r"\bsub[\s\-]?total\b|\bsubtotal\b", re.IGNORECASE)
+
 
 def _is_short_junk(text: str) -> bool:
     """True if ``text`` is too short/digit-heavy/punctuation-only to be a
@@ -42,7 +47,30 @@ def _money_num(s: str) -> float:
 def extract_total(
     region_texts: list[str], bbox_list: list[list[float]],
 ) -> tuple[int, str] | None:
-    """Pick best TOTAL region via keyword ranking + frequency tie-break."""
+    """Pick best TOTAL region: last money line whose neighbourhood has a total
+    keyword (excluding subtotal). Falls back to keyword-ranked scoring."""
+    # Build candidate list of (index, money_value) for all money-bearing lines.
+    money_candidates: list[tuple[int, str]] = []
+    for i, txt in enumerate(region_texts):
+        m = _MONEY_RE.search(txt)
+        if not m:
+            continue
+        money_candidates.append((i, m.group(0).strip()))
+
+    if not money_candidates:
+        return None
+
+    # Primary heuristic: last money line whose 2-line neighbourhood (±1 line)
+    # contains a total keyword but not a subtotal keyword.
+    for i, raw_val in reversed(money_candidates):
+        neighbourhood = " ".join(
+            region_texts[max(0, i - 1): i + 2],
+        )
+        if _TOTAL_KW_RE.search(neighbourhood) and not _SUBTOTAL_KW_RE.search(neighbourhood):
+            value = re.sub(r"^(RM|USD|SGD|MYR|\$)\s*", "", raw_val, flags=re.IGNORECASE)
+            return i, value
+
+    # Fallback: keyword-ranked scoring (original heuristic).
     candidates: list[tuple[int, int, float, str]] = []
     for i, txt in enumerate(region_texts):
         m = _MONEY_RE.search(txt)
@@ -62,23 +90,17 @@ def extract_total(
         else:
             score = 0
         candidates.append((score, i, y, m.group(0).strip()))
-    if not candidates:
-        return None
     top_score = max(c[0] for c in candidates)
     top = [c for c in candidates if c[0] == top_score]
     if top_score >= 3:
-        best = max(top, key=lambda c: c[2])  # keyword: bottom-most wins
+        best = max(top, key=lambda c: c[2])
     elif top_score == 0:
         best = max(candidates, key=lambda c: c[2])
     else:
-        # Frequency-first tie-break among no-keyword money candidates.
         freq: dict[str, int] = {}
         for _, _, _, v in top:
             freq[v] = freq.get(v, 0) + 1
-        best = max(
-            top, key=lambda c: (freq[c[3]], _money_num(c[3]), c[2]),
-        )
-    # Strip currency prefix so the value matches SROIE GT ("12.30", not "RM12.30").
+        best = max(top, key=lambda c: (freq[c[3]], _money_num(c[3]), c[2]))
     value = re.sub(r"^(RM|USD|SGD|MYR|\$)\s*", "", best[3], flags=re.IGNORECASE)
     return best[1], value
 

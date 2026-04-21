@@ -20,9 +20,12 @@ Role: consumes the ``results/attention_samples.npz`` written by
 from __future__ import annotations
 
 import json
+import logging
 import warnings
 from pathlib import Path
 from typing import Any
+
+log = logging.getLogger("kaggle2")
 
 try:
     import matplotlib
@@ -51,9 +54,9 @@ def render_attention_heatmap(results_dir: str, out_dir: str) -> str | None:
         return None
     data = load_attention_samples(Path(results_dir))
     if not data:
-        warnings.warn(
-            f"attention_samples.npz missing in {results_dir} — skipping heatmap",
-            stacklevel=2,
+        log.info(
+            "attention_samples.npz missing in %s — skipping heatmap (run: eval)",
+            results_dir,
         )
         return None
     paths, attns = data["image_paths"], data["attn"]
