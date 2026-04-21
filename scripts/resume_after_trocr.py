@@ -1,24 +1,11 @@
-"""Disk-full recovery for a run that crashed at ``trainer.save_model`` in
-``train_trocr``.
+"""Disk-full recovery for a train run that crashed at trainer.save_model.
 
-The TrOCR ``Seq2SeqTrainingArguments`` uses ``save_strategy="epoch"`` with
-``load_best_model_at_end=True``, so each epoch wrote a
-``results/trocr/checkpoint-<step>/`` before the final
-``trainer.save_model(out_dir)`` attempted to serialise the restored
-best-checkpoint on top of ``results/trocr/`` and hit ENOSPC. Everything we
-need is still on disk, so this script:
-
-  1. Frees disk: per-epoch DONUT checkpoints, YOLO staging mirror, caches,
-     non-best TrOCR checkpoints.
-  2. Identifies the best TrOCR checkpoint via ``trainer_state.json``'s
-     ``best_model_checkpoint`` pointer.
-  3. ``os.rename``-moves the best checkpoint's files up into ``results/trocr/``
-     so no data is copied.
-  4. Re-downloads and saves the TrOCRProcessor.
-  5. Runs the remaining training steps that ``_stage_train`` never reached:
-     ``train_assigner`` and the pipeline-meta write.
-
-Idempotent — safe to rerun if a later step fails.
+Project: kaggle2 — End-to-End vs. Pipeline Receipt KIE on SROIE.
+Article: "End-to-End vs. Pipeline Receipt KIE: DONUT Against
+    YOLO+TrOCR+Attention on SROIE" (IEEE/ICDAR submission).
+Role: idempotent recovery script that frees disk, promotes the best TrOCR
+    checkpoint, and runs the remaining train_assigner step after a
+    vast.ai ENOSPC crash.
 """
 from __future__ import annotations
 

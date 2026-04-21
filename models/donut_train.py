@@ -1,7 +1,11 @@
-"""Train DONUT on SROIE with all 7 F1-guardrail bugs prevented.
+"""Train DONUT on SROIE with all 13 silent F1-destroying bugs prevented.
 
-Re-exports ``_SROIEDataset`` / ``_make_compute_metrics`` / ``_split_param_groups``
-so callers (and historical diagnostics) can still import them from here.
+Project: kaggle2 — End-to-End vs. Pipeline Receipt KIE on SROIE.
+Article: "End-to-End vs. Pipeline Receipt KIE: DONUT Against
+    YOLO+TrOCR+Attention on SROIE" (IEEE/ICDAR submission).
+Role: fine-tunes the VisionEncoderDecoder DONUT (~200M params) with Bug 1
+    (lm_head dedup), Bug 2 (decoder_start_token_id), Bug 7 (kwargs leak),
+    and Bug 9 (stale generation_config) guardrails.  Uses differential LR.
 """
 from __future__ import annotations
 
@@ -36,6 +40,7 @@ __all__ = [
 
 
 def _prepare_model(config: ExpConfig) -> tuple[Any, Any]:
+    """Load DONUT, add SROIE tokens, apply Bug 1/2/7/9 fixes."""
     proc: DonutProcessor = DonutProcessor.from_pretrained(config.base_model)
     model: VisionEncoderDecoderModel = VisionEncoderDecoderModel.from_pretrained(
         config.base_model,
@@ -122,7 +127,7 @@ def _build_args(config: ExpConfig, out_dir: str) -> Seq2SeqTrainingArguments:
 
 
 def train_donut(config: ExpConfig, data: DataSplit) -> str:
-    """Train DONUT; return path to saved model directory."""
+    """Train DONUT with differential LR; return saved model directory."""
     proc, model = _prepare_model(config)
     out_dir = os.path.join(config.output_dir, "donut")
     args = _build_args(config, out_dir)

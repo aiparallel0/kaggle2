@@ -1,4 +1,13 @@
-"""Train AttentionAssigner on per-receipt multi-region batches (best-by-val save)."""
+"""Train the AttentionAssigner with pos-mass NLL loss and best-by-val saving.
+
+Project: kaggle2 — End-to-End vs. Pipeline Receipt KIE on SROIE.
+Article: "End-to-End vs. Pipeline Receipt KIE: DONUT Against
+    YOLO+TrOCR+Attention on SROIE" (IEEE/ICDAR submission).
+Role: implements the multi-instance negative-log positive-mass loss that
+    lets the learned cross-attention assigner handle multi-line fields
+    (e.g. address).  Persists train/val loss trajectories for
+    fig_assigner_loss_curve.
+"""
 from __future__ import annotations
 
 import json
@@ -24,6 +33,7 @@ def _group_loss(
     assigner: AttentionAssigner, feats: Tensor, bboxes: Tensor, priors: Tensor,
     targets: dict[int, list[int]], device: str,
 ) -> Tensor:
+    """Per-receipt pos-mass NLL loss: −log(Σ attn over positive regions)."""
     tf = feats.to(device).unsqueeze(0)
     bf = bboxes.to(device).unsqueeze(0)
     pf = priors.to(device).unsqueeze(0)
@@ -37,7 +47,7 @@ def _group_loss(
 
 
 def _evaluate(assigner: AttentionAssigner, groups: list[Group], device: str) -> float:
-    """Mean per-receipt loss on *groups* with grads disabled, in eval mode."""
+    """Mean per-receipt pos-mass NLL on validation set (grads disabled)."""
     if not groups:
         return float("nan")
     was_training = assigner.training
@@ -74,11 +84,12 @@ def _train_epoch(
 
 
 def train_assigner(config: ExpConfig, data: AssignerData) -> str:
-    """Train AttentionAssigner with held-out val split + best-by-val save.
+    """Train AttentionAssigner with pos-mass NLL; return checkpoint path.
 
-    Reports ``train_loss`` and ``val_loss`` every epoch; the saved checkpoint
-    is the one with the lowest val loss observed during training (not the
-    last epoch).
+    The loss spreads attention across all positive regions at train time,
+    enabling multi-line field handling (address).  Early-stopping on
+    val-loss with patience=config.assigner_patience.  Metrics written to
+    assigner_metrics.json for fig_assigner_loss_curve.
     """
     device = "cuda" if torch.cuda.is_available() else "cpu"
     field_to_idx = {f.lower(): i for i, f in enumerate(config.fields)}
@@ -96,9 +107,13 @@ def train_assigner(config: ExpConfig, data: AssignerData) -> str:
     min_delta = config.assigner_min_delta
     no_improve = 0
     stopped_at = config.epochs_assigner
+    train_loss_history: list[float] = []
+    val_loss_history: list[float] = []
     for epoch in range(config.epochs_assigner):
         train_loss = _train_epoch(assigner, opt, train_groups, config.seed, epoch, device)
         val_loss = _evaluate(assigner, val_groups, device)
+        train_loss_history.append(train_loss)
+        val_loss_history.append(val_loss)
         improved = val_loss < best_val - min_delta
         if improved:
             best_val = val_loss
@@ -126,6 +141,7 @@ def train_assigner(config: ExpConfig, data: AssignerData) -> str:
     out_path = os.path.join(config.output_dir, "assigner.pt")
     Path(config.output_dir).mkdir(parents=True, exist_ok=True)
     save_assigner(assigner, out_path)
+    n_params = int(sum(p.numel() for p in assigner.parameters()))
     with open(os.path.join(config.output_dir, "assigner_metrics.json"), "w") as f:
         json.dump(
             {
@@ -137,6 +153,9 @@ def train_assigner(config: ExpConfig, data: AssignerData) -> str:
                 "epochs": config.epochs_assigner,
                 "patience": patience,
                 "min_delta": min_delta,
+                "n_params": n_params,
+                "train_loss": train_loss_history,
+                "val_loss": val_loss_history,
             },
             f, indent=2,
         )

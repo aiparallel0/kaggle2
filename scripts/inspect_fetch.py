@@ -1,4 +1,11 @@
-"""``fetch`` sub-command entrypoint — composes the rsync + env-snapshot calls."""
+"""fetch sub-command: rsync results from a remote vast.ai host.
+
+Project: kaggle2 — End-to-End vs. Pipeline Receipt KIE on SROIE.
+Article: "End-to-End vs. Pipeline Receipt KIE: DONUT Against
+    YOLO+TrOCR+Attention on SROIE" (IEEE/ICDAR submission).
+Role: pulls JSON metrics, YOLO logs, and paper outputs from a remote
+    training host (typically vast.ai) for local inspection.
+"""
 from __future__ import annotations
 
 import argparse

@@ -1,4 +1,12 @@
-"""SROIE Dataset + DONUT-aware collator (decoder_input_ids shifting)."""
+"""DONUT Dataset and collator with decoder_input_ids shifting (Bug 2/9 safe).
+
+Project: kaggle2 — End-to-End vs. Pipeline Receipt KIE on SROIE.
+Article: "End-to-End vs. Pipeline Receipt KIE: DONUT Against
+    YOLO+TrOCR+Attention on SROIE" (IEEE/ICDAR submission).
+Role: wraps SROIE receipts in <s_sroie>...<s_field>value</s_field>...</s_sroie>
+    labels for DONUT training.  The collator supplies decoder_input_ids so
+    HF Trainer's label-smoothing path does not crash the mBART decoder.
+"""
 from __future__ import annotations
 
 import random
@@ -17,6 +25,7 @@ except ImportError:  # lightweight CI — torch/transformers not installed
 
 
 def _build_label(receipt: Receipt) -> str:
+    """Wrap receipt fields in <s_sroie><s_field>value</s_field></s_sroie>."""
     parts = ["<s_sroie>"]
     for fld in receipt.fields:
         t = fld.name.lower()
@@ -54,10 +63,7 @@ class _SROIEDataset(_DATASET_BASE):  # type: ignore[misc]
 
 
 def _shift_right(labels: torch.Tensor, start_id: int, pad_id: int) -> torch.Tensor:
-    """Shift *labels* right by one to produce decoder_input_ids.
-
-    Fallback for models without ``prepare_decoder_input_ids_from_labels``.
-    """
+    """Shift labels right by one to produce decoder_input_ids (Bug 2 fallback)."""
     shifted = labels.new_zeros(labels.shape)
     shifted[:, 1:] = labels[:, :-1].clone()
     shifted[:, 0] = start_id
@@ -66,10 +72,7 @@ def _shift_right(labels: torch.Tensor, start_id: int, pad_id: int) -> torch.Tens
 
 
 class _DonutCollator:
-    """Supplies ``decoder_input_ids`` so HF Trainer's label-smoothing path
-    (which pops ``labels`` before ``model(**inputs)``) does not crash the
-    mbart decoder with ``specify either decoder_input_ids or decoder_inputs_embeds``.
-    """
+    """Supplies decoder_input_ids so HF Trainer's label-smoothing works."""
 
     def __init__(self, model: VisionEncoderDecoderModel) -> None:
         self._model = model
@@ -104,7 +107,7 @@ class _DonutCollator:
 
 
 def _seed_worker(_worker_id: int) -> None:
-    """Deterministic DataLoader workers — prevents silent nondeterminism."""
+    """Deterministic DataLoader workers (reproducibility guardrail)."""
     seed = torch.initial_seed() % 2**32
     np.random.seed(seed)
     random.seed(seed)

@@ -17,15 +17,26 @@ of visual patches and autoregressively decode structured text without an
 explicit OCR stage.  The appeal is simplicity: a single forward pass
 produces all field values from pixels, and no handcrafted feature
 engineering is required.  The cost is opacity: there is no intermediate
-variable one can inspect to understand \emph{why} a prediction was made.
+variable one can inspect to understand \emph{why} a prediction was made,
+and every parameter --- including the large majority that never fire on
+any given receipt --- is carried through every forward pass.
 \emph{Pipeline systems} decompose the problem: a text detector
 (YOLOv8~\cite{jocher2023yolov8}) finds and crops text lines;
 an OCR model (TrOCR~\cite{li2023trocr}) reads each crop;
 and a field assigner maps the resulting text tokens and bounding boxes
 to the target schema.  Pipelines are interpretable --- each stage
 produces an auditable intermediate representation --- and fast to
-iterate: retraining the 50\,K-parameter assigner takes minutes, whereas
+iterate: retraining the $\approx\VAR{assigner_params_k}\,$K-parameter
+assigner takes minutes, whereas
 retraining DONUT from a new base takes hours.
+At roughly half the end-to-end parameter cost of DONUT, the analytical
+route with a learned cross-attention assigner effectively \emph{discards
+the unused parameters} DONUT carries: the heavy perceptual work is
+delegated to YOLOv8 (a parametrically cheap detector) and TrOCR (a
+crop-level OCR decoder), while the $\approx\VAR{assigner_params_k}\,$K
+attention assigner concentrates its capacity on the single hard problem
+of line-to-field assignment.  This re-budgeting is the central
+efficiency argument we make on SROIE.
 
 The central question this paper asks is: \emph{can a lightweight
 learned assigner close the F1 gap between an end-to-end model and a
@@ -40,16 +51,18 @@ train\,/\,val\,/\,test split, no validation leakage, and three seeds.
   pipeline at a fixed data budget of 500 training receipts, with
   bootstrap 95\,\% confidence intervals and McNemar's test to
   characterise statistical significance on the small test set.
-\item A 50\,K-parameter cross-attention assigner with four
+\item A $\approx\VAR{assigner_params_k}\,$K-parameter
+  Transformer-encoder\,$+$\,cross-attention assigner with four
   learned field queries (\texttt{company}, \texttt{date},
-  \texttt{address}, \texttt{total}), published with reproducible code,
-  a fixed data split, and three seeds.\footnote{The repo's
+  \texttt{address}, \texttt{total}), 6-d handcrafted text priors,
+  and a multi-instance negative-log pos-mass loss; published with
+  reproducible code, a fixed data split, and three seeds.\footnote{The repo's
   architectural discipline --- 166-LOC cap, 2-in/1-out function
   contracts, flat module layout, and mypy --strict as the test suite
   --- is adapted from the C99 companion project
   \texttt{aiparallel0/teb2}, ensuring every module is individually
   auditable.}
-\item A catalogue of eight silent F1-destroying implementation bugs
+\item A catalogue of thirteen silent F1-destroying implementation bugs
   found during development, with symptom, mechanism, and guard for
   each.
 \item Full GPU telemetry (utilisation, memory, power, temperature,

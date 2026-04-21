@@ -1,4 +1,12 @@
-"""Evaluate YOLO + TrOCR + AttentionAssigner pipeline → PipelineResult."""
+"""Evaluate YOLOv8 + TrOCR + AttentionAssigner pipeline on SROIE test.
+
+Project: kaggle2 — End-to-End vs. Pipeline Receipt KIE on SROIE.
+Article: "End-to-End vs. Pipeline Receipt KIE: DONUT Against
+    YOLO+TrOCR+Attention on SROIE" (IEEE/ICDAR submission).
+Role: runs the three-stage pipeline (detect → read → assign) and produces
+    PipelineResult containing both learned-assigner and rule-based metrics.
+    Samples cross-attention tensors for fig_attention_heatmap.
+"""
 from __future__ import annotations
 
 import json
@@ -20,7 +28,8 @@ from core.types import (
     Receipt,
 )
 from models.attention_assign import _load_assigner
-from models.pipeline_assign import _assign_learned
+from models.pipeline_assign import _assign_learned_with_attn
+from models.pipeline_attn import DEFAULT_SAMPLE_K, AttentionSampler
 from models.pipeline_detect import _detect_and_read, _fallback_full_image
 from models.rule_based import rule_based_assign
 
@@ -72,17 +81,15 @@ def _resolve_yolo_img(paths: PipelinePaths, config: ExpConfig) -> int:
 
 
 def eval_pipeline(config: ExpConfig, test: list[Receipt]) -> PipelineResult:
-    """Run YOLO→TrOCR pipeline with learned + rule-based assignment.
-
-    Pipeline checkpoint paths are derived from ``config.output_dir``; this
-    keeps the public surface at 2-in/1-out while still reading every path
-    from the single source of truth (``config.json``).
-    """
+    """Run the three-stage pipeline; return assigner + rule-based Metrics."""
     paths = _paths_from_config(config)
     yolo, trocr_proc, trocr_model, assigner, device = _load(paths, config)
     yolo_img = _resolve_yolo_img(paths, config)
     preds_l: list[Prediction] = []
     preds_r: list[Prediction] = []
+    n_empty_detect = 0  # receipts where YOLO found zero boxes → full-image fallback
+    n_receipt_err = 0  # receipts where per-receipt try/except caught a failure
+    attn_sampler = AttentionSampler(k=DEFAULT_SAMPLE_K)
     with torch.no_grad():
         for rec in test:
             rid = rec.image_path.stem
@@ -103,14 +110,18 @@ def eval_pipeline(config: ExpConfig, test: list[Receipt]) -> PipelineResult:
                 # dark scans. Without it the receipt contributes 0 to all
                 # four field F1s.
                 if not texts:
+                    n_empty_detect += 1
                     texts, feats, bboxes = _fallback_full_image(
                         trocr_proc, trocr_model, img, config, device,
                     )
-                learned = _assign_learned(
+                learned, attn = _assign_learned_with_attn(
                     assigner, texts, feats, bboxes, config.fields, device,
                 )
+                if attn is not None and not attn_sampler.full:
+                    attn_sampler.capture(str(rec.image_path), bboxes, attn)
                 rule = rule_based_assign(texts, bboxes) if texts else {}
             except (OSError, RuntimeError, ValueError):
+                n_receipt_err += 1
                 learned, rule = {}, {}
             preds_l.append(Prediction(
                 receipt_id=rid,
@@ -127,11 +138,16 @@ def eval_pipeline(config: ExpConfig, test: list[Receipt]) -> PipelineResult:
         predictions=preds_r, receipts=test, fields=config.fields,
     ))
     out_dir = Path(paths.yolo).parent.parent
+    n_total = max(len(test), 1)
+    attn_sampler.write(out_dir)
     with open(out_dir / "pipeline_metrics.json", "w") as f:
         json.dump({
             "assigner_f1": m_l.global_f1, "rulebased_f1": m_r.global_f1,
             "assigner_ned": m_l.global_ned, "assigner_em": m_l.global_em,
             "per_field_f1": m_l.per_field_f1,
             "rulebased_per_field_f1": m_r.per_field_f1,
+            "empty_detection_fraction": n_empty_detect / n_total,
+            "per_receipt_error_fraction": n_receipt_err / n_total,
+            "n_test_receipts": len(test),
         }, f, indent=2)
     return PipelineResult(assigner=m_l, rulebased=m_r)

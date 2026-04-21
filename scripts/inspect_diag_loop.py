@@ -1,4 +1,11 @@
-"""Per-receipt inspection loop shared by the ``diagnose`` sub-command."""
+"""Per-receipt inspection loop for the diagnose sub-command.
+
+Project: kaggle2 — End-to-End vs. Pipeline Receipt KIE on SROIE.
+Article: "End-to-End vs. Pipeline Receipt KIE: DONUT Against
+    YOLO+TrOCR+Attention on SROIE" (IEEE/ICDAR submission).
+Role: runs YOLO → TrOCR → AttentionAssigner on individual receipts and
+    reports per-field diagnostics for debugging silent F1-destroying bugs.
+"""
 from __future__ import annotations
 
 import logging
@@ -15,12 +22,7 @@ log = logging.getLogger("inspect")
 
 
 def count_sroie_gt_boxes(image_path: Path) -> int:
-    """SROIE provides per-line box annotations in box/<stem>.txt. Count them.
-
-    If YOLO's eval-time detection count is ≪ this number, the detector
-    collapsed at the configured imgsz and every downstream component
-    inherits a starved region list.
-    """
+    """Count SROIE gold-OCR boxes; detect if YOLO collapsed (Bug 5 symptom)."""
     box_path = image_path.parent.parent / "box" / (image_path.stem + ".txt")
     if not box_path.exists():
         return 0
@@ -40,7 +42,7 @@ def count_sroie_gt_boxes(image_path: Path) -> int:
 def load_pipeline_models(
     paths: PipelinePaths, n_fields: int,
 ) -> tuple[Any, Any, Any, Any, str]:
-    """Load YOLO, TrOCR, assigner — shared between diagnose and parity."""
+    """Load YOLOv8, TrOCR, AttentionAssigner for inspection/parity."""
     import torch
     from transformers import TrOCRProcessor, VisionEncoderDecoderModel
     from ultralytics import YOLO
@@ -63,7 +65,7 @@ def inspect_receipt(
     rec: Receipt, yolo: Any, trocr_proc: Any, trocr_model: Any, assigner: Any,
     config: ExpConfig, yolo_img: int, device: str,
 ) -> tuple[dict[str, Any], Prediction, Prediction, bool, int, int, int]:
-    """Run YOLO+TrOCR+assigner on one receipt; return dump + counters."""
+    """Run YOLO+TrOCR+AttentionAssigner on one receipt; return dump + counters."""
     from PIL import Image
     img = Image.open(rec.image_path).convert("RGB")
     results = yolo.predict(

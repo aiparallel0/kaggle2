@@ -1,18 +1,19 @@
-"""AttentionAssigner neural module (Transformer encoder + cross-attention).
+"""Learned cross-attention assigner (~380K params) for field assignment.
 
-Architecture (default ≈ 380 K params, trains in < 10 min on an RTX 4090):
+Project: kaggle2 — End-to-End vs. Pipeline Receipt KIE on SROIE.
+Article: "End-to-End vs. Pipeline Receipt KIE: DONUT Against
+    YOLO+TrOCR+Attention on SROIE" (IEEE/ICDAR submission).
+Role: the AttentionAssigner takes TrOCR encoder features (768-d), enriched
+    8-d bboxes, and 6-d handcrafted text priors, then applies a 2-layer
+    Transformer encoder followed by 4-query cross-attention to produce
+    per-receipt field assignments.  Trained with pos-mass NLL loss.
 
+Architecture (trains in <10 min on RTX 4090):
   region inputs  ──[text_proj]──┐
                   [bbox_proj]   ├─ + → LayerNorm → TransformerEncoder ──┐
                   [prior_proj]──┘                                       │
                                                                         ▼
   field queries ──[cross-attn]─────────────────────────────────────► (B, F, H)
-                                                                        │
-                                                    LayerNorm + residual│
-                                                                        ▼
-                                               MLP classifier → logits (B, F)
-                                               attn_w (B, F, N) ← field→region
-                                                                 soft assignment
 """
 from __future__ import annotations
 
@@ -39,12 +40,7 @@ DEFAULT_DROPOUT = 0.1
 
 
 def _pick_n_heads(hidden_dim: int, requested: int) -> int:
-    """Largest divisor of ``hidden_dim`` that is ≤ ``requested``.
-
-    ``nn.MultiheadAttention`` requires ``hidden_dim % n_heads == 0``; rather
-    than failing loudly on pathological small hidden dims (e.g. unit tests
-    passing ``hidden_dim=4``), degrade to fewer heads.
-    """
+    """Largest divisor of hidden_dim ≤ requested (MultiheadAttention requires it)."""
     if hidden_dim <= 0:
         return 1
     for h in range(min(requested, hidden_dim), 0, -1):
@@ -54,7 +50,7 @@ def _pick_n_heads(hidden_dim: int, requested: int) -> int:
 
 
 class AttentionAssigner(_NN_BASE):  # type: ignore[misc]
-    """Transformer + cross-attention field assigner (see module docstring)."""
+    """Transformer + 4-query cross-attention field assigner (~380K params)."""
 
     def __init__(
         self,
@@ -101,7 +97,7 @@ class AttentionAssigner(_NN_BASE):  # type: ignore[misc]
 
     @staticmethod
     def _enrich_bbox(bbox: Tensor) -> Tensor:
-        """``(B, N, 4)`` → ``(B, N, 8)`` by adding centre (cx, cy) + size (w, h)."""
+        """Expand 4-d bbox to 8-d by adding centre (cx, cy) and size (w, h)."""
         if bbox.shape[-1] == 8:
             return bbox
         if bbox.shape[-1] != 4:
@@ -119,16 +115,11 @@ class AttentionAssigner(_NN_BASE):  # type: ignore[misc]
         self, text_feats: Tensor, bbox_feats: Tensor,
         text_priors: Tensor | None = None,
     ) -> tuple[Tensor, Tensor]:
-        """Compute field-assignment logits and cross-attention weights.
+        """Compute field-assignment logits and per-receipt cross-attention.
 
-        Args:
-            text_feats: ``(B, N, text_feat_dim)`` TrOCR encoder hidden states.
-            bbox_feats: ``(B, N, 4)`` or ``(B, N, 8)`` normalised boxes.
-            text_priors: ``(B, N, n_text_priors)``. If ``None`` and the
-                module has a prior head, a zero tensor is substituted.
-
-        Returns:
-            ``(logits (B, n_fields), attn_w (B, n_fields, N))``.
+        Returns (logits (B, n_fields), attn_w (B, n_fields, N)) where attn_w
+        is the per-field soft assignment over regions used for inference and
+        rendered as Fig.~\\ref{fig:attn_heatmap}.
         """
         bbox_feats = self._enrich_bbox(bbox_feats)
         kv = self.text_proj(text_feats) + self.bbox_proj(bbox_feats)

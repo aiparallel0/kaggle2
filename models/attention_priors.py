@@ -1,4 +1,12 @@
-"""Text-prior feature extraction for the AttentionAssigner (torch-free)."""
+"""Handcrafted 6-d text-prior features for the AttentionAssigner.
+
+Project: kaggle2 — End-to-End vs. Pipeline Receipt KIE on SROIE.
+Article: "End-to-End vs. Pipeline Receipt KIE: DONUT Against
+    YOLO+TrOCR+Attention on SROIE" (IEEE/ICDAR submission).
+Role: computes the 6-d prior vector (length_log, digit_ratio, upper_ratio,
+    has_money, has_date, has_colon) that augments TrOCR features in the
+    AttentionAssigner's region encoder.  No torch dependency.
+"""
 from __future__ import annotations
 
 import math
@@ -18,16 +26,7 @@ _DATE_RE = re.compile(
 
 
 def text_priors(text: str) -> list[float]:
-    """Compute the 6-d text-prior feature vector for one region.
-
-    Features:
-      * ``length_log``   — log(1 + len), z-scored to ≈ [0, 1] for ≤ 400 chars.
-      * ``digit_ratio``  — fraction of digits (money/date lines score high).
-      * ``upper_ratio``  — fraction of uppercase letters (company header cue).
-      * ``has_money``    — 1.0 if a money regex matches, else 0.0.
-      * ``has_date``     — 1.0 if a date regex matches, else 0.0.
-      * ``has_colon``    — 1.0 if ``:`` appears (TOTAL: / DATE: label cue).
-    """
+    """6-d text-prior features: length, digit/upper ratio, money/date/colon."""
     if not text:
         return [0.0] * N_TEXT_PRIORS
     s = text.strip()

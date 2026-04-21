@@ -1,4 +1,12 @@
-"""Post-eval F1 guardrails — hard-fail below bug floor."""
+"""Post-eval F1 guardrails detecting silent F1-destroying bugs.
+
+Project: kaggle2 — End-to-End vs. Pipeline Receipt KIE on SROIE.
+Article: "End-to-End vs. Pipeline Receipt KIE: DONUT Against
+    YOLO+TrOCR+Attention on SROIE" (IEEE/ICDAR submission).
+Role: hard-fails when F1 falls below architecture-specific bug floors,
+    surfacing the 13 silent F1-destroying bugs documented in
+    report/sections/bugs.tex (Bug 1–13).
+"""
 from __future__ import annotations
 
 from core.errors import EvalError
@@ -6,16 +14,7 @@ from core.types import Metrics
 
 
 def validate_f1(metrics: Metrics, arch: str) -> None:
-    """Raise :class:`EvalError` below architecture-specific bug floor.
-
-    Args:
-        metrics: Computed :class:`Metrics` for one architecture.
-        arch: Either ``"donut"`` (floor 0.50) or ``"pipeline"`` (floor > 0.0).
-
-    F1 is stochastic (GPU, HF weights, SROIE label noise); no specific number
-    can be guaranteed. Floors flag *bugs*, not underperformance. Soft-warn
-    against ``expected_f1_warn`` is the caller's job — it has ``ExpConfig``.
-    """
+    """Raise EvalError if F1 falls below bug floor (DONUT 0.50, pipeline >0)."""
     f1 = metrics.global_f1
     if arch == "donut" and f1 < 0.50:
         raise EvalError(

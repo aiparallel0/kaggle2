@@ -1,15 +1,11 @@
-"""Rule-based eval using SROIE gold-OCR box-file text (no HF / GPU needed).
+"""Rule-based eval over SROIE gold-OCR text (no HF/GPU dependency).
 
-This stage exists because the end-to-end DONUT and YOLO+TrOCR+Attention
-pipelines require ~1 GB of Hugging Face weights, which is not reachable
-from every execution environment (e.g. offline CI sandboxes). The SROIE
-``box/`` annotation files already contain gold-OCR text aligned to
-bounding boxes, so ``rule_based_assign`` can be evaluated end-to-end
-without any neural model at all. The resulting F1 is a genuine lower
-bound on what the ``pipeline.rulebased`` arm of ``eval_pipeline`` can
-produce — any degradation between the two arms is attributable solely
-to YOLO/TrOCR error propagation, which is exactly the comparison the
-paper makes.
+Project: kaggle2 — End-to-End vs. Pipeline Receipt KIE on SROIE.
+Article: "End-to-End vs. Pipeline Receipt KIE: DONUT Against
+    YOLO+TrOCR+Attention on SROIE" (IEEE/ICDAR submission).
+Role: evaluates rule_based_assign on SROIE box/ annotations as a genuine
+    lower bound on what the pipeline's rule-based arm can achieve when OCR
+    is perfect — any degradation is attributable solely to YOLO/TrOCR error.
 """
 from __future__ import annotations
 
@@ -25,13 +21,7 @@ from models.rule_based import rule_based_assign
 def _receipt_to_regions(
     receipt: Receipt, fields: list[str],
 ) -> tuple[list[str], list[list[float]]]:
-    """Parse SROIE box file into (texts, bboxes) in top-to-bottom reading order.
-
-    Returns empty lists when the receipt has no box annotations. Boxes are
-    sorted by ``y1`` so ``rule_based_assign``'s spatial heuristics (company
-    above address above total) receive input in the same ordering the
-    YOLO+TrOCR pipeline would produce at inference time.
-    """
+    """Parse SROIE box file into (texts, bboxes) sorted top-to-bottom."""
     crops = _parse_box_file(receipt, fields)
     if not crops:
         return [], []
@@ -42,16 +32,7 @@ def _receipt_to_regions(
 
 
 def eval_rulebased_gold(config: ExpConfig, test: list[Receipt]) -> Metrics:
-    """Run ``rule_based_assign`` over gold-OCR box text; write metrics JSON.
-
-    Args:
-        config: Full experiment config; only ``fields`` / ``output_dir`` used.
-        test: Held-out test receipts (same split as every other eval path).
-
-    Returns:
-        :class:`Metrics` computed by the shared ``core.metrics.compute_metrics``
-        so the numbers are directly comparable with DONUT / pipeline eval.
-    """
+    """Run rule_based_assign on gold-OCR text; write metrics JSON."""
     predictions: list[Prediction] = []
     for rec in test:
         texts, bboxes = _receipt_to_regions(rec, config.fields)
@@ -85,20 +66,14 @@ def eval_rulebased_gold(config: ExpConfig, test: list[Receipt]) -> Metrics:
 
 
 def _empty_field_map(fields: list[str]) -> dict[str, float]:
+    """Zero-initialized per-field dict (placeholder generation)."""
     return dict.fromkeys(fields, 0.0)
 
 
 def combined_from_rulebased(
     config: ExpConfig, rulebased_gold: Metrics,
 ) -> dict[str, object]:
-    """Build a paper-injection dict when DONUT / pipeline are unavailable.
-
-    DONUT and the learned pipeline arm are zeroed (not faked) and the
-    rule-based-on-gold-OCR number is injected as ``rulebased_f1``. The
-    paper template tolerates zeros here: every \\VAR{} placeholder still
-    receives a real value, and the discussion explicitly calls out that
-    the DONUT/pipeline rows are blank in gold-OCR-only artefacts.
-    """
+    """Build paper-injection dict when DONUT/pipeline unavailable (CPU-only)."""
     zero_fields = _empty_field_map(config.fields)
     return {
         "donut_f1": 0.0, "donut_ned": 0.0, "donut_em": 0.0,
@@ -115,13 +90,31 @@ def combined_from_rulebased(
         "epochs_donut": config.epochs_donut,
         "epochs_trocr": config.epochs_trocr,
         "epochs_yolo": config.epochs_yolo,
+        "epochs_assigner": config.epochs_assigner,
         "batch_size": config.batch_size,
         "lr": config.lr,
+        "lr_encoder": config.lr,
+        "lr_decoder": config.lr_decoder,
         "precision": config.precision,
         "label_smoothing": config.label_smoothing,
+        "warmup_steps": config.warmup_steps,
         "yolo_img_size": config.yolo_img_size,
         "img_w": config.image_size[0],
         "img_h": config.image_size[1],
+        "kd_attn_weight": config.kd_attn_weight,
+        "kd_logits_weight": config.kd_logits_weight,
+        # Pipeline-diagnostic placeholders: real values are merged from
+        # pipeline_metrics.json by stage_paper when it exists.  Zeros
+        # here mean "no pipeline run executed in this artefact".
+        "empty_detection_fraction": 0.0,
+        "per_receipt_error_fraction": 0.0,
+        "parity_ok": True,
+        # Assigner-telemetry placeholders: real values merged by
+        # stage_paper from assigner_metrics.json when available.
+        "assigner_params_k": 0.0,
+        "assigner_best_epoch": 0,
+        "assigner_stopped_at": 0,
+        "assigner_best_val_loss": 0.0,
         "artifact_mode": "rulebased_gold_only",
     }
 
@@ -131,7 +124,7 @@ def _field_key(field: str, metric: str) -> str:
 
 
 def per_field_injection(metrics: Metrics) -> dict[str, float]:
-    """Expose per-field rule-based F1 / NED as individual \\VAR{} keys."""
+    """Expose per-field rule-based F1/NED as individual \\VAR{} keys."""
     out: dict[str, float] = {}
     for f, v in metrics.per_field_f1.items():
         out[_field_key(f, "f1")] = v

@@ -1,4 +1,12 @@
-"""Prepare per-receipt assigner training groups and deterministic train/val split."""
+"""Prepare per-receipt region groups for AttentionAssigner training.
+
+Project: kaggle2 — End-to-End vs. Pipeline Receipt KIE on SROIE.
+Article: "End-to-End vs. Pipeline Receipt KIE: DONUT Against
+    YOLO+TrOCR+Attention on SROIE" (IEEE/ICDAR submission).
+Role: encodes TrOCR hidden states for every region in a receipt and bundles
+    them with enriched 8-d bboxes and 6-d text priors into training groups.
+    The 90/10 train/val split is seeded deterministically.
+"""
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
@@ -45,15 +53,7 @@ def _encode_regions(
 def _prepare_groups(
     data: AssignerData, field_to_idx: dict[str, int], device: str,
 ) -> tuple[list[Group], int]:
-    """Encode every region once per receipt → list of training groups.
-
-    Each group is ``(feats (N, D), bboxes (N, 4), priors (N, n_text_priors),
-    targets {field_idx: [positive_region_idxs]})`` where D is the TrOCR
-    encoder hidden size (384 for trocr-small, 768 for trocr-base). The
-    assigner enriches the bbox to 8-d at forward time, so we store the
-    4-d form here. Returns ``(groups, feat_dim)`` so the caller can
-    construct ``AttentionAssigner(text_feat_dim=feat_dim)``.
-    """
+    """Encode per-receipt regions via TrOCR encoder → training groups."""
     if not data.regions:
         raise TrainError("AssignerData.regions is empty — cannot train assigner.")
     from transformers import TrOCRProcessor, VisionEncoderDecoderModel
@@ -86,12 +86,7 @@ def _prepare_groups(
 
 
 def split_train_val(prepared: list[Group], seed: int) -> tuple[list[Group], list[Group]]:
-    """Deterministic 90/10 split by receipt index via ``torch.Generator(seed)``.
-
-    On a pathological tiny dataset (<=1 group) both sides degenerate to the
-    full set so training can still run — val-loss collapses to train loss in
-    that case, which is communicated in the log rather than hidden.
-    """
+    """Deterministic 90/10 split for AttentionAssigner val-loss tracking."""
     n = len(prepared)
     if n <= 1:
         return list(prepared), list(prepared)

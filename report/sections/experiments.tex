@@ -26,7 +26,9 @@ Test  &  63 &  252 \\ \bottomrule
 Fine-tuned for \VAR{epochs_donut} epochs, image resolution
 $\VAR{img_w}\times\VAR{img_h}$, batch~\VAR{batch_size},
 cosine LR schedule, \texttt{\VAR{precision}} precision,
-gradient checkpointing.
+gradient checkpointing.  Differential learning rate:
+encoder at \VAR{lr_encoder}, decoder at \VAR{lr_decoder}
+(10$\times$; resized embedding rows for newly added task tokens).
 
 \textbf{YOLOv8.}
 Trained for \VAR{epochs_yolo} epochs,
@@ -37,8 +39,12 @@ Fine-tuned for \VAR{epochs_trocr} epochs on SROIE crops
 (minimum 5 enforced by config loader).
 
 \textbf{Attention Assigner.}
-20 epochs, AdamW at learning rate \VAR{lr}, 4 heads,
-$d=64$, $\approx$50\,K parameters.
+Up to \VAR{epochs_assigner} epochs with patience 7 on held-out
+validation loss (best-by-val checkpointing); AdamW at
+$1\mathrm{e}{-3}$, weight-decay $1\mathrm{e}{-4}$, grad-norm clip 1.0.
+Architecture: 2-layer pre-norm Transformer encoder, 8 heads,
+$d{=}128$, cross-attention with 4 field queries; total
+$\approx$\,\VAR{assigner_params_k}\,K parameters.
 
 \begin{table}[h]
 \centering
@@ -47,11 +53,18 @@ $d=64$, $\approx$50\,K parameters.
 \toprule
 Parameter & Value \\ \midrule
 DONUT epochs & \VAR{epochs_donut} \\
+DONUT LR (encoder / decoder) & \VAR{lr_encoder} / \VAR{lr_decoder} \\
 TrOCR epochs & \VAR{epochs_trocr} \\
 YOLO epochs  & \VAR{epochs_yolo} \\
+YOLO imgsz   & \VAR{yolo_img_size} \\
+Assigner epochs (max / stopped / best) &
+  \VAR{epochs_assigner} / \VAR{assigner_stopped_at} / \VAR{assigner_best_epoch} \\
+Assigner params & $\approx$\,\VAR{assigner_params_k}\,K \\
 Batch size   & \VAR{batch_size} \\
-Learning rate & \VAR{lr} \\
-Precision    & \VAR{precision} \\ \bottomrule
+Learning rate (legacy alias) & \VAR{lr} \\
+Precision    & \VAR{precision} \\
+KD attn weight / logits weight &
+  \VAR{kd_attn_weight} / \VAR{kd_logits_weight} \\ \bottomrule
 \end{tabular}
 \end{table}
 
@@ -77,4 +90,18 @@ via \texttt{nvidia-smi} and \texttt{psutil}, written to
 Following~\cite{strubell2019energy}, we report energy (kWh) and
 CO$_2$eq (kg) using a default carbon intensity of
 0.4\,kg\,CO$_2$\,/\,kWh.
+
+\textbf{Honest-accounting diagnostics.}
+Per-receipt try/except in \texttt{pipeline\_eval.py} catches an
+unreadable scan or CUDA hiccup and emits an empty-fields
+\texttt{Prediction} so that \texttt{compute\_metrics} (which zips
+predictions and receipts with \texttt{strict=True}) stays aligned;
+the failing receipt then contributes F1\,=\,0, which is the correct
+accounting for ``pipeline failed on this input.''  We report the
+fraction of receipts so caught
+(\texttt{per\_receipt\_error\_fraction}\,=\,\VAR{per_receipt_error_fraction})
+and the fraction that triggered the empty-detection fallback (YOLO
+found zero boxes; TrOCR reads the full image as a single crop rather
+than scoring zero:
+\texttt{empty\_detection\_fraction}\,=\,\VAR{empty_detection_fraction}).
 

@@ -73,26 +73,5 @@ Mean\,$\pm$\,std & \VAR{donut_f1} & \VAR{pipeline_f1} \\
 \end{tabular}
 \end{table}
 
-\IfFileExists{../results/fig_training_curves.pdf}{%
-  \begin{figure}[h]\centering
-  \includegraphics[width=0.95\columnwidth]{../results/fig_training_curves.pdf}
-  \caption{DONUT training and eval loss + eval F1 vs.\ epoch.}
-  \label{fig:training}\end{figure}
-}{[Figure 2 (training curves) pending GPU run.]}
 
-\IfFileExists{../results/fig_gpu_telemetry.pdf}{%
-  \begin{figure}[h]\centering
-  \includegraphics[width=0.95\columnwidth]{../results/fig_gpu_telemetry.pdf}
-  \caption{GPU utilisation, memory, power and temperature over
-    wall-clock time during DONUT training (\VAR{gpu_model}, CUDA
-    \VAR{cuda_version}).}
-  \label{fig:telemetry}\end{figure}
-}{[Figure 3 (GPU telemetry) pending GPU run.]}
-
-\IfFileExists{../results/fig_per_field_confusion.pdf}{%
-  \begin{figure}[h]\centering
-  \includegraphics[width=0.95\columnwidth]{../results/fig_per_field_confusion.pdf}
-  \caption{NED bucket breakdown per field per system.}
-  \label{fig:confusion}\end{figure}
-}{[Figure 5 (per-field confusion) pending GPU run.]}
-
+\input{sections/results_figures}

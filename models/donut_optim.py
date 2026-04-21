@@ -1,4 +1,13 @@
-"""Two-LR param groups + structural compute_metrics for DONUT training."""
+"""Differential-LR param groups and structural compute_metrics for DONUT.
+
+Project: kaggle2 — End-to-End vs. Pipeline Receipt KIE on SROIE.
+Article: "End-to-End vs. Pipeline Receipt KIE: DONUT Against
+    YOLO+TrOCR+Attention on SROIE" (IEEE/ICDAR submission).
+Role: implements the 10× decoder LR (Kim et al. 2022 §4.2) that lets resized
+    special-token embeddings adapt quickly while the pretrained Swin encoder
+    stays stable.  The structural compute_metrics parses both preds and GT
+    through token2json so eval_f1 matches compute_metrics exactly.
+"""
 from __future__ import annotations
 
 from typing import Any
@@ -17,15 +26,7 @@ except ImportError:  # lightweight CI — torch/transformers not installed
 def _split_param_groups(
     model: VisionEncoderDecoderModel, lr_encoder: float, lr_decoder: float,
 ) -> list[dict[str, Any]]:
-    """Two-LR param groups: pretrained encoder vs randomly-init'd decoder rows.
-
-    Resizing the tokenizer adds 10 fresh embedding + 10 fresh ``lm_head`` rows
-    sampled from ``N(0, 0.02)``. Updating those at the same rate as the BART
-    decoder body — already pretrained on hundreds of thousands of CORD
-    documents — wastes most of the early epochs realigning random vectors
-    against a confidently-wrong encoder representation. A 10× higher decoder
-    LR (Kim et al., 2022 §4.2) lifts SROIE field-F1 by ~0.1–0.15 absolute.
-    """
+    """Differential LR: encoder=lr, decoder=10× lr (resized embeddings adapt fast)."""
     enc: list[torch.nn.Parameter] = []
     dec: list[torch.nn.Parameter] = []
     for n, p in model.named_parameters():
@@ -41,24 +42,7 @@ def _split_param_groups(
 
 
 def _make_compute_metrics(processor: DonutProcessor, fields: list[str]) -> Any:
-    """Return ``compute_metrics`` fn emitting ``eval_f1`` for best-checkpoint select.
-
-    The eval metric MUST match :mod:`eval_donut` — otherwise
-    ``load_best_model_at_end=True`` picks the checkpoint that maximises the
-    wrong metric and ``EarlyStoppingCallback`` triggers on the wrong signal.
-
-    Historical failure mode: the old implementation decoded with
-    ``skip_special_tokens=True``, stripping ``<s_field>`` tags and scoring
-    token-overlap F1 on the raw free-text stream. That metric can sit around
-    0.3–0.4 purely because shared English words overlap between GT and pred
-    even when the structured parse yields ``{}``. Meanwhile the real
-    per-field F1 was exactly 0.0000.
-
-    The new implementation decodes with ``skip_special_tokens=False`` so
-    tags survive, parses both predictions and labels through the same
-    ``token2json → _flatten_token2json`` pipeline as eval_donut, and averages
-    per-field token-F1 — exactly what ``core.metrics.compute_metrics`` does.
-    """
+    """Build compute_metrics that parses preds/GT structurally → eval_f1."""
     pad = processor.tokenizer.pad_token_id
 
     def _decode_structural(batch: np.ndarray) -> list[str]:

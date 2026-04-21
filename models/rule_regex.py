@@ -1,4 +1,11 @@
-"""Regex patterns used by the rule-based KIE baseline. No ML deps."""
+"""Regex patterns for the rule-based KIE baseline (no ML dependencies).
+
+Project: kaggle2 — End-to-End vs. Pipeline Receipt KIE on SROIE.
+Article: "End-to-End vs. Pipeline Receipt KIE: DONUT Against
+    YOLO+TrOCR+Attention on SROIE" (IEEE/ICDAR submission).
+Role: DATE_RE and MONEY_RE are the primary field detectors; _TOTAL_NEGATIVE,
+    _TOTAL_STRONG, _TOTAL_WEAK drive the keyword ranking in extract_total.
+"""
 from __future__ import annotations
 
 import re

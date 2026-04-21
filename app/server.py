@@ -1,11 +1,10 @@
-"""FastAPI demo server — drag a receipt onto the page, see DONUT extract fields.
+"""FastAPI demo server: upload a receipt image, see DONUT extract the fields.
 
-Run with:  ``make serve``  (or ``uvicorn app.server:app --host 0.0.0.0``).
-
-Routes:
-    GET  /          → single-page upload UI (served from index.html)
-    GET  /health    → {"status": "ok", "model_source": "finetuned"|"base", ...}
-    POST /predict   → multipart image → {"fields": {name: value}, "model_source": ...}
+Project: kaggle2 — End-to-End vs. Pipeline Receipt KIE on SROIE.
+Article: "End-to-End vs. Pipeline Receipt KIE: DONUT Against
+    YOLO+TrOCR+Attention on SROIE" (IEEE/ICDAR submission).
+Role: purely illustrative demo for the DONUT end-to-end comparator.
+    Run with: ``make serve`` (or ``uvicorn app.server:app --host 0.0.0.0``).
 """
 from __future__ import annotations
 

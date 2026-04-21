@@ -1,0 +1,117 @@
+% -----------------------------------------------------------------------
+% Pipeline architecture subsection (YOLOv8 → TrOCR → AttentionAssigner).
+% Project: kaggle2 — End-to-End vs. Pipeline Receipt KIE on SROIE.
+% Role: describes the three-stage pipeline in full methodological depth;
+%   split out of method.tex to honour the 166-LOC cap per source file.
+% -----------------------------------------------------------------------
+
+\subsection{Pipeline: YOLOv8 + TrOCR + Attention Assigner}
+
+The pipeline decomposes KIE into three auditable stages.
+
+\textbf{Stage 1 --- Text-line detection (YOLOv8).}
+YOLOv8n~\cite{jocher2023yolov8} is trained for $\VAR{epochs_yolo}$ epochs
+at $\VAR{yolo_img_size}\times\VAR{yolo_img_size}$ to detect axis-aligned
+text-line bounding boxes on SROIE receipts.
+Labels are \emph{weakly derived} from the SROIE character-level box
+annotations by \texttt{scripts/weak\_label\_yolo.py}: we never hand-label
+layout, which keeps the data-annotation budget at SROIE's field-level cost.
+The image size is passed \emph{explicitly} at both training and
+inference (Bug~5): omitting it causes zero detections when the
+trained size differs from the YOLOv8 default of~640.
+Detection output: a list of $(x_1,y_1,x_2,y_2)$ boxes in pixel space.
+
+\textbf{Stage 2 --- Crop OCR (TrOCR).}
+Each detected box is cropped and fed to
+TrOCR~\cite{li2023trocr} (\texttt{microsoft/trocr-small-printed}
+fine-tuned for $\geq\VAR{epochs_trocr}$ epochs on SROIE crops;
+Bug~6 requires at least 5 epochs to escape the degenerate empty-output
+regime).  For each crop we retain both the decoded text \emph{and} the
+TrOCR \emph{encoder hidden states} (768-d mean-pooled); the assigner
+consumes the hidden states rather than the surface text, so that OCR
+character errors do not cascade into semantic role assignment unless
+they are catastrophic.  TrOCR still reads each crop independently ---
+its residual contribution to the address failure mode is discussed in
+Section~\ref{sec:discussion}.
+
+\textbf{Stage 3 --- Attention Assigner.}
+For each of the $N$ detected lines the assigner fuses three input
+streams before any attention:
+\begin{itemize}
+\item \emph{Text features} (768-d, TrOCR encoder hidden states) via a
+      learned linear projection \texttt{text\_proj}.
+\item \emph{Enriched bounding box} (8-d: $x_1,y_1,x_2,y_2,c_x,c_y,w,h$,
+      appending centre and size to the raw 4-d box) via \texttt{bbox\_proj}.
+\item \emph{Handcrafted text priors} (6-d: log-length, digit ratio,
+      upper-case ratio, money/date/colon indicators; see
+      \texttt{models/attention\_priors.py}) via \texttt{prior\_proj}.
+      These hybrid priors are cheap regex/statistical cues that the
+      network may choose to ignore or lean on --- an explicit inductive
+      bias exposed to gradient descent.
+\end{itemize}
+The three projections are summed, LayerNorm'd, and passed through a
+2-layer pre-norm Transformer encoder (GELU, 8 heads, $d{=}128$), so the
+assigner can reason about line-to-line context (subtotal immediately
+below grand total, multi-line address block).  Four learnable
+\emph{field queries} (\texttt{company}, \texttt{date}, \texttt{address},
+\texttt{total}) then cross-attend to the encoder outputs via
+\texttt{nn.MultiheadAttention}; a residual + LayerNorm feeds an MLP
+classifier (Linear\,$\to$\,GELU\,$\to$\,Linear) that emits a scalar
+logit per field.  The cross-attention weights
+$A \in \mathbb{R}^{4\times N}$ are surfaced as the soft assignment and
+visualised in Fig.~\ref{fig:attn_heatmap}.
+The module totals $\approx\VAR{assigner_params_k}\,$K parameters
+(measured exactly from \texttt{sum(p.numel() for p in assigner.parameters())}
+and persisted to \texttt{assigner\_metrics.json}).
+
+\textbf{Multi-instance pos-mass loss.}
+A single field may map to a \emph{set} of target lines (the address
+field habitually spans multiple). We therefore optimise, per receipt and
+per field,
+\[
+  \mathcal{L}_f \;=\; -\log \sum_{i \in \mathrm{target}_f}
+                   \mathrm{softmax}_j(A_{f,j})\big|_{j=i},
+\]
+i.e.\ the negative log of the \emph{attention probability mass placed on
+the correct line(s)}.  Plain cross-entropy cannot express this: it
+forces the query to pick one line.  The multi-instance formulation is
+what allows the learned assigner to beat rules on \texttt{address},
+where a purely positional heuristic reports F1\,=\,0.000.
+
+\textbf{Optimiser and early stopping.}
+AdamW at $1\mathrm{e}{-3}$ with weight-decay $1\mathrm{e}{-4}$,
+gradient-norm clipped at 1.0, up to $\VAR{epochs_assigner}$ epochs with
+patience 7 on held-out validation loss.  The saved checkpoint is the
+lowest-val-loss one (not the last), at
+$\VAR{assigner_best_epoch}$ of $\VAR{assigner_stopped_at}$ actually run.
+The full train/val loss trajectory is persisted to
+\texttt{assigner\_metrics.json} and rendered as
+Fig.~\ref{fig:assigner_loss}.
+
+\textbf{Interpretability.}
+The attention weight $A_{f,\ell}$ is directly interpretable:
+it quantifies how much evidence line $\ell$ provides for field~$f$.
+Plotting $A$ over the receipt image yields a per-field explanation
+(Fig.~\ref{fig:attn_heatmap}) that makes address-field failures
+self-evident (the query attends to the wrong non-contiguous line),
+while DONUT offers no equivalent.
+
+\textbf{Modularity.}
+Swap YOLOv8n $\to$ DocTR or PaddleOCR and only the assigner's
+\texttt{bbox\_proj} needs retraining (seconds on CPU); swap
+TrOCR $\to$ Tesseract and a sentence transformer and only
+\texttt{text\_proj} does.  DONUT, by contrast, demands full retuning
+for any such swap.
+
+\textbf{Why the assigner beats rules.}
+The \texttt{address} field spans multiple non-adjacent lines; the
+multi-instance loss lets the cross-attention learn to spread mass
+over the label set, which no fixed positional heuristic can emulate.
+The \texttt{total} field is confused by sub-totals and tax lines that
+share the same numeric surface form --- the self-attention stage
+disambiguates by attending to neighbouring lines' \texttt{has\_money}
+priors and keyword context.  At 500 receipts, the assigner's
+$\approx\VAR{assigner_params_k}$\,K trainable parameters are
+tractable precisely because the heavy perceptual work (detecting and
+reading text) has already been done by YOLO and TrOCR, whose
+representations are pretrained on much larger corpora.

@@ -1,7 +1,11 @@
-"""Download SROIE dataset, produce train/val/test splits.
+"""Download SROIE, produce the 500/63/63 train/val/test split (Bug 7 guard).
 
-Re-exports ``extract_crops`` / ``extract_receipt_regions`` / ``_match_field``
-from ``sroie_crops`` so existing callers keep working.
+Project: kaggle2 — End-to-End vs. Pipeline Receipt KIE on SROIE.
+Article: "End-to-End vs. Pipeline Receipt KIE: DONUT Against
+    YOLO+TrOCR+Attention on SROIE" (IEEE/ICDAR submission).
+Role: clones the SROIE repository, parses JSON/TXT entity files, and
+    partitions 626 receipts into disjoint val/test splits to prevent the
+    silent F1-destroying Bug 7 (val≡test leakage).
 """
 from __future__ import annotations
 
@@ -36,7 +40,7 @@ _N_TEST = 63
 
 
 def download_sroie(config: ExpConfig) -> Path:
-    """Clone SROIE repo if needed; return path to data directory."""
+    """Clone SROIE repo if absent; return data directory path."""
     cache = Path(config.data_dir)
     if (cache / "train" / "img").exists():
         return cache
@@ -86,7 +90,7 @@ def download_sroie(config: ExpConfig) -> Path:
 
 
 def _parse_entities_txt(path: Path) -> dict[str, str]:
-    """Parse key:value entity files, preserving colons that appear in values."""
+    """Parse key:value entity files; preserve colons inside values."""
     out: dict[str, str] = {}
     for line in path.read_text().splitlines():
         if ":" not in line:
@@ -120,7 +124,7 @@ def _load_receipts(img_dir: Path, ent_dir: Path) -> list[Receipt]:
 
 
 def split_sroie(data_path: Path, seed: int) -> DataSplit:
-    """Split SROIE into train/val/test (Bug 7: physically separate val/test)."""
+    """Partition SROIE into 500/63/63 train/val/test (Bug 7: disjoint sets)."""
     img_dir, ent_dir = data_path / "train" / "img", data_path / "train" / "entities"
     if not img_dir.exists():
         raise DataError(f"SROIE train/img not found at {img_dir}")
@@ -134,12 +138,7 @@ def split_sroie(data_path: Path, seed: int) -> DataSplit:
 
 
 def load_or_create_split(config: ExpConfig, data_path: Path) -> DataSplit:
-    """Reuse the saved split if present, else create+persist (prevents drift).
-
-    The split cache is stored at ``{config.output_dir}/split.json`` so that
-    re-runs with the same output directory reuse identical train/val/test
-    partitions (critical for reproducibility across the train/eval stages).
-    """
+    """Load cached split or create and persist (reproducibility across stages)."""
     cache = Path(config.output_dir) / "split.json"
     seed = config.seed
     groups = ("train", "val", "test")

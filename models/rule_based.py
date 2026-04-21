@@ -1,17 +1,11 @@
-"""Spatial + regex baseline for receipt KIE — no ML dependencies.
+"""Spatial + regex rule-based baseline for receipt KIE (no ML deps).
 
-Strategy (all field-specific):
-
-* **date**  — first region whose text matches DATE_RE.
-* **total** — keyword-aware ranking; prefers ``GRAND TOTAL`` / ``AMOUNT DUE``
-  over bare ``TOTAL`` over any other money figure, and penalises lines
-  containing ``CHANGE`` / ``SUBTOTAL`` / ``ROUNDING`` (common false positives).
-* **company** — top-most non-junk non-header region.
-* **address** — lines spatially between the company and the first money /
-  date region, excluding phone / tax-ID lines.
-
-These priors collectively lift a pure-spatial baseline from F1 ≈ 0.35 to
-≈ 0.55 on the SROIE test split.
+Project: kaggle2 — End-to-End vs. Pipeline Receipt KIE on SROIE.
+Article: "End-to-End vs. Pipeline Receipt KIE: DONUT Against
+    YOLO+TrOCR+Attention on SROIE" (IEEE/ICDAR submission).
+Role: provides the rule-based assignment arm that serves as an ablation
+    lower bound.  Strategies: date=first DATE_RE match, total=keyword-ranked
+    money, company=topmost non-junk, address=spatially between company/total.
 """
 from __future__ import annotations
 
@@ -24,12 +18,7 @@ __all__ = ["DATE_RE", "MONEY_RE", "rule_based_assign"]
 def rule_based_assign(
     region_texts: list[str], bbox_list: list[list[float]],
 ) -> dict[str, str]:
-    """Assign company/date/address/total from text + normalised bboxes.
-
-    Returns a dict keyed by field name with the matched substring value.
-    May be empty or missing keys when a receipt has no usable regions —
-    callers should handle that gracefully.
-    """
+    """Assign company/date/address/total using spatial + regex heuristics."""
     assigned: dict[str, str] = {}
     used: set[int] = set()
 

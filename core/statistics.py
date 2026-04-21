@@ -1,11 +1,11 @@
-"""Statistical tests for per-image evaluation.
+"""Statistical significance helpers for the paper's confidence intervals.
 
-Pure functions: bootstrap CI, McNemar exact test, NED bucket histogram.
-
-Public API (2-in / 1-out):
-  bootstrap_ci(per_image_correct, n_iter) -> (lo, hi)
-  mcnemar(a_correct, b_correct) -> p_value
-  ned_buckets(neds, _sentinel) -> dict
+Project: kaggle2 — End-to-End vs. Pipeline Receipt KIE on SROIE.
+Article: "End-to-End vs. Pipeline Receipt KIE: DONUT Against
+    YOLO+TrOCR+Attention on SROIE" (IEEE/ICDAR submission).
+Role: produces the 95% bootstrap CI and McNemar p-value that accompany
+    the headline F1 numbers in Table I.  NED bucketing drives the
+    per-field confusion figure (fig_per_field_confusion).
 """
 from __future__ import annotations
 
@@ -16,15 +16,7 @@ import random
 def bootstrap_ci(
     per_image_correct: list[bool], n_iter: int = 1000
 ) -> tuple[float, float]:
-    """95 % bootstrap CI on mean correctness by image-level resampling.
-
-    Args:
-        per_image_correct: Binary per-image correctness vector.
-        n_iter: Number of bootstrap resamples (default 1 000).
-
-    Returns:
-        (lo, hi) — 2.5th and 97.5th percentile of the bootstrap distribution.
-    """
+    """95% bootstrap CI on mean per-receipt correctness (Table I uncertainty)."""
     n = len(per_image_correct)
     if n == 0:
         return (0.0, 0.0)
@@ -39,17 +31,7 @@ def bootstrap_ci(
 
 
 def mcnemar(a_correct: list[bool], b_correct: list[bool]) -> float:
-    """Exact McNemar p-value for paired per-image correctness vectors.
-
-    Uses the exact binomial test under H0: p = 0.5.  Two-tailed.
-
-    Args:
-        a_correct: System-A binary correctness (one entry per test image).
-        b_correct: System-B binary correctness (same length as a_correct).
-
-    Returns:
-        Two-tailed p-value in [0, 1].
-    """
+    """Exact McNemar two-tailed p-value for DONUT vs. pipeline significance."""
     b = sum(1 for a, c in zip(a_correct, b_correct, strict=False) if a and not c)
     c = sum(1 for a, cv in zip(a_correct, b_correct, strict=False) if not a and cv)
     n = b + c
@@ -68,19 +50,7 @@ def mcnemar(a_correct: list[bool], b_correct: list[bool]) -> float:
 
 
 def ned_buckets(neds: list[float], _sentinel: object = None) -> dict[str, int]:
-    """Bin NED scores into 4 buckets used by the per-field confusion figure.
-
-    Buckets follow the NED convention where 1.0 = identical and 0.0 = entirely
-    different:  ``exact`` (NED = 1), ``high`` (0.7 < NED < 1), ``mid``
-    (0.3 < NED <= 0.7), ``low`` (NED <= 0.3, including 0).
-
-    Args:
-        neds: List of NED values in [0, 1].
-        _sentinel: Unused; present to satisfy the 2-in / 1-out contract shape.
-
-    Returns:
-        Dict with keys ``exact``, ``high``, ``mid``, ``low``.
-    """
+    """Bin NED scores into exact/high/mid/low for the per-field confusion fig."""
     counts: dict[str, int] = {"exact": 0, "high": 0, "mid": 0, "low": 0}
     for v in neds:
         if v >= 1.0:

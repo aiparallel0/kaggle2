@@ -20,8 +20,10 @@ env/
 # ruff cache
 .ruff_cache/
 
-# Training outputs (large, not versioned)
-results/
+# Training outputs (large, not versioned); keep the paper's bug-timeline
+# fixture so the bug-timeline figure can be rebuilt deterministically.
+results/*
+!results/bug_timeline.json
 data/sroie_cache/
 
 # YOLO run artefacts

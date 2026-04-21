@@ -1,4 +1,12 @@
-"""Compile a .tex file to PDF via tectonic (preferred) or pdflatex fallback."""
+"""Compile .tex to PDF via tectonic (preferred) or pdflatex fallback.
+
+Project: kaggle2 — End-to-End vs. Pipeline Receipt KIE on SROIE.
+Article: "End-to-End vs. Pipeline Receipt KIE: DONUT Against
+    YOLO+TrOCR+Attention on SROIE" (IEEE/ICDAR submission).
+Role: produces the final IEEE-format PDF from paper_filled.tex.  Gracefully
+    falls back to pdflatex and warns (rather than errors) when no LaTeX
+    engine is installed.
+"""
 from __future__ import annotations
 
 import logging
@@ -58,12 +66,7 @@ def _compile_pdflatex(tex_path: Path) -> Path:
 
 
 def compile_paper_pdf(tex_path: Path, bib_src: Path) -> Path | None:
-    """Compile ``tex_path`` to PDF; prefer tectonic, fall back to pdflatex.
-
-    Returns the resulting PDF path on success, or ``None`` if neither engine
-    is installed — we warn instead of failing so ``make paper`` still works
-    on machines without a LaTeX toolchain.
-    """
+    """Compile tex_path to PDF; prefer tectonic, fall back to pdflatex."""
     work = tex_path.parent
     if bib_src.exists() and bib_src.resolve() != (work / bib_src.name).resolve():
         shutil.copy(bib_src, work / bib_src.name)

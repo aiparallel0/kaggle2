@@ -1,4 +1,11 @@
-"""Extract labeled crops and per-receipt region groups from SROIE box files."""
+"""Extract labeled crops and per-receipt region groups for pipeline training.
+
+Project: kaggle2 — End-to-End vs. Pipeline Receipt KIE on SROIE.
+Article: "End-to-End vs. Pipeline Receipt KIE: DONUT Against
+    YOLO+TrOCR+Attention on SROIE" (IEEE/ICDAR submission).
+Role: parses SROIE box/ annotations into Crop objects for TrOCR fine-tuning
+    and per-receipt region groups for the AttentionAssigner's pos-mass loss.
+"""
 from __future__ import annotations
 
 from pathlib import Path
@@ -9,7 +16,7 @@ from core.types import Crop, Receipt
 
 
 def _match_field(text: str, gt: dict[str, str]) -> str:
-    """Match a box text line to the best KIE field by overlap / substring."""
+    """Match a text line to the best KIE field by token overlap or substring."""
     low = text.lower().strip()
     if not low:
         return ""
@@ -60,13 +67,13 @@ def _parse_box_file(rec: Receipt, fields: list[str]) -> list[Crop]:
 
 
 def extract_crops(receipts: list[Receipt], fields: list[str]) -> list[Crop]:
-    """Parse SROIE box annotations → labeled Crop list for TrOCR + assigner."""
+    """Parse SROIE box annotations → labeled Crops for TrOCR training."""
     return [c for r in receipts for c in _parse_box_file(r, fields) if c.field_label]
 
 
 def extract_receipt_regions(
     receipts: list[Receipt], fields: list[str],
 ) -> list[list[Crop]]:
-    """Parse annotations → ALL box regions per receipt (labeled + distractors)."""
+    """Parse SROIE annotations → per-receipt region groups for pos-mass loss."""
     gs = [_parse_box_file(r, fields) for r in receipts]
     return [g for g in gs if any(c.field_label for c in g)]

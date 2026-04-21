@@ -1,7 +1,10 @@
-"""Promote the best TrOCR checkpoint into ``results/trocr/`` after a crash.
+"""Promote the best TrOCR checkpoint into results/trocr/ after a crash.
 
-``os.rename``-based promotion so nothing is copied (stays on the same
-filesystem, no temporary disk-doubling — critical when disk is already full).
+Project: kaggle2 — End-to-End vs. Pipeline Receipt KIE on SROIE.
+Article: "End-to-End vs. Pipeline Receipt KIE: DONUT Against
+    YOLO+TrOCR+Attention on SROIE" (IEEE/ICDAR submission).
+Role: os.rename-based promotion avoids disk-doubling (critical when
+    disk is already full from the ENOSPC crash).
 """
 from __future__ import annotations
 
@@ -28,12 +31,7 @@ _TRAINING_STATE_FILES = {
 
 
 def find_best_checkpoint(trocr_dir: Path) -> Path:
-    """Best epoch's ``checkpoint-<step>/`` under *trocr_dir*.
-
-    Prefers the pointer written by HuggingFace
-    (``trainer_state.json::best_model_checkpoint``) and falls back to the
-    highest-numbered checkpoint when missing or pointing at a nonexistent dir.
-    """
+    """Find best epoch's checkpoint-<step>/ via trainer_state.json pointer."""
     checkpoints = sorted(
         [p for p in trocr_dir.glob("checkpoint-*") if p.is_dir()],
         key=checkpoint_step,
@@ -83,7 +81,7 @@ def _already_promoted(trocr_dir: Path) -> bool:
 
 
 def promote_trocr(config: ExpConfig) -> Path:
-    """Promote best TrOCR checkpoint into ``results/trocr/`` and resave processor."""
+    """Promote best TrOCR checkpoint into results/trocr/ and resave processor."""
     trocr_dir = Path(config.output_dir) / "trocr"
     if not trocr_dir.is_dir():
         raise SystemExit(f"Expected {trocr_dir} to exist — nothing to recover.")

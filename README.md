@@ -9,8 +9,9 @@ Replaces 34K-line Python monolith. Trains both architectures, evaluates on
 
 Published DONUT-on-SROIE results land in **0.73 – 0.90** depending on
 epochs, resolution, auxiliary data, and seed. The tightened configuration
-in this repo (15 epochs, cosine schedule, beam-search decoding, best-F1
-checkpoint selection) typically lands in **0.78 – 0.85** on an RTX 4090 /
+in this repo (30 epochs, cosine schedule, differential encoder/decoder LR,
+beam-search decoding, best-F1 checkpoint selection) typically lands in
+**0.78 – 0.85** on an RTX 4090 /
 A6000. The pipeline (YOLO+TrOCR+Attention) typically achieves
 **0.50 – 0.60** F1, with YOLO text-line detection at **0.98 mAP@0.5**.
 **No specific F1 number can be guaranteed by code changes alone**:
@@ -137,7 +138,7 @@ All hyperparameters live in `config.json`. F1-affecting knobs:
 
 | Parameter | Default | Effect on expected F1 |
 |---|---|---|
-| `epochs_donut` | 15 | Longer training → higher F1, diminishing returns past 15. |
+| `epochs_donut` | 30 | Longer training → higher F1, diminishing returns past ~30 on 500 SROIE receipts. |
 | `image_size` | [1280, 960] | Higher resolution → better address/total recognition; more VRAM. |
 | `num_beams` | 4 | Beam search typically gains 2–4 F1 points over greedy. |
 | `lr_scheduler_type` | cosine | Cosine > linear for short SROIE runs. |
@@ -145,23 +146,34 @@ All hyperparameters live in `config.json`. F1-affecting knobs:
 | `gradient_checkpointing` | true | Lets batch 8 × 1280 × 960 fit in 24 GB. |
 | `patience` | 3 | EarlyStopping on plateau of eval F1. |
 | `precision` | bf16 | bf16 on Ampere+; fp16 with grad-clip otherwise (Bug 4). |
-| `yolo_img_size` | 512 | MUST match training and inference (Bug 5). |
-| `epochs_trocr` | 10 | Floor of 5 enforced in config.py (Bug 6). |
+| `yolo_img_size` | 1024 | MUST match training and inference (Bug 5). |
+| `epochs_trocr` | 12 | Floor of 5 enforced in config.py (Bug 6). |
 | `expected_f1_warn` | 0.75 | Soft WARN threshold (non-fatal). |
 
-## F1-destroying bugs (all guarded in code)
+## F1-destroying bugs (all thirteen guarded in code)
 
-1. lm_head weight deduplication (safetensors drops tied weights)
-2. Wrong decoder_start_token_id (string-form tokeniser)
-3. token2json list return (CORD-style multi-page output); merge prefers
-   longest non-empty value per field
-4. fp16 gradient overflow (bf16 on Ampere+, else fp16 + max_grad_norm)
-5. YOLO imgsz mismatch (inference default ≠ training size)
-6. TrOCR undertrained (<5 epochs produces all-empty outputs)
-7. Val == Test leakage (physically separate splits, persisted to disk)
-8. YOLO project path resolution (ultralytics ≥8.3 relative-path bug)
-9. Stale generation_config (saved decoder_start_token_id ≠ model.config;
-   affects both DONUT and TrOCR — mirror ids into generation_config)
+ 1. lm_head weight deduplication (safetensors drops tied weights)
+ 2. Wrong decoder_start_token_id (string-form tokeniser)
+ 3. token2json list return (CORD-style multi-page output); merge prefers
+    longest non-empty value per field
+ 4. fp16 gradient overflow (bf16 on Ampere+, else fp16 + max_grad_norm)
+ 5. YOLO imgsz mismatch (inference default ≠ training size;
+    train/eval parity asserted via `pipeline_meta.json`)
+ 6. TrOCR undertrained (<5 epochs produces all-empty outputs)
+ 7. Val == Test leakage (physically separate splits, persisted to disk)
+ 8. YOLO project path resolution (ultralytics ≥8.3 relative-path bug)
+ 9. Stale `generation_config` on reload (eval_F1 ≡ 0 with healthy
+    eval_loss; `Seq2SeqTrainer(predict_with_generate=True)` reads the
+    snapshot, not live overrides on `model.config`)
+10. `tie_word_embeddings=False` subtlety (post-resize `lm_head` must
+    be re-initialised explicitly)
+11. `num_items_in_batch` kwargs leak into `SwinModel.forward`
+    (transformers ≥4.48); guarded via `accepts_loss_kwargs=False`
+12. Outer `<s_sroie>` wrapper flattening in `token2json` (per-field
+    F1 = 0 with healthy eval_loss); `_flatten_token2json` recursively
+    unwraps the root tag
+13. Warmup-steps-vs-ratio precedence in HF `Trainer`; we force
+    `warmup_steps=0` when `warmup_ratio > 0`
 
 ## Testing
 
