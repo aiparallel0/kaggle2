@@ -16,6 +16,7 @@ from core.errors import TrainError
 from core.metrics import token_f1
 from core.types import Crop, ExpConfig
 
+_import_error: ImportError | None = None
 try:
     import numpy as np
     import torch
@@ -27,7 +28,8 @@ try:
     )
 
     _DATASET_BASE: type = torch.utils.data.Dataset
-except ImportError:  # lightweight CI — torch/transformers not installed
+except ImportError as _exc:  # lightweight CI — torch/transformers not installed
+    _import_error = _exc
     _DATASET_BASE = object
 
 
@@ -78,6 +80,11 @@ def train_trocr(config: ExpConfig, crops: list[Crop]) -> str:
         )
     if not crops:
         raise TrainError("No crops provided to train_trocr — check YOLO output.")
+    if _import_error is not None:
+        raise ImportError(
+            "torch and transformers are required for TrOCR training. "
+            "Run: pip install -r requirements.txt"
+        ) from _import_error
 
     processor: TrOCRProcessor = TrOCRProcessor.from_pretrained(config.trocr_model)
     model: VisionEncoderDecoderModel = VisionEncoderDecoderModel.from_pretrained(
