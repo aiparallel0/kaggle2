@@ -17,7 +17,12 @@ from typing import TYPE_CHECKING, Any, cast
 
 from core.types import AssignerData, ExpConfig
 from models.assigner_data import Group, _prepare_groups, split_train_val
-from models.attention_assign import DEFAULT_HIDDEN_DIM, AttentionAssigner, N_TEXT_PRIORS_V2, save_assigner
+from models.attention_assign import (
+    DEFAULT_HIDDEN_DIM,
+    N_TEXT_PRIORS_V2,
+    AttentionAssigner,
+    save_assigner,
+)
 
 try:
     import torch
@@ -64,8 +69,8 @@ def _evaluate(assigner: AttentionAssigner, groups: list[Group], device: str) -> 
 
 
 def _augment(
-    f: "Tensor", b: "Tensor", p: "Tensor", t: dict[int, list[int]], gen: Any,
-) -> "tuple[Tensor, Tensor, Tensor, dict[int, list[int]]]":
+    f: Tensor, b: Tensor, p: Tensor, t: dict[int, list[int]], gen: Any,
+) -> tuple[Tensor, Tensor, Tensor, dict[int, list[int]]]:
     """Bbox jitter ±2 % and region-order shuffle for train-time augmentation."""
     n = f.shape[0]
     if n > 1:
