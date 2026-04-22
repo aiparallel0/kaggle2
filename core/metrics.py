@@ -89,19 +89,29 @@ def compute_metrics(bundle: EvalBundle) -> Metrics:
     scores are the unweighted mean over the four SROIE fields, which
     matches the reference implementation and keeps the four fields
     equally weighted regardless of their relative prevalence.
+
+    ``per_image_correct`` is set to ``True`` for a receipt only when
+    every field is an exact match — the binary signal used by the
+    McNemar test and paired bootstrap CI in the paper.
     """
     pf1: dict[str, list[float]] = {f: [] for f in bundle.fields}
     pned: dict[str, list[float]] = {f: [] for f in bundle.fields}
     pem: dict[str, list[float]] = {f: [] for f in bundle.fields}
+    per_image_ok: list[bool] = []
     for pred, rec in zip(bundle.predictions, bundle.receipts, strict=True):
         gt = {fld.name.lower(): fld.value.lower() for fld in rec.fields}
         pr = {fld.name.lower(): fld.value.lower() for fld in pred.fields}
+        all_fields_match = True
         for f in bundle.fields:
             g = gt.get(f, "")
             p = pr.get(f, "")
-            pem[f].append(1.0 if g == p else 0.0)
+            match = (g == p)
+            pem[f].append(1.0 if match else 0.0)
             pned[f].append(ned(g, p))
             pf1[f].append(token_f1(g, p))
+            if not match:
+                all_fields_match = False
+        per_image_ok.append(all_fields_match)
     per_f1 = {f: sum(v) / len(v) for f, v in pf1.items() if v}
     per_ned = {f: sum(v) / len(v) for f, v in pned.items() if v}
     per_em = {f: sum(v) / len(v) for f, v in pem.items() if v}
@@ -111,4 +121,5 @@ def compute_metrics(bundle: EvalBundle) -> Metrics:
     return Metrics(
         global_f1=g_f1, global_ned=g_ned, global_em=g_em,
         per_field_f1=per_f1, per_field_ned=per_ned, per_field_em=per_em,
+        per_image_correct=per_image_ok,
     )

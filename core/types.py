@@ -48,6 +48,7 @@ class Metrics:
     per_field_f1: dict[str, float]
     per_field_ned: dict[str, float]
     per_field_em: dict[str, float]
+    per_image_correct: list[bool] = field(default_factory=list)
 
 
 @dataclass
@@ -164,4 +165,8 @@ class ExpConfig:
     weight_decay_assigner: float = 5e-4
     dropout_assigner: float = 0.2
     priors_v2: bool = True
+    seeds: list[int] = field(default_factory=lambda: [42])
+    n_trials: int = 1
+    bootstrap_n_iter: int = 1000
+    bootstrap_ci_level: float = 0.95
     extra: dict[str, object] = field(default_factory=dict)

@@ -10,6 +10,7 @@ Role: clones the SROIE repository, parses JSON/TXT entity files, and
 from __future__ import annotations
 
 import json
+import logging
 import random
 import shutil
 import subprocess
@@ -137,11 +138,62 @@ def split_sroie(data_path: Path, seed: int) -> DataSplit:
     return DataSplit(train=train, val=val, test=test)
 
 
+def _canonical_test_split(
+    data_path: Path, config: ExpConfig,
+) -> DataSplit | None:
+    """Return canonical 347-image SROIE test split when test labels exist.
+
+    The ICDAR 2019 SROIE competition labels for the 347 held-out test
+    images were not released with the original dataset; most public mirrors
+    (e.g. zzzDavid/ICDAR-2019-SROIE) only contain the 626 training images.
+    If ``data_path/test/entities/`` is present (user-provided or a future
+    release that includes them), this function uses all 626 training images
+    as the training split and the 347 test images as the test split, which
+    matches the evaluation protocol reported on the SROIE leaderboard.
+
+    Returns ``None`` when the canonical test labels are not available so
+    callers can fall back to the custom 500/63/63 partition.
+    """
+    test_img_dir = data_path / "test" / "img"
+    test_ent_dir = data_path / "test" / "entities"
+    if not (test_img_dir.exists() and test_ent_dir.exists()):
+        return None
+    test_receipts = _load_receipts(test_img_dir, test_ent_dir)
+    if not test_receipts:
+        return None
+    train_receipts = _load_receipts(
+        data_path / "train" / "img", data_path / "train" / "entities",
+    )
+    if not train_receipts:
+        return None
+    random.Random(config.seed).shuffle(train_receipts)
+    # Reserve _N_VAL images from the training pool for early-stopping;
+    # the test set is the canonical held-out set — not drawn from train.
+    val = train_receipts[:_N_VAL]
+    train = train_receipts[_N_VAL:]
+    return DataSplit(train=train, val=val, test=test_receipts)
+
+
 def load_or_create_split(config: ExpConfig, data_path: Path) -> DataSplit:
-    """Load cached split or create and persist (reproducibility across stages)."""
+    """Load cached split or create and persist (reproducibility across stages).
+
+    Prefers the canonical 347-image SROIE test split when
+    ``data_path/test/entities/`` is present; otherwise falls back to the
+    custom 500/63/63 partition from the 626-image training set.
+    """
     cache = Path(config.output_dir) / "split.json"
     seed = config.seed
     groups = ("train", "val", "test")
+
+    # Attempt canonical test split first (prefers leaderboard protocol).
+    canonical = _canonical_test_split(data_path, config)
+    if canonical is not None:
+        logging.getLogger("kaggle2").info(
+            "Using canonical SROIE test split: %d train / %d val / %d test",
+            len(canonical.train), len(canonical.val), len(canonical.test),
+        )
+        return canonical
+
     if cache.exists():
         raw = json.loads(cache.read_text())
         by_stem = {r.image_path.stem: r for r in _load_receipts(

@@ -1,11 +1,5 @@
-% -----------------------------------------------------------------------
-% Pipeline architecture subsection (YOLOv8 → TrOCR → AttentionAssigner).
-% Project: kaggle2 — End-to-End vs. Pipeline Receipt KIE on SROIE.
-% Role: describes the three-stage pipeline in full methodological depth;
-%   split out of method.tex to honour the 166-LOC cap per source file.
-% -----------------------------------------------------------------------
-
 \subsection{Pipeline: YOLOv8 + TrOCR + Attention Assigner}
+\label{sec:pipeline_desc}
 
 The pipeline decomposes KIE into three auditable stages.
 
@@ -66,17 +60,38 @@ and persisted to \texttt{assigner\_metrics.json}).
 
 \textbf{Multi-instance pos-mass loss.}
 A single field may map to a \emph{set} of target lines (the address
-field habitually spans multiple). We therefore optimise, per receipt and
-per field,
+field habitually spans multiple).  Following the multi-instance
+learning formulation of~\cite{dietterich1997mil,ilse2018mil}, we
+optimise, per receipt and per field,
 \[
   \mathcal{L}_f \;=\; -\log \sum_{i \in \mathrm{target}_f}
                    \mathrm{softmax}_j(A_{f,j})\big|_{j=i},
 \]
-i.e.\ the negative log of the \emph{attention probability mass placed on
-the correct line(s)}.  Plain cross-entropy cannot express this: it
-forces the query to pick one line.  The multi-instance formulation is
-what allows the learned assigner to beat rules on \texttt{address},
-where a purely positional heuristic reports F1\,=\,0.000.
+i.e.\ the negative log of the attention probability mass placed on
+the correct line(s).  Algorithm~\ref{alg:posmass} states the full
+forward/backward pass.  Plain cross-entropy cannot express this: it
+forces the query to pick one line.  The multi-instance formulation
+is what allows the learned assigner to beat rules on
+\texttt{address}, where a purely positional heuristic reports
+F1\,=\,0.000.
+
+\begin{algorithm}[t]
+\caption{Multi-instance pos-mass NLL (one receipt).}
+\label{alg:posmass}
+\begin{algorithmic}[1]
+\Require Line features $X\!\in\!\mathbb{R}^{N\times d}$, field queries
+         $Q\!\in\!\mathbb{R}^{|\mathcal{F}|\times d}$, target sets
+         $\{T_f\}$, $T_f\!\subseteq\!\{1,\dots,N\}$.
+\State $H \leftarrow \mathrm{SelfAttn}(X)$
+\State $A \leftarrow \mathrm{softmax}_j(Q H^\top / \sqrt{d})$
+\State $\mathcal{L} \leftarrow 0$
+\ForAll{$f \in \mathcal{F}$ with $T_f \neq \emptyset$}
+  \State $\mathcal{L} \leftarrow \mathcal{L}
+           - \log \sum_{i \in T_f} A_{f,i}$
+\EndFor
+\State \Return $\mathcal{L}$
+\end{algorithmic}
+\end{algorithm}
 
 \textbf{Optimiser and early stopping.}
 AdamW at $1\mathrm{e}{-3}$ with weight-decay $1\mathrm{e}{-4}$,

@@ -1,11 +1,3 @@
-% -----------------------------------------------------------------------
-% Methodology section: dataset, splits, DONUT baseline.
-% Project: kaggle2 — End-to-End vs. Pipeline Receipt KIE on SROIE.
-% Role: top-level Methodology section; the YOLO+TrOCR+Attention pipeline
-%   subsection is split into method_pipeline.tex to honour the 166-LOC
-%   per-file cap.
-% -----------------------------------------------------------------------
-
 \section{Methodology}
 
 \subsection{Dataset and Splits}
@@ -60,16 +52,16 @@ black-box generation artefact.  Adding a new output field requires
 full retraining with new task tokens and new training data.
 
 \textbf{Training.}
-$\VAR{epochs_donut}$ epochs, image resolution $\VAR{img_w}\times\VAR{img_h}$,
-batch size $\VAR{batch_size}$, cosine learning-rate schedule with
-$\VAR{warmup_steps}$-step warmup, \texttt{\VAR{precision}} precision
-(bf16 on Ampere\,+, fp16 with \texttt{max\_grad\_norm}\,=\,1.0
-fallback; Bug~4), gradient checkpointing enabled,
-label smoothing $\lambda=\VAR{label_smoothing}$.
-Knowledge-distillation hooks (attention-transfer weight
-$\VAR{kd_attn_weight}$, logit-matching weight $\VAR{kd_logits_weight}$)
-are implemented but remain off for the runs reported here so that
-DONUT and the pipeline are compared at identical data budgets.
+\VAR{epochs_donut} epochs, image resolution
+$\VAR{img_w}\times\VAR{img_h}$, batch size \VAR{batch_size},
+cosine learning-rate schedule with \VAR{warmup_steps}-step warmup,
+\texttt{\VAR{precision}} precision (bf16 on Ampere\,+; fp16 only
+with \texttt{max\_grad\_norm}=1.0 to avoid Bug~4), gradient
+checkpointing enabled, label smoothing disabled.
+Knowledge-distillation hooks are implemented in source but disabled
+(both weights zero) for every run reported here, so DONUT and the
+pipeline are compared at identical data budgets and without any
+teacher signal leaking into the pipeline.
 
 \input{sections/method_pipeline}
 

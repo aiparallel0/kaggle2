@@ -19,7 +19,8 @@ values feed \texttt{fig\_bug\_timeline.pdf}
 \begin{enumerate}
 
 \item \textbf{\texttt{lm\_head} safetensors deduplication}
-  (F1\,$\approx$\,0.42 before, $\approx$\,\VAR{donut_f1} after).
+  (F1 $\approx 0.42$ before fix; F1 after this fix conflates with the
+  full post-fix chain converging at $\approx$\VAR{donut_f1}).
   \textit{Mechanism.} Safetensors deduplicates tied weights on save
   and drops \texttt{lm\_head} entirely; on reload the output head
   is re-tied to the embedding matrix \emph{at the wrong shape}

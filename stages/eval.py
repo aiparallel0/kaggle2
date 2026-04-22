@@ -12,12 +12,14 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import os
 import statistics
 from pathlib import Path
 
 from core.errors import EvalError
 from core.seed import seed_everything
+from core.statistics import bootstrap_ci, mcnemar, paired_bootstrap_delta_ci
 from core.types import DataSplit, ExpConfig, Metrics
 from core.validate import validate_f1
 from data.sroie import download_sroie, load_or_create_split
@@ -60,53 +62,124 @@ def _eval_donut_or_skip(config: ExpConfig, data: DataSplit) -> Metrics:
     return dm
 
 
+def _per_seed_metrics(
+    config: ExpConfig, data: DataSplit, seed: int,
+) -> tuple[Metrics, Metrics, Metrics]:
+    """Run one (DONUT, pipeline, rule-based-on-gold) eval triple at `seed`."""
+    seed_everything(seed)
+    dm = _eval_donut_or_skip(config, data)
+    log.info("DONUT F1=%.4f", dm.global_f1)
+    pm = eval_pipeline(config, data.test)
+    validate_f1(pm.assigner, "pipeline")
+    warn_below_expected(pm.assigner, config, "pipeline")
+    warn_pipeline_diagnostics(config)
+    log.info("Pipeline (assigner)  F1=%.4f", pm.assigner.global_f1)
+    log.info("Pipeline (rulebased) F1=%.4f", pm.rulebased.global_f1)
+    rb_gold = eval_rulebased_gold(config, data.test)
+    log.info("Rule-based (gold OCR) F1=%.4f", rb_gold.global_f1)
+    assert_pipeline_beats_rulebased_gold(pm.assigner, rb_gold)
+    return dm, pm.assigner, rb_gold  # pm.assigner used by caller; rb too
+
+
+def _aggregate_seed_variance(
+    f1s: list[float], key: str, out: dict[str, object],
+) -> None:
+    """Emit mean/std/CI across seeds for a single metric key.
+
+    Populates four keys on `out`:
+      * `{key}_mean`   — arithmetic mean across seeds
+      * `{key}_std`    — sample stdev (0.0 for n=1, an honest "no spread")
+      * `{key}_ci_lo` / `{key}_ci_hi` — 95% normal-approx CI across seeds,
+        *only* emitted when n >= 2.  With n=1 there is no seed variance
+        to confidence-bound and the paper must rely on the bootstrap CI
+        over images (see `per_image_bootstrap_*`).
+    """
+    if not f1s:
+        return
+    out[f"{key}_mean"] = round(statistics.fmean(f1s), 4)
+    if len(f1s) >= 2:
+        sd = statistics.stdev(f1s)
+        out[f"{key}_std"] = round(sd, 4)
+        half = 1.96 * sd / math.sqrt(len(f1s))
+        out[f"{key}_ci_lo"] = round(out[f"{key}_mean"] - half, 4)  # type: ignore[operator]
+        out[f"{key}_ci_hi"] = round(out[f"{key}_mean"] + half, 4)  # type: ignore[operator]
+    else:
+        out[f"{key}_std"] = 0.0
+
+
 def stage_eval(config: ExpConfig, seeds: list[int] | None = None) -> None:
-    """Run eval across one or more seeds; aggregate mean/std when multi-seed.
+    """Run eval across one or more seeds; aggregate mean/std/CI.
 
     Keeps the legacy single-seed keys (``donut_f1``, ``pipeline_f1``,
-    ``assigner_delta``) populated for backwards compatibility with the
-    paper's \\VAR{} substitution.  Multi-seed runs additionally emit
-    ``*_mean`` / ``*_std`` so the paper can render bootstrap-style
-    uncertainty bands without re-running eval.
+    ``assigner_delta``) populated for back-compat with the paper's
+    \\VAR{} substitution.  Multi-seed runs additionally emit
+    ``*_mean`` / ``*_std`` / ``*_ci_lo`` / ``*_ci_hi`` so the paper can
+    render seed-level uncertainty bands.  For n=1 the paper-side bootstrap
+    CI over per-image correctness is still available via
+    :func:`core.statistics.bootstrap_ci`.
     """
     log.info("=== Stage: eval ===")
     data_path = download_sroie(config)
     data = load_or_create_split(config, data_path)
-    run_seeds = seeds if seeds else [config.seed]
+    run_seeds = list(seeds) if seeds else list(config.seeds[: config.n_trials])
+    log.info("Eval harness: n_trials=%d seeds=%s", len(run_seeds), run_seeds)
     donut_f1s: list[float] = []
     pipeline_f1s: list[float] = []
+    rulebased_gold_f1s: list[float] = []
     last: dict[str, object] = {}
     for seed in run_seeds:
         if len(run_seeds) > 1:
             log.info("--- Eval seed=%d ---", seed)
-        seed_everything(seed)
         dm = _eval_donut_or_skip(config, data)
         log.info("DONUT F1=%.4f", dm.global_f1)
+        seed_everything(seed)
         pm = eval_pipeline(config, data.test)
         validate_f1(pm.assigner, "pipeline")
         warn_below_expected(pm.assigner, config, "pipeline")
         warn_pipeline_diagnostics(config)
         log.info("Pipeline (assigner)  F1=%.4f", pm.assigner.global_f1)
         log.info("Pipeline (rulebased) F1=%.4f", pm.rulebased.global_f1)
-        # Rule-based on gold OCR isolates assignment-heuristic quality
-        # from OCR noise — a legitimate ablation even in full-pipeline
-        # runs, so we always compute it here too.
         rb_gold = eval_rulebased_gold(config, data.test)
         log.info("Rule-based (gold OCR) F1=%.4f", rb_gold.global_f1)
-        # Regression gate: a learned model on YOLO+TrOCR features must not
-        # score below a heuristic on gold OCR — otherwise something is
-        # wrong upstream (bad assigner checkpoint, stale TrOCR features,
-        # or an eval-fairness bug).
         assert_pipeline_beats_rulebased_gold(pm.assigner, rb_gold)
         donut_f1s.append(dm.global_f1)
         pipeline_f1s.append(pm.assigner.global_f1)
+        rulebased_gold_f1s.append(rb_gold.global_f1)
         last = build_combined(config, dm, pm, rb_gold)
-    if len(run_seeds) >= 2:
-        last["donut_f1_mean"] = round(statistics.fmean(donut_f1s), 4)
-        last["donut_f1_std"] = round(statistics.stdev(donut_f1s), 4)
-        last["pipeline_f1_mean"] = round(statistics.fmean(pipeline_f1s), 4)
-        last["pipeline_f1_std"] = round(statistics.stdev(pipeline_f1s), 4)
+    # Always emit the variance block, even when n=1 — downstream consumers
+    # (paper \VAR{}, log dashboards) should not branch on seed count.
+    _aggregate_seed_variance(donut_f1s, "donut_f1", last)
+    _aggregate_seed_variance(pipeline_f1s, "pipeline_f1", last)
+    _aggregate_seed_variance(rulebased_gold_f1s, "rulebased_gold_f1", last)
+    # Per-image bootstrap CI + paired McNemar: uses the last run's per-image
+    # all-fields-EM correctness vectors (populated by compute_metrics via
+    # build_combined). Paired test is valid because DONUT and pipeline are
+    # evaluated on the same 63 test images in fixed order.
+    d_raw = last.get("donut_per_image_correct")
+    p_raw = last.get("pipeline_per_image_correct")
+    d_vec = [bool(x) for x in d_raw] if isinstance(d_raw, list) else []
+    p_vec = [bool(x) for x in p_raw] if isinstance(p_raw, list) else []
+    if p_vec:
+        lo, hi = bootstrap_ci(
+            p_vec,
+            n_iter=config.bootstrap_n_iter,
+            ci_level=config.bootstrap_ci_level,
+        )
+        last["pipeline_bootstrap_ci_lo"] = round(lo, 4)
+        last["pipeline_bootstrap_ci_hi"] = round(hi, 4)
+    if d_vec and p_vec and len(d_vec) == len(p_vec):
+        _, ci_lo, ci_hi = paired_bootstrap_delta_ci(
+            d_vec, p_vec,
+            n_iter=config.bootstrap_n_iter,
+            ci_level=config.bootstrap_ci_level,
+        )
+        last["delta_f1_ci_lo"] = round(ci_lo, 4)
+        last["delta_f1_ci_hi"] = round(ci_hi, 4)
+        last["mcnemar_p"] = round(mcnemar(d_vec, p_vec), 4)
     last["seeds_used"] = list(run_seeds)
+    last["n_trials"] = len(run_seeds)
+    last["bootstrap_n_iter"] = config.bootstrap_n_iter
+    last["bootstrap_ci_level"] = config.bootstrap_ci_level
     Path(config.output_dir).mkdir(parents=True, exist_ok=True)
     with open(os.path.join(config.output_dir, "combined_metrics.json"), "w") as f:
         json.dump(last, f, indent=2)

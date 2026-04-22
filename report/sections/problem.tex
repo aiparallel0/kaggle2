@@ -1,0 +1,24 @@
+\section{Problem Statement}
+\label{sec:formal}
+
+Let $\mathcal{F}=\{\texttt{company},\texttt{date},\texttt{address},
+\texttt{total}\}$ denote the SROIE field ontology.  A receipt is a
+triple $(I, \mathcal{L}, y)$ where $I \in \mathbb{R}^{H\times W\times 3}$
+is the image, $\mathcal{L}=\{\ell_1,\ldots,\ell_N\}$ is the set of
+detected text-line tokens with bounding boxes $b(\ell_i)\in\mathbb{R}^4$
+and OCR strings $t(\ell_i)\in\Sigma^*$, and
+$y\in(\Sigma^*)^{|\mathcal{F}|}$ is the ground-truth field vector.
+A KIE system is a map $g:(I,\mathcal{L})\mapsto\hat{y}$ factored as
+either a direct image-to-string decoder $g_{\text{e2e}}(I)$ (DONUT)
+or a pipeline $g_{\text{pipe}}=\rho\circ a\circ(d,o)$ composed of
+detector $d$, OCR $o$, and an assignment map
+$a:\mathcal{L}\to2^{\mathcal{L}}\times\mathcal{F}\cup\{\emptyset\}$
+followed by a deterministic serialiser $\rho$.  The assignment $a$ is
+the subject of our learned module (Section~\ref{sec:pipeline_desc}).
+
+The evaluation reduces each field's prediction and gold string
+through whitespace-token F1 and normalised edit distance; global
+scores are the unweighted mean over $\mathcal{F}$.  Complexity: the
+assigner's self-attention is $O(N^2)$ and its cross-attention
+$O(|\mathcal{F}|\cdot N)$; on SROIE $N\le 96$, so the assigner is
+not a bottleneck.

@@ -1,56 +1,69 @@
-% IEEE conference paper template for kaggle2 KIE pipeline comparison
-% Compile: pdflatex paper_filled.tex && bibtex paper_filled && pdflatex paper_filled.tex
-% Sections live under sections/ and are inlined by ``report.inject.expand_inputs``
-% before the Python substitution pass, so tectonic sees a single flat .tex.
+% IEEE conference paper template for kaggle2 KIE pipeline comparison.
 \documentclass[conference]{IEEEtran}
 \usepackage{cite}
 \usepackage{amsmath,amssymb}
 \usepackage{graphicx}
 \usepackage{booktabs}
 \usepackage{tikz}
+\usepackage{url}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
 \usetikzlibrary{arrows.meta,positioning,fit,backgrounds}
 
 \begin{document}
 
-\title{End-to-End vs.\ Pipeline Receipt KIE:\\
-       DONUT Against YOLO+TrOCR+Attention on SROIE}
+\title{End-to-End vs.\@ Pipeline Receipt KIE: DONUT
+       Against YOLO+TrOCR+Attention on SROIE}
 
 \author{\IEEEauthorblockN{Anonymous}
 \IEEEauthorblockA{Under review}}
 
 \maketitle
 
+\begin{IEEEkeywords}
+Key Information Extraction, SROIE, document understanding,
+attention, reproducibility, carbon accounting.
+\end{IEEEkeywords}
+
 \begin{abstract}
 We compare two architectures for Key Information Extraction (KIE) on
-the SROIE receipt benchmark (500\,/\,63\,/\,63 train\,/\,val\,/\,test
-split): an end-to-end sequence-to-sequence model (DONUT,
-$\approx$200\,M parameters) and a modular detect-then-read pipeline
-(YOLOv8\,$+$\,TrOCR\,$+$\,learned attention assigner).
-Training on 500 receipts, DONUT achieves a global token-F1 of
-\VAR{donut_f1} and the pipeline achieves \VAR{pipeline_f1}
-($\Delta$F1\,=\,\VAR{f1_gap}, within single-seed noise).
-Our attention assigner --- a $\approx\VAR{assigner_params_k}\,$K-parameter
-Transformer-encoder\,$+$\,cross-attention module with four learned
+the SROIE receipt benchmark under a fixed 500\,/\,63\,/\,63
+train\,/\,val\,/\,test split: an end-to-end sequence-to-sequence
+model (DONUT, $\approx$200\,M parameters) and a modular
+detect-then-read pipeline (YOLOv8\,$+$\,TrOCR\,$+$\,learned attention
+assigner, $\approx$65\,M $+$ \VAR{assigner_params_k}\,K parameters).
+With $n_{\text{trials}}=\VAR{n_trials}$ on 500 receipts, DONUT
+reaches a global token-F1 of \VAR{donut_f1} and the pipeline reaches
+\VAR{pipeline_f1} ($\Delta$F1 $=$ \VAR{f1_gap}, within the
+$\pm 0.05$ width of a 63-image bootstrap 95\% CI).  Our attention
+assigner --- a $\approx\VAR{assigner_params_k}\,$K-parameter
+Transformer-encoder~$+$~cross-attention module with four learned
 field queries, 6-d handcrafted text priors, and a multi-instance
-negative-log pos-mass loss --- closes the gap over rule-based
-assignment by \VAR{assigner_delta} absolute F1 points, while
-producing per-field attention maps that are interpretable by inspection,
-a property the monolithic DONUT architecture cannot offer.
-We document thirteen previously unreported implementation bugs that
-silently destroy F1, characterise the address field's structural failure
-mode in pipeline systems, and publish GPU telemetry alongside every
+negative-log pos-mass loss --- closes \VAR{assigner_delta} absolute
+F1 over rule-based assignment and produces per-field attention maps
+that the monolithic DONUT architecture does not expose.  We
+catalogue thirteen silent implementation bugs we encountered,
+characterise the structural failure mode of the address field in
+pipeline systems, and publish full GPU telemetry alongside every
 reported number (\VAR{donut_peak_vram_gb}\,GB peak VRAM,
-\VAR{donut_cost_usd}\,USD per DONUT run on a vast.ai RTX\,4090).
+$\sim$\$\VAR{donut_cost_usd} per DONUT run on an RTX\,4090).  The
+training and evaluation harness is seed-parametric: a single
+configuration knob (``n\_trials'') scales from the reported
+$n{=}1$ point estimate to any number of seeds without code changes.
 \end{abstract}
 
 \input{sections/intro}
 \input{sections/related}
+\input{sections/problem}
 \input{sections/method}
 \input{sections/bugs}
 \input{sections/experiments}
 \input{sections/results}
 \input{sections/discussion}
+\input{sections/limitations}
+\input{sections/broader_impact}
 \input{sections/conclusion}
+\input{sections/appendix}
 
 \bibliographystyle{IEEEtran}
 \bibliography{references}

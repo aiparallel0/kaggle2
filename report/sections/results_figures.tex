@@ -1,15 +1,6 @@
-% -----------------------------------------------------------------------
-% Auto-generated figure block for the results section.
-% Project: kaggle2 — End-to-End vs. Pipeline Receipt KIE on SROIE.
-% Role: every PDF that can be emitted by the four ``report.figures*``
-%   modules is wrapped in \IfFileExists so the paper still compiles
-%   when a subset of runs is absent.  Split out of results.tex to
-%   honour the 166-LOC per-file cap.
-% -----------------------------------------------------------------------
-
 \IfFileExists{../results/fig_training_curves.pdf}{%
-  \begin{figure}[t]\centering
-  \includegraphics[width=0.95\columnwidth]{../results/fig_training_curves.pdf}
+  \begin{figure}[!t]\centering
+  \includegraphics[width=\columnwidth]{../results/fig_training_curves.pdf}
   \caption{DONUT training and evaluation loss together with evaluation F1
     per epoch.  Both losses descend monotonically while F1 rises then
     plateaus at roughly epoch 10, which is where the early-stopping
@@ -18,19 +9,19 @@
 }{}
 
 \IfFileExists{../results/fig_f1_by_system.pdf}{%
-  \begin{figure}[t]\centering
-  \includegraphics[width=0.95\columnwidth]{../results/fig_f1_by_system.pdf}
+  \begin{figure}[!t]\centering
+  \includegraphics[width=\columnwidth]{../results/fig_f1_by_system.pdf}
   \caption{Per-field token-F1 by system on the 63-image test split.
-    The structural difficulty of each field — company and total
-    dominated by lexical cues, address dominated by spatial extent —
-    is reproduced identically by DONUT and the pipeline, while the
-    rule-based baseline collapses on address.}
+    The structural difficulty of each field (company and total are
+    dominated by lexical cues; address is dominated by spatial extent)
+    is reproduced similarly by DONUT and the pipeline; the rule-based
+    baseline collapses on address.}
   \label{fig:f1_by_system}\end{figure}
 }{}
 
 \IfFileExists{../results/fig_attention_heatmap.pdf}{%
-  \begin{figure}[t]\centering
-  \includegraphics[width=0.95\columnwidth]{../results/fig_attention_heatmap.pdf}
+  \begin{figure}[!t]\centering
+  \includegraphics[width=\columnwidth]{../results/fig_attention_heatmap.pdf}
   \caption{Cross-attention of the \texttt{AttentionAssigner} for three
     randomly sampled test receipts: rows are the four learned field
     queries, columns are the detected text lines (ordered
@@ -42,49 +33,50 @@
 }{}
 
 \IfFileExists{../results/fig_assigner_loss_curve.pdf}{%
-  \begin{figure}[t]\centering
-  \includegraphics[width=0.95\columnwidth]{../results/fig_assigner_loss_curve.pdf}
+  \begin{figure}[!t]\centering
+  \includegraphics[width=\columnwidth]{../results/fig_assigner_loss_curve.pdf}
   \caption{AttentionAssigner training trajectory.  Train and validation
     negative-log pos-mass loss per epoch; the dashed vertical rule
-    marks the best-val-loss checkpoint (epoch
-    \VAR{assigner_best_epoch} of \VAR{assigner_stopped_at} run),
-    which is the checkpoint used at inference.}
+    marks the best-val-loss checkpoint at epoch
+    \VAR{assigner_best_epoch} of \VAR{assigner_stopped_at} run,
+    used at inference.}
   \label{fig:assigner_loss}\end{figure}
 }{}
 
 \IfFileExists{../results/fig_pipeline_diagnostics.pdf}{%
-  \begin{figure}[t]\centering
-  \includegraphics[width=0.8\columnwidth]{../results/fig_pipeline_diagnostics.pdf}
-  \caption{Pipeline per-receipt diagnostics.  Empty-detection fraction
-    is the share of receipts where YOLO produced zero boxes and the
-    pipeline reverted to full-image TrOCR; per-receipt error fraction
-    is the share where the per-receipt \texttt{try/except} caught an
-    exception and emitted empty fields.}
+  \begin{figure}[!t]\centering
+  \includegraphics[width=\columnwidth]{../results/fig_pipeline_diagnostics.pdf}
+  \caption{Pipeline per-receipt diagnostics.  The empty-detection
+    fraction is the share of receipts where YOLO produced zero boxes
+    and the pipeline fell back to full-image TrOCR; the per-receipt
+    error fraction is the share where the per-receipt error guard
+    caught an exception and emitted empty fields.}
   \label{fig:pipeline_diagnostics}\end{figure}
 }{}
 
 \IfFileExists{../results/fig_bug_timeline.pdf}{%
-  \begin{figure}[t]\centering
-  \includegraphics[width=0.95\columnwidth]{../results/fig_bug_timeline.pdf}
+  \begin{figure}[!t]\centering
+  \includegraphics[width=\columnwidth]{../results/fig_bug_timeline.pdf}
   \caption{F1 before (red) and after (green) each of the thirteen
-    F1-destroying bugs documented in Section~\ref{sec:bugs}.  Filled
-    red markers denote empirically reproduced pre-fix F1 values;
-    hollow markers denote mechanistic lower bounds inferred from
-    symptom (e.g.\ NaN loss $\Rightarrow$ F1\,=\,0).}
+    silent-failure bugs in Section~\ref{sec:bugs}.  Filled red
+    markers denote empirically reproduced pre-fix F1; hollow markers
+    denote mechanistic lower bounds inferred from symptom.  The
+    ``after'' value corresponds to the final converged system, not
+    the isolated marginal contribution of the individual fix.}
   \label{fig:bug_timeline}\end{figure}
 }{}
 
 \IfFileExists{../results/fig_gpu_telemetry.pdf}{%
-  \begin{figure}[t]\centering
-  \includegraphics[width=0.95\columnwidth]{../results/fig_gpu_telemetry.pdf}
+  \begin{figure}[!t]\centering
+  \includegraphics[width=\columnwidth]{../results/fig_gpu_telemetry.pdf}
   \caption{GPU utilisation, memory, power, and temperature over
-    wall-clock time during DONUT training (RTX\,4090, CUDA~12.x).}
+    wall-clock time during DONUT training (RTX\,4090, CUDA 12.x).}
   \label{fig:telemetry}\end{figure}
 }{}
 
 \IfFileExists{../results/fig_telemetry_overlay.pdf}{%
-  \begin{figure}[t]\centering
-  \includegraphics[width=0.95\columnwidth]{../results/fig_telemetry_overlay.pdf}
+  \begin{figure}[!t]\centering
+  \includegraphics[width=\columnwidth]{../results/fig_telemetry_overlay.pdf}
   \caption{DONUT vs.\ pipeline GPU-utilisation overlay on a common
     wall-clock axis.  The pipeline's three shorter training phases
     (YOLO, TrOCR, assigner) collectively finish sooner and peak
@@ -93,9 +85,10 @@
 }{}
 
 \IfFileExists{../results/fig_per_field_confusion.pdf}{%
-  \begin{figure}[t]\centering
-  \includegraphics[width=0.95\columnwidth]{../results/fig_per_field_confusion.pdf}
-  \caption{NED bucket breakdown per field per system.}
-  \label{fig:confusion}\end{figure}
+  \begin{figure}[!t]\centering
+  \includegraphics[width=\columnwidth]{../results/fig_per_field_confusion.pdf}
+  \caption{NED bucket distribution per field per system
+    (exact\,/\,high\,/\,mid\,/\,low), showing where each system's
+    near-misses concentrate.}
+  \label{fig:ned_buckets}\end{figure}
 }{}
-
