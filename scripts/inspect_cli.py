@@ -25,7 +25,7 @@ from scripts.inspect_parity import add_parity  # noqa: E402
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="scripts/inspect.py",
+        prog="scripts/inspect_cli.py",
         description=__doc__,
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
