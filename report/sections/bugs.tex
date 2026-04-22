@@ -11,7 +11,9 @@ or bounded from symptom, and the \emph{guard} now present in source.
 Bugs 1--6 are DONUT decoder and pipeline-detector pathologies that
 strike at model-initialisation time; Bugs 7--13 (see
 \texttt{sections/bugs\_code}) are training-path pathologies that
-appear only once a full eval loop has run.  The before/after F1
+appear only once a full eval loop has run (Bug~9's guard is now
+symmetric across DONUT and TrOCR trainers, verified by a disk
+assertion in \texttt{models/\_gen\_config.py}).  The before/after F1
 values feed \texttt{fig\_bug\_timeline.pdf}
 (Fig.~\ref{fig:bug_timeline}) via
 \texttt{results/bug\_timeline.json}.

@@ -15,6 +15,7 @@ from typing import Any
 from core.errors import TrainError
 from core.metrics import token_f1
 from core.types import Crop, ExpConfig
+from models._gen_config import _persist_generation_config
 
 _import_error: ImportError | None = None
 try:
@@ -161,14 +162,16 @@ def train_trocr(config: ExpConfig, crops: list[Crop]) -> str:
         compute_metrics=_compute_metrics,
     )
     trainer.train()
-    trainer.save_model(out_dir)
     # Bug 9: _load_best_model restores the best checkpoint in-place, losing the
-    # patched token ids from lines 104-109.  Re-pin and persist explicitly so
-    # results/trocr/generation_config.json always has the correct values.
-    model.generation_config.decoder_start_token_id = processor.tokenizer.cls_token_id
-    model.generation_config.eos_token_id = processor.tokenizer.sep_token_id
-    model.generation_config.pad_token_id = processor.tokenizer.pad_token_id
-    model.generation_config.bos_token_id = processor.tokenizer.cls_token_id
-    model.generation_config.save_pretrained(out_dir)
+    # patched token ids.  Re-pin BEFORE save_model so the first on-disk write is
+    # already correct.  _persist_generation_config also asserts the round-trip.
+    _persist_generation_config(
+        model, out_dir,
+        processor.tokenizer.cls_token_id,
+        processor.tokenizer.sep_token_id,
+        processor.tokenizer.pad_token_id,
+    )
+    trainer.save_model(out_dir)
     processor.save_pretrained(out_dir)
+    model.generation_config.save_pretrained(out_dir)  # belt-and-braces
     return out_dir

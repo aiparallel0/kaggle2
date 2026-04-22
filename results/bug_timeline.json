@@ -78,7 +78,7 @@
       "short": "Stale generation_config on reload",
       "f1_before": 0.0,
       "measured": true,
-      "mechanism": "generation_config snapshots pre-override; eval sees base <s> start-token; F1≡0."
+      "mechanism": "load_best_model_at_end restores best checkpoint with stale generation_config (mBART <s> start); eval sees wrong decoder_start_token_id; F1≡0. Guard now symmetric across DONUT and TrOCR trainers, with assertion verified on disk."
     },
     {
       "id": 10,

@@ -1,0 +1,62 @@
+"""Bug-9 guard: re-pin generation_config after load_best_model_at_end reload.
+
+Project: kaggle2 — End-to-End vs. Pipeline Receipt KIE on SROIE.
+Article: "End-to-End vs. Pipeline Receipt KIE: DONUT Against
+    YOLO+TrOCR+Attention on SROIE" (IEEE/ICDAR submission).
+Role: shared helper used by donut_train.py and trocr_train.py to ensure the
+    persisted generation_config.json always reflects the SROIE-specific token
+    IDs, not the stale mBART defaults restored by load_best_model_at_end.
+"""
+from __future__ import annotations
+
+import json
+from pathlib import Path
+from typing import Any
+
+from core.errors import TrainError
+
+__all__ = ["_persist_generation_config"]
+
+
+def _persist_generation_config(
+    model: Any,
+    out_dir: str,
+    start_id: int,
+    eos_id: int,
+    pad_id: int,
+) -> None:
+    """Re-pin Bug-9 token IDs to model config and gc; persist and assert.
+
+    Call this BEFORE trainer.save_model(out_dir) so the first on-disk write
+    is already correct.  After save_model, call
+    ``model.generation_config.save_pretrained(out_dir)`` as a belt-and-braces
+    second write in case save_model re-serialises an in-memory snapshot.
+
+    Raises TrainError if the written generation_config.json has wrong IDs.
+    """
+    model.config.decoder_start_token_id = start_id
+    model.config.eos_token_id = eos_id
+    model.config.pad_token_id = pad_id
+    gc = model.generation_config
+    gc.decoder_start_token_id = start_id
+    gc.eos_token_id = eos_id
+    gc.pad_token_id = pad_id
+    gc.bos_token_id = start_id
+    gc.forced_bos_token_id = None  # Bug 9: mBART default leaks otherwise
+    gc.forced_eos_token_id = None
+    gc.save_pretrained(out_dir)
+    data: dict[str, object] = json.loads(
+        Path(out_dir, "generation_config.json").read_text(),
+    )
+    if (
+        data.get("decoder_start_token_id") != start_id
+        or data.get("eos_token_id") != eos_id
+        or data.get("pad_token_id") != pad_id
+    ):
+        raise TrainError(
+            "Bug-9 guard: generation_config.json mismatch after re-pin: "
+            f"decoder_start_token_id={data.get('decoder_start_token_id')!r}"
+            f" (want {start_id!r}), "
+            f"eos_token_id={data.get('eos_token_id')!r} (want {eos_id!r}), "
+            f"pad_token_id={data.get('pad_token_id')!r} (want {pad_id!r})",
+        )

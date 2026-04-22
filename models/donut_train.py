@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any
 
 from core.types import DataSplit, ExpConfig
+from models._gen_config import _persist_generation_config
 from models.donut_dataset import _DonutCollator, _seed_worker, _SROIEDataset
 from models.donut_optim import _make_compute_metrics, _split_param_groups
 
@@ -164,8 +165,17 @@ def train_donut(config: ExpConfig, data: DataSplit) -> str:
 
     trainer.get_train_dataloader = _det
     trainer.train()
+    # Bug 9: load_best_model_at_end restored the best checkpoint in place,
+    # including its stale generation_config (donut-base mBART defaults).
+    # Re-pin BEFORE save_model; helper also asserts the round-trip on disk.
+    start_id = proc.tokenizer.convert_tokens_to_ids(["<s_sroie>"])[0]
+    eos_id = proc.tokenizer.convert_tokens_to_ids(["</s_sroie>"])[0]
+    _persist_generation_config(
+        model, out_dir, start_id, eos_id, proc.tokenizer.pad_token_id,
+    )
     trainer.save_model(out_dir)
     proc.save_pretrained(out_dir)
+    model.generation_config.save_pretrained(out_dir)  # belt-and-braces
     Path(config.output_dir).mkdir(parents=True, exist_ok=True)
     with open(os.path.join(config.output_dir, "donut_path.json"), "w") as f:
         json.dump({"model_path": out_dir}, f)

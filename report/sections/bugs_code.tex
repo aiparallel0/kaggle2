@@ -41,6 +41,12 @@
   \texttt{eos\_token\_id} / \texttt{max\_new\_tokens} from
   \texttt{model.config} into \texttt{model.generation\_config}
   before the first \texttt{trainer.evaluate()}.
+  The guard is now symmetric across both DONUT and TrOCR trainers:
+  \texttt{models/\_gen\_config.py:\_persist\_generation\_config}
+  re-pins the IDs, nulls \texttt{forced\_bos/eos\_token\_id}, and
+  asserts the round-trip against the written
+  \texttt{generation\_config.json}, raising \texttt{TrainError} on
+  any mismatch so the bug cannot regress silently.
 
 \item \textbf{\texttt{tie\_word\_embeddings=False} resize trap}
   (F1\,$\approx$\,0.31 on new-token runs).
