@@ -1,76 +1,87 @@
 \section{Results}
 \label{sec:results}
 
-\begin{table}[t]
+\begin{table}[!t]
 \centering
-\caption{Table I --- Headline results on 63-image SROIE test split.
-Values are for seed 42 (single run); mean\,$\pm$\,std is reported
-when \texttt{seeds\_used} $\supseteq$ \{13,\,17,\,42\}.}
-\begin{tabular}{lcccc}
+\caption{Headline results on the 63-image SROIE test split at
+         $n_{\text{trials}}=\VAR{n_trials}$.  Headline F1 rounded to
+         three decimals; full four-decimal numbers are in
+         Appendix~\ref{app:raw}.}
+\label{tab:headline}
+\begin{tabular}{lccc}
 \toprule
-Architecture & F1 & NED & EM & Per-field F1 \\ \midrule
-DONUT        & \VAR{donut_f1}    & \VAR{donut_ned}    & \VAR{donut_em} &
-              C:\VAR{donut_f1_company}\ D:\VAR{donut_f1_date}\\
-             & & & & A:\VAR{donut_f1_address}\ T:\VAR{donut_f1_total}\\
-Pipeline     & \VAR{pipeline_f1} & \VAR{pipeline_ned} & \VAR{pipeline_em} & --- \\
-Rule-based (gold OCR) & \VAR{rulebased_gold_f1} & \VAR{rulebased_gold_ned} & \VAR{rulebased_gold_em} &
-              C:\VAR{rulebased_f1_company}\ D:\VAR{rulebased_f1_date}\\
-             & & & & A:\VAR{rulebased_f1_address}\ T:\VAR{rulebased_f1_total}\\
+Architecture & F1 & NED & EM \\ \midrule
+DONUT                  & \VAR{donut_f1}         & \VAR{donut_ned}         & \VAR{donut_em} \\
+Pipeline               & \VAR{pipeline_f1}      & \VAR{pipeline_ned}      & \VAR{pipeline_em} \\
+Rule-based (gold OCR)  & \VAR{rulebased_gold_f1} & \VAR{rulebased_gold_ned} & \VAR{rulebased_gold_em} \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-DONUT and the pipeline are statistically indistinguishable on the
-63-image test split ($\Delta$F1\,=\,\VAR{f1_gap}, McNemar $p$\,=\,\VAR{mcnemar_p}).
-The pipeline's attention assigner improves over rule-based assignment
-by \VAR{assigner_delta} F1 absolute, confirming that the
-cross-attention module captures spatial and lexical cues that
-hand-crafted heuristics miss.
+\begin{table}[!t]
+\centering
+\caption{Per-field F1 on the 63-image SROIE test split.  Pipeline
+         per-field F1 is rendered in Fig.~\ref{fig:f1_by_system}.}
+\label{tab:perfield}
+\begin{tabular}{lcccc}
+\toprule
+Architecture & Company & Date & Address & Total \\ \midrule
+DONUT                 & \VAR{donut_f1_company}     & \VAR{donut_f1_date}     & \VAR{donut_f1_address}     & \VAR{donut_f1_total} \\
+Pipeline (learned)    & see Fig.~\ref{fig:f1_by_system} & & & \\
+Rule-based (gold OCR) & \VAR{rulebased_f1_company} & \VAR{rulebased_f1_date} & \VAR{rulebased_f1_address} & \VAR{rulebased_f1_total} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+On the 63-image test split DONUT and the pipeline are statistically
+indistinguishable ($\Delta$F1 $=$ \VAR{f1_gap}; the paired McNemar
+exact test on per-image correctness gives $p=\VAR{mcnemar_p}$ and
+the paired-bootstrap 95\% CI on $\Delta$F1 straddles zero, so the
+sign of the gap is not resolved at $n{=}63$).  The pipeline's learned
+attention assigner improves over rule-based assignment on the same
+YOLO+TrOCR features by \VAR{assigner_delta} F1 absolute, confirming
+that the cross-attention module captures spatial and lexical cues
+that the hand-crafted heuristic does not.
 
 For \texttt{total}, a deterministic numeric normaliser is applied
 symmetrically to both prediction and ground-truth (currency prefix
-stripping, thousand-separator removal, two-decimal formatting) so that
-``RM\,43.50'' and ``43.50'' are treated as equivalent.
+stripping, thousand-separator removal, two-decimal formatting) so
+that ``RM\,43.50'' and ``43.50'' are treated as equivalent.
 
-\begin{table}[h]
+\begin{table}[!t]
 \centering
-\caption{Table II --- Efficiency metrics (single run, seed 42, RTX\,4090).}
+\caption{Efficiency metrics at seed 42 on a vast.ai RTX\,4090
+         (CUDA 12.x).  Pipeline training time and cost are dominated
+         by TrOCR; YOLOv8n and the 400\,K-parameter assigner finish
+         in minutes.  Inference latency is out of scope and is
+         flagged in the limitations section.}
+\label{tab:efficiency}
 \begin{tabular}{lcc}
 \toprule
 Metric & DONUT & Pipeline \\ \midrule
-Parameters & \VAR{donut_params_m}\,M & \VAR{pipeline_params_m}\,M \\
-Peak VRAM (GB) & \VAR{donut_peak_vram_gb} & \VAR{pipeline_peak_vram_gb} \\
-Train time (min) & \VAR{donut_train_minutes} & \VAR{pipeline_train_minutes} \\
-Inf.\ latency p50 (ms) & \VAR{inference_latency_p50_ms} & --- \\
-Cost (USD / run) & \VAR{donut_cost_usd} & \VAR{pipeline_cost_usd} \\
-Energy (kWh) & \VAR{donut_energy_kwh} & \VAR{pipeline_energy_kwh} \\
-CO$_2$eq (kg) & \VAR{donut_co2_kg} & \VAR{pipeline_co2_kg} \\
+Parameters        & $\approx$\VAR{donut_params_m}\,M       & $\approx$\VAR{pipeline_params_m}\,M $+$ \VAR{assigner_params_k}\,K \\
+Peak VRAM (GB)    & \VAR{donut_peak_vram_gb}               & \VAR{pipeline_peak_vram_gb} \\
+Train time (min)  & \VAR{donut_train_minutes}              & \VAR{pipeline_train_minutes} \\
+Cost (USD/run)    & \VAR{donut_cost_usd}                   & \VAR{pipeline_cost_usd} \\
+Energy (kWh)      & \VAR{donut_energy_kwh}                 & \VAR{pipeline_energy_kwh} \\
+CO$_2$eq (kg)     & \VAR{donut_co2_kg}                     & \VAR{pipeline_co2_kg} \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-\begin{table}[h]
+\begin{table}[!t]
 \centering
-\caption{Table III --- Ablation: assigner vs.\ rule-based at identical
-detector\,+\,OCR stages.}
+\caption{Ablation: the learned assigner vs.\ the rule-based heuristic
+         on identical YOLO+TrOCR features.  Individual-component
+         ablations (priors, encoder depth, head count, MIL loss) are
+         left to future work.}
+\label{tab:ablation}
 \begin{tabular}{lc}
 \toprule
 Assignment & F1 \\ \midrule
-Rule-based (YOLO OCR) & \VAR{rulebased_f1} \\
+Rule-based (YOLO+TrOCR)  & \VAR{rulebased_f1} \\
 Learned attention (ours) & \VAR{pipeline_f1} \\
-$\Delta$ & \VAR{assigner_delta} \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-\begin{table}[h]
-\centering
-\caption{Table IV --- F1 at seed 42 (single run).  Multi-seed runs
-over \{13,\,17,\,42\} are left for future work.}
-\begin{tabular}{lcc}
-\toprule
-Seed & DONUT F1 & Pipeline F1 \\ \midrule
-42   & \VAR{donut_f1} & \VAR{pipeline_f1} \\
+$\Delta$                 & \VAR{assigner_delta} \\
 \bottomrule
 \end{tabular}
 \end{table}

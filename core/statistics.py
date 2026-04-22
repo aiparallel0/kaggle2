@@ -14,20 +14,63 @@ import random
 
 
 def bootstrap_ci(
-    per_image_correct: list[bool], n_iter: int = 1000
+    per_image_correct: list[bool],
+    n_iter: int = 1000,
+    ci_level: float = 0.95,
 ) -> tuple[float, float]:
-    """95% bootstrap CI on mean per-receipt correctness (Table I uncertainty)."""
+    """Two-sided bootstrap CI on mean per-receipt correctness.
+
+    Defaults match Table I in the paper (``n_iter=1000``, ``ci_level=0.95``),
+    but both are plumbed through ``config.bootstrap_n_iter`` and
+    ``config.bootstrap_ci_level`` so a reviewer can bump either without
+    editing source.
+    """
     n = len(per_image_correct)
     if n == 0:
         return (0.0, 0.0)
+    if not 0.0 < ci_level < 1.0:
+        raise ValueError(f"ci_level must be in (0, 1), got {ci_level}")
+    alpha = 1.0 - ci_level
     means: list[float] = []
     for _ in range(n_iter):
         sample = [per_image_correct[random.randint(0, n - 1)] for _ in range(n)]
         means.append(sum(sample) / n)
     means.sort()
-    lo_idx = max(0, int(math.floor(0.025 * n_iter)))
-    hi_idx = min(n_iter - 1, int(math.ceil(0.975 * n_iter)))
+    lo_idx = max(0, int(math.floor(0.5 * alpha * n_iter)))
+    hi_idx = min(n_iter - 1, int(math.ceil((1.0 - 0.5 * alpha) * n_iter)))
     return (means[lo_idx], means[hi_idx])
+
+
+def paired_bootstrap_delta_ci(
+    a_correct: list[bool],
+    b_correct: list[bool],
+    n_iter: int = 1000,
+    ci_level: float = 0.95,
+) -> tuple[float, float, float]:
+    """Paired bootstrap CI on the per-image correctness delta ``a - b``.
+
+    Returns ``(delta_mean, ci_lo, ci_hi)``.  The paired resample keeps
+    the same image in both arms in every iterate, which is the right
+    test for ``DONUT`` vs. ``pipeline`` on a shared test set — simple
+    unpaired bootstrap wastes the pairing information.
+    """
+    n = len(a_correct)
+    if n == 0 or len(b_correct) != n:
+        return (0.0, 0.0, 0.0)
+    if not 0.0 < ci_level < 1.0:
+        raise ValueError(f"ci_level must be in (0, 1), got {ci_level}")
+    alpha = 1.0 - ci_level
+    deltas: list[float] = []
+    for _ in range(n_iter):
+        idxs = [random.randint(0, n - 1) for _ in range(n)]
+        a_mean = sum(a_correct[i] for i in idxs) / n
+        b_mean = sum(b_correct[i] for i in idxs) / n
+        deltas.append(a_mean - b_mean)
+    deltas.sort()
+    observed = sum(a_correct) / n - sum(b_correct) / n
+    lo_idx = max(0, int(math.floor(0.5 * alpha * n_iter)))
+    hi_idx = min(n_iter - 1, int(math.ceil((1.0 - 0.5 * alpha) * n_iter)))
+    return (observed, deltas[lo_idx], deltas[hi_idx])
 
 
 def mcnemar(a_correct: list[bool], b_correct: list[bool]) -> float:

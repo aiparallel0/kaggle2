@@ -1,0 +1,36 @@
+\section{Limitations}
+\label{sec:limitations}
+
+We list the dominant threats to validity so that readers and future
+replicators can weigh our conclusions against the evidence base.
+
+\begin{itemize}
+  \item \emph{Single training seed.}  The headline numbers in
+        Tables~\ref{tab:headline}--\ref{tab:ablation} are for a
+        single seed ($n_{\text{trials}}=\VAR{n_trials}$); the
+        63-image test yields a bootstrap 95\% CI of roughly
+        $\pm 0.05$ F1, and observed inter-system differences
+        smaller than this are not resolvable.  The released harness
+        is seed-parametric (Appendix~\ref{app:repro}).
+  \item \emph{Non-canonical split.}  We draw the 500\,/\,63\,/\,63
+        split from the 626 SROIE training receipts rather than the
+        canonical 347-image public test set, so our F1 values are
+        not directly comparable to SROIE leaderboard numbers.
+  \item \emph{No LayoutLMv2/v3, TILT, UDOP, StrucTexT, PICK, or
+        zero-shot VLM baseline} is reimplemented here.
+  \item \emph{Assigner ablation is not decomposed.}
+        Table~\ref{tab:ablation} reports the learned-vs-rule-based
+        $\Delta$ but not the per-component contribution.
+  \item \emph{No inference-latency, calibration, or faithfulness
+        measurements.}  Interpretability is argued structurally,
+        not quantified by a deletion/insertion metric.
+  \item \emph{One GPU family.}  All runs used RTX\,4090 / A6000;
+        the cost numbers do not generalise to other silicon.
+  \item \emph{Label noise.}  SROIE ground truth contains
+        inconsistent spacing in address fields, inflating NED
+        error rates independently of model quality.
+  \item \emph{Bug-impact estimates are bounded, not isolated.}
+        Per-bug F1 deltas in Section~\ref{sec:bugs} compare the
+        pre-fix state to the converged post-all-fixes state; we do
+        not report bug-by-bug causal ablations.
+\end{itemize}

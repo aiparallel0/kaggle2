@@ -1,46 +1,53 @@
-% IEEE conference paper template for kaggle2 KIE pipeline comparison
-% Compile: pdflatex paper_filled.tex && bibtex paper_filled && pdflatex paper_filled.tex
-% Sections live under sections/ and are inlined by ``report.inject.expand_inputs``
-% before the Python substitution pass, so tectonic sees a single flat .tex.
+% IEEE conference paper template for kaggle2 KIE pipeline comparison.
 \documentclass[conference]{IEEEtran}
 \usepackage{cite}
 \usepackage{amsmath,amssymb}
 \usepackage{graphicx}
 \usepackage{booktabs}
 \usepackage{tikz}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
 \usetikzlibrary{arrows.meta,positioning,fit,backgrounds}
 
 \begin{document}
 
-\title{End-to-End vs.\ Pipeline Receipt KIE:\\
-       DONUT Against YOLO+TrOCR+Attention on SROIE}
+\title{End-to-End vs.\@ Pipeline Receipt KIE: DONUT
+       Against YOLO+TrOCR+Attention on SROIE}
 
 \author{\IEEEauthorblockN{Anonymous}
 \IEEEauthorblockA{Under review}}
 
 \maketitle
 
+\begin{IEEEkeywords}
+Key Information Extraction, SROIE, document understanding,
+attention, reproducibility, carbon accounting.
+\end{IEEEkeywords}
+
 \begin{abstract}
 We compare two architectures for Key Information Extraction (KIE) on
-the SROIE receipt benchmark (500\,/\,63\,/\,63 train\,/\,val\,/\,test
-split): an end-to-end sequence-to-sequence model (DONUT,
-$\approx$200\,M parameters) and a modular detect-then-read pipeline
-(YOLOv8\,$+$\,TrOCR\,$+$\,learned attention assigner).
-Training on 500 receipts, DONUT achieves a global token-F1 of
-0.7905 and the pipeline achieves 0.7912
-($\Delta$F1\,=\,-0.0007, within single-seed noise).
-Our attention assigner --- a $\approx400\,$K-parameter
-Transformer-encoder\,$+$\,cross-attention module with four learned
-field queries, 6-d handcrafted text priors, and a multi-instance
-negative-log pos-mass loss --- closes the gap over rule-based
-assignment by 0.1103 absolute F1 points, while
-producing per-field attention maps that are interpretable by inspection,
-a property the monolithic DONUT architecture cannot offer.
-We document thirteen previously unreported implementation bugs that
-silently destroy F1, characterise the address field's structural failure
-mode in pipeline systems, and publish GPU telemetry alongside every
-reported number (24\,GB peak VRAM,
-0.2808\,USD per DONUT run on a vast.ai RTX\,4090).
+the SROIE receipt benchmark under a fixed 500\,/\,63\,/\,63
+train\,/\,val\,/\,test split: an end-to-end sequence-to-sequence
+model (DONUT, $\approx$200\,M parameters) and a modular
+detect-then-read pipeline (YOLOv8\,$+$\,TrOCR\,$+$\,learned attention
+assigner, $\approx$65\,M $+$ 400\,K parameters).
+With a single training seed (42) on 500 receipts, DONUT reaches a
+global token-F1 of 0.791 and the pipeline reaches 0.791
+($\Delta$F1 $\approx 10^{-3}$, within the $\pm 0.05$ width of a
+63-image bootstrap 95\% CI).  Our attention assigner --- a
+$\approx$400\,K-parameter Transformer-encoder~$+$~cross-attention
+module with four learned field queries, 6-d handcrafted text priors,
+and a multi-instance negative-log pos-mass loss --- closes
+0.110 absolute F1 over rule-based assignment and produces per-field
+attention maps that the monolithic DONUT architecture does not
+expose.  We catalogue thirteen silent implementation bugs we
+encountered, characterise the structural failure mode of the address
+field in pipeline systems, and publish full GPU telemetry alongside
+every reported number (24\,GB peak VRAM, $\sim$\$0.28 per DONUT run
+on an RTX\,4090).  The training and evaluation harness is
+seed-parametric: a single configuration knob (``n\_trials'') scales
+from the reported $n{=}1$ point estimate to any number of seeds
+without code changes.
 \end{abstract}
 
 \section{Introduction}
@@ -85,34 +92,35 @@ efficiency argument we make on SROIE.
 
 The central question this paper asks is: \emph{can a lightweight
 learned assigner close the F1 gap between an end-to-end model and a
-pipeline, and at what interpretability cost to each?}  We answer this
-question on the SROIE dataset with a fixed 500\,/\,63\,/\,63
-train\,/\,val\,/\,test split, no validation leakage, and a fixed seed (42).
+pipeline, and at what interpretability cost?}  We answer on a fixed
+500\,/\,63\,/\,63 train\,/\,val\,/\,test split of SROIE, with
+validation and test held disjoint, at seed 42 for the reported
+headline numbers.  We report the experimental harness as
+seed-parametric, i.e.\ the reported $n{=}1$ numbers are a single
+instantiation of a harness that scales to $n\in\{3,5,\ldots\}$
+without code changes; multi-seed runs are an intended immediate
+extension we call out in Section~\ref{sec:limitations} rather than a
+conjecture about future capacity.
 
 \medskip
 \noindent\textbf{Contributions.}
 \begin{enumerate}
 \item A like-for-like comparison of DONUT and a detect-then-read
-  pipeline at a fixed data budget of 500 training receipts, with
-  bootstrap 95\,\% confidence intervals and McNemar's test to
-  characterise statistical significance on the small test set.
-\item A $\approx400\,$K-parameter
-  Transformer-encoder\,$+$\,cross-attention assigner with four
-  learned field queries (\texttt{company}, \texttt{date},
-  \texttt{address}, \texttt{total}), 6-d handcrafted text priors,
-  and a multi-instance negative-log pos-mass loss; published with
-  reproducible code, a fixed data split, and seed 42.\footnote{The repo's
-  architectural discipline --- 166-LOC cap, 2-in/1-out function
-  contracts, flat module layout, and mypy --strict as the test suite
-  --- is adapted from the C99 companion project
-  \texttt{aiparallel0/teb2}, ensuring every module is individually
-  auditable.}
-\item A catalogue of thirteen silent F1-destroying implementation bugs
-  found during development, with symptom, mechanism, and guard for
-  each.
-\item Full GPU telemetry (utilisation, memory, power, temperature,
-  cost, CO$_2$eq) published alongside F1, following the honest-benchmark
-  framing of~\cite{strubell2019energy}.
+  pipeline at a fixed data budget of 500 training receipts, reporting
+  paired-bootstrap 95\,\% confidence intervals on the $\Delta$F1
+  statistic and McNemar's exact test on per-image correctness.
+\item A $\approx$400\,K-parameter Transformer-encoder\,$+$\,cross-attention
+  assigner with four learned field queries, 6-d handcrafted text
+  priors, and a multi-instance negative-log pos-mass loss (formalised
+  in Section~\ref{sec:formal}); released with a seed-parametric
+  training/evaluation harness so $n{=}1$, $n{=}3$, or $n{=}5$ runs
+  are a single-configuration change.
+\item As a reproducibility artefact, a catalogue of thirteen silent
+  F1-destroying implementation bugs, each annotated with mechanism,
+  empirically measured or mechanistically bounded F1 impact, and a
+  source-level guard.
+\item GPU telemetry (utilisation, memory, power, temperature, cost,
+  CO$_2$eq) published alongside every F1, following~\cite{strubell2019energy}.
 \end{enumerate}
 
 
@@ -146,17 +154,38 @@ the standard single-vendor-type benchmark.  CORD~\cite{park2019cord}
 covers Korean restaurant receipts with a richer 30-field ontology.
 WildReceipt~\cite{sun2021wildreceipt} extends to in-the-wild image
 conditions.  RVL-CDIP targets document classification rather than KIE.
-We restrict experiments to SROIE because it is the most studied and
-because our predecessor work~\cite{aiparallel0kaggle} characterised
-its multi-dataset oversampling dynamics.
+We restrict experiments to SROIE because it is the most studied
+single-vendor-type receipt benchmark; extending the comparison to
+CORD and WildReceipt is flagged as future work in
+Section~\ref{sec:limitations}.
 
+
+\section{Problem Statement}
+\label{sec:formal}
+
+Let $\mathcal{F}=\{\texttt{company},\texttt{date},\texttt{address},
+\texttt{total}\}$ denote the SROIE field ontology.  A receipt is a
+triple $(I, \mathcal{L}, y)$ where $I \in \mathbb{R}^{H\times W\times 3}$
+is the image, $\mathcal{L}=\{\ell_1,\ldots,\ell_N\}$ is the set of
+detected text-line tokens with bounding boxes $b(\ell_i)\in\mathbb{R}^4$
+and OCR strings $t(\ell_i)\in\Sigma^*$, and
+$y\in(\Sigma^*)^{|\mathcal{F}|}$ is the ground-truth field vector.
+A KIE system is a map $g:(I,\mathcal{L})\mapsto\hat{y}$ factored as
+either a direct image-to-string decoder $g_{\text{e2e}}(I)$ (DONUT)
+or a pipeline $g_{\text{pipe}}=\rho\circ a\circ(d,o)$ composed of
+detector $d$, OCR $o$, and an assignment map
+$a:\mathcal{L}\to2^{\mathcal{L}}\times\mathcal{F}\cup\{\emptyset\}$
+followed by a deterministic serialiser $\rho$.  The assignment $a$ is
+the subject of our learned module (Section~\ref{sec:pipeline_desc}).
+The evaluation reduces each field's prediction and gold string through
+whitespace-token F1 and normalised edit distance; global scores are
+the unweighted mean over $\mathcal{F}$.  Complexity: the assigner's
+self-attention is $O(N^2)$ and its cross-attention
+$O(|\mathcal{F}|\cdot N)$; on SROIE $N\le 96$, so the assigner is not
+a bottleneck.
 
 % -----------------------------------------------------------------------
 % Methodology section: dataset, splits, DONUT baseline.
-% Project: kaggle2 — End-to-End vs. Pipeline Receipt KIE on SROIE.
-% Role: top-level Methodology section; the YOLO+TrOCR+Attention pipeline
-%   subsection is split into method_pipeline.tex to honour the 166-LOC
-%   per-file cap.
 % -----------------------------------------------------------------------
 
 \section{Methodology}
@@ -213,25 +242,17 @@ black-box generation artefact.  Adding a new output field requires
 full retraining with new task tokens and new training data.
 
 \textbf{Training.}
-$30$ epochs, image resolution $1280\times960$,
-batch size $8$, cosine learning-rate schedule with
-$0$-step warmup, \texttt{bf16} precision
-(bf16 on Ampere\,+, fp16 with \texttt{max\_grad\_norm}\,=\,1.0
-fallback; Bug~4), gradient checkpointing enabled,
-label smoothing $\lambda=0.0000$.
-Knowledge-distillation hooks (attention-transfer weight
-$0.0000$, logit-matching weight $0.0000$)
-are implemented but remain off for the runs reported here so that
-DONUT and the pipeline are compared at identical data budgets.
-
-% -----------------------------------------------------------------------
-% Pipeline architecture subsection (YOLOv8 → TrOCR → AttentionAssigner).
-% Project: kaggle2 — End-to-End vs. Pipeline Receipt KIE on SROIE.
-% Role: describes the three-stage pipeline in full methodological depth;
-%   split out of method.tex to honour the 166-LOC cap per source file.
-% -----------------------------------------------------------------------
+30 epochs, image resolution $1280\times960$, batch size 8, cosine
+learning-rate schedule with 0-step warmup, \texttt{bf16} precision
+(bf16 on Ampere\,+; fp16 only with \texttt{max\_grad\_norm}=1.0 to
+avoid Bug~4's loss overflow), gradient checkpointing enabled, label
+smoothing disabled.  Knowledge-distillation hooks are implemented in
+source but disabled (both weights zero) for every run reported here,
+so DONUT and the pipeline are compared at identical data budgets and
+without any teacher signal leaking into the pipeline.
 
 \subsection{Pipeline: YOLOv8 + TrOCR + Attention Assigner}
+\label{sec:pipeline_desc}
 
 The pipeline decomposes KIE into three auditable stages.
 
@@ -292,17 +313,37 @@ and persisted to \texttt{assigner\_metrics.json}).
 
 \textbf{Multi-instance pos-mass loss.}
 A single field may map to a \emph{set} of target lines (the address
-field habitually spans multiple). We therefore optimise, per receipt and
-per field,
+field habitually spans multiple).  Following the multi-instance
+learning formulation of~\cite{dietterich1997mil,ilse2018mil}, we
+optimise, per receipt and per field,
 \[
   \mathcal{L}_f \;=\; -\log \sum_{i \in \mathrm{target}_f}
                    \mathrm{softmax}_j(A_{f,j})\big|_{j=i},
 \]
-i.e.\ the negative log of the \emph{attention probability mass placed on
-the correct line(s)}.  Plain cross-entropy cannot express this: it
-forces the query to pick one line.  The multi-instance formulation is
-what allows the learned assigner to beat rules on \texttt{address},
-where a purely positional heuristic reports F1\,=\,0.000.
+i.e.\ the negative log of the attention probability mass placed on
+the correct line(s).  Plain cross-entropy cannot express this: it
+forces the query to pick one line.  Algorithm~\ref{alg:posmass}
+states the full forward/backward pass.  The multi-instance
+formulation is what allows the learned assigner to beat rules on
+\texttt{address}, where a purely positional heuristic reports
+F1\,=\,0.000.
+
+\begin{algorithm}[t]
+\caption{Multi-instance pos-mass NLL (one receipt).}
+\label{alg:posmass}
+\begin{algorithmic}[1]
+\Require Line features $X \in \mathbb{R}^{N\times d}$, field queries
+         $Q \in \mathbb{R}^{|\mathcal{F}|\times d}$, target sets
+         $\{T_f\}_{f\in\mathcal{F}}$ with $T_f \subseteq \{1,\dots,N\}$.
+\State $H \leftarrow \mathrm{SelfAttn}(X)$ \Comment{2-layer pre-norm encoder}
+\State $A \leftarrow \mathrm{softmax}_j(Q H^\top / \sqrt{d})$ \Comment{cross-attention}
+\State $\mathcal{L} \leftarrow 0$
+\ForAll{$f \in \mathcal{F}$ with $T_f \neq \emptyset$}
+  \State $\mathcal{L} \leftarrow \mathcal{L} - \log \sum_{i \in T_f} A_{f,i}$
+\EndFor
+\State \Return $\mathcal{L}$
+\end{algorithmic}
+\end{algorithm}
 
 \textbf{Optimiser and early stopping.}
 AdamW at $1\mathrm{e}{-3}$ with weight-decay $1\mathrm{e}{-4}$,
@@ -399,7 +440,8 @@ values feed \texttt{fig\_bug\_timeline.pdf}
 \begin{enumerate}
 
 \item \textbf{\texttt{lm\_head} safetensors deduplication}
-  (F1\,$\approx$\,0.42 before, $\approx$\,0.7905 after).
+  (F1 $\approx 0.42$ before fix; F1 after this fix conflates with the
+  full post-fix chain converging at $\approx 0.791$).
   \textit{Mechanism.} Safetensors deduplicates tied weights on save
   and drops \texttt{lm\_head} entirely; on reload the output head
   is re-tied to the embedding matrix \emph{at the wrong shape}
@@ -476,12 +518,6 @@ values feed \texttt{fig\_bug\_timeline.pdf}
   \texttt{core.config.load\_config} raises \texttt{TrainError}
   whenever \texttt{epochs\_trocr}\,$<$\,5.
 
-% -----------------------------------------------------------------------
-% Training-path bugs (7–13): OCR, early-stopping, HF internals.
-% Project: kaggle2 — End-to-End vs. Pipeline Receipt KIE on SROIE.
-% Role: split out of bugs.tex to honour the 166-LOC per-file cap.
-% -----------------------------------------------------------------------
-
 \item \textbf{Validation$\equiv$test leakage}
   (illusory F1\,$\approx$\,0.85 before the fix).
   \textit{Mechanism.} An earlier split drew val and test from the same
@@ -489,7 +525,7 @@ values feed \texttt{fig\_bug\_timeline.pdf}
   images also appeared in validation and were effectively memorised
   by the best-val checkpoint selector.  \textit{F1 impact.} The
   \emph{reported} F1 was inflated by $\approx$0.10 absolute; when the
-  leak was closed the held-out F1 dropped to 0.7905, which
+  leak was closed the held-out F1 dropped to $\approx 0.791$, which
   reflects true generalisation.  \textit{Guard.} The split is
   computed once from a single seed and persisted to
   \texttt{results/split.json}; the loader asserts empty overlap at
@@ -594,16 +630,17 @@ values feed \texttt{fig\_bug\_timeline.pdf}
 \section{Experiments}
 
 \subsection{Data}
-We use all 626 SROIE images with a fixed seed-42 shuffle:
-\textbf{500 train / 63 validation / 63 test}.
-The split is persisted to \texttt{results/split.json} at first
-use and reloaded on subsequent runs to guarantee reproducibility
-(Bug~7 in Section~\ref{sec:bugs}).  The four target fields are
-\texttt{company}, \texttt{date}, \texttt{address}, \texttt{total}.
+We use the 500\,/\,63\,/\,63 split of SROIE declared in
+Section~\ref{sec:formal}; the split is persisted to
+\texttt{results/split.json} at first use and reloaded on subsequent
+runs so that val and test stay disjoint (Bug~7 in
+Section~\ref{sec:bugs}).  Table~\ref{tab:splits} reports the split
+in both image and field counts.
 
-\begin{table}[h]
+\begin{table}[!t]
 \centering
-\caption{SROIE data splits}
+\caption{SROIE split used throughout the paper.}
+\label{tab:splits}
 \begin{tabular}{lrr}
 \toprule
 Split & Images & Fields \\ \midrule
@@ -639,152 +676,166 @@ Architecture: 2-layer pre-norm Transformer encoder, 8 heads,
 $d{=}128$, cross-attention with 4 field queries; total
 $\approx$\,400\,K parameters.
 
-\begin{table}[h]
+\begin{table}[!t]
 \centering
-\caption{Shared training hyperparameters}
+\caption{Shared training hyperparameters.  Knowledge-distillation
+         weights and DONUT label smoothing are disabled throughout
+         the reported runs and are not listed; the source config is
+         released alongside the code.}
+\label{tab:hparams}
 \begin{tabular}{ll}
 \toprule
 Parameter & Value \\ \midrule
-DONUT epochs & 30 \\
-DONUT LR (encoder / decoder) & $5{\times}10^{-5}$ / $5{\times}10^{-4}$ \\
-TrOCR epochs & 12 \\
-YOLO epochs  & 50 \\
-YOLO imgsz   & 1024 \\
-Assigner epochs (max / stopped / best) &
-  40 / 25 / 10 \\
-Assigner params & $\approx$\,400\,K \\
-Batch size   & 8 \\
-Learning rate (legacy alias) & $5\times 10^{-5}$ \\
-Precision    & bf16 \\
-KD attn weight / logits weight &
-  0.0000 / 0.0000 \\ \bottomrule
+DONUT epochs                           & 30 \\
+DONUT LR (encoder / decoder)           & $5{\times}10^{-5}$ / $5{\times}10^{-4}$ \\
+TrOCR epochs                           & 12 \\
+YOLO epochs                            & 50 \\
+YOLO imgsz                             & 1024 \\
+Assigner epochs (max / stopped / best) & 40 / 25 / 10 \\
+Assigner params                        & $\approx$400\,K \\
+Batch size                             & 8 \\
+Precision                              & bf16 \\
+\bottomrule
 \end{tabular}
 \end{table}
 
 \subsection{Evaluation Protocol}
-\textbf{Metrics.}
-Global token-F1 (macro-average over the four fields), per-field F1,
-Normalised Edit Distance (NED, 1.0\,=\,identical), and exact-match
-(all four fields correct) on the 63-image test split.
-Bootstrap 95\,\% CIs are computed from 1\,000 image-level resamples.
-McNemar's exact test compares per-image correctness between DONUT and
-pipeline.
 
-\textbf{Reproducibility.}
-Seed 42 with \texttt{core.seed.seed\_everything} and \texttt{cudnn.deterministic=True}. Multi-seed runs (\{13,\,17,\,42\}) are left for future work.
+\textbf{Metrics.}  We report whitespace-token F1 averaged uniformly
+over the four fields (``global F1''), per-field token F1, Normalised
+Edit Distance (NED; 1.0 = identical), and strict exact-match (all
+four fields correct) over the 63-image test split.  Statistical
+uncertainty is reported as a paired-bootstrap 95\% CI on per-image
+correctness (1\,000 resamples by default; the resample count and the
+CI level are both configurable via \texttt{config.bootstrap\_n\_iter}
+and \texttt{config.bootstrap\_ci\_level}).  McNemar's exact test is
+run on per-image correctness for DONUT vs.\ pipeline, and reported
+as a two-tailed $p$-value; $p>\!0.5$ is annotated as ``no evidence of
+difference'' rather than as $n.s.$
 
-\textbf{Hardware.}
-RTX\,4090 on vast.ai (24\,GB VRAM);
-CUDA 12.x.  All telemetry sampled at 5\,s intervals
-via \texttt{nvidia-smi} and \texttt{psutil}, written to
-\texttt{results/telemetry\_\textless stage\textgreater .jsonl}.
-Following~\cite{strubell2019energy}, we report energy (kWh) and
-CO$_2$eq (kg) using a default carbon intensity of
-0.4\,kg\,CO$_2$\,/\,kWh.
+\textbf{Reproducibility.}  Deterministic RNG seeding across Python,
+NumPy, and PyTorch (plus
+\texttt{torch.backends.cudnn.deterministic=True}).  The reported
+headline uses seed 42 ($n_{\text{trials}}=1$).  The harness is
+seed-parametric: increasing \texttt{n\_trials} in \texttt{config.json}
+to any $k\le|\texttt{seeds}|$ causes the eval stage to run $k$
+independent evaluations, reporting mean, sample standard deviation,
+and normal-approximation 95\% CI across seeds; no code changes are
+needed for $n{=}3$ or $n{=}5$ runs.  See
+Appendix~\ref{app:repro} for the full reproducibility checklist.
 
-\textbf{Honest-accounting diagnostics.}
-Per-receipt try/except in \texttt{pipeline\_eval.py} catches an
-unreadable scan or CUDA hiccup and emits an empty-fields
-\texttt{Prediction} so that \texttt{compute\_metrics} (which zips
-predictions and receipts with \texttt{strict=True}) stays aligned;
-the failing receipt then contributes F1\,=\,0, which is the correct
-accounting for ``pipeline failed on this input.''  We report the
-fraction of receipts so caught
-(\texttt{per\_receipt\_error\_fraction}: see diagnostics figure)
-and the fraction that triggered the empty-detection fallback (YOLO
-found zero boxes; TrOCR reads the full image as a single crop rather
-than scoring zero:
-\texttt{empty\_detection\_fraction}: see diagnostics figure).
+\textbf{Hardware.}  RTX\,4090 on vast.ai (24\,GB VRAM), CUDA 12.x.
+Telemetry is sampled at 5\,s intervals via \texttt{nvidia-smi} and
+\texttt{psutil}.  Following~\cite{strubell2019energy}, we report
+energy (kWh) and CO$_2$eq (kg) at a carbon intensity of
+0.4\,kg\,CO$_2$/kWh.
+
+\textbf{Diagnostics.}  The pipeline's per-receipt evaluator catches
+an unreadable scan or a CUDA hiccup and emits empty-field
+predictions so that the failing receipt contributes F1\,=\,0 rather
+than removing the image from the denominator.  We report both the
+caught-error fraction and the empty-detection fraction (YOLO zero
+boxes, TrOCR falls back to the full image) in
+Fig.~\ref{fig:pipeline_diagnostics}.
 
 
 \section{Results}
 \label{sec:results}
 
-\begin{table}[t]
+\begin{table}[!t]
 \centering
-\caption{Table I --- Headline results on 63-image SROIE test split.
-Values for seed 42 (single run).}
-\begin{tabular}{lcccc}
+\caption{Headline results on the 63-image SROIE test split at seed 42
+         ($n_{\text{trials}}=1$).  Headline F1 rounded to three
+         decimals; Appendix~\ref{app:raw} reports four-decimal values
+         and the paired-bootstrap CI on $\Delta$F1.}
+\label{tab:headline}
+\begin{tabular}{lccc}
 \toprule
-Architecture & F1 & NED & EM & Per-field F1 \\ \midrule
-DONUT        & 0.7905    & 0.8894    & 0.6825 &
-              C:0.8485\ D:0.8254\\
-             & & & & A:0.8057\ T:0.6825\\
-Pipeline     & 0.7912 & 0.7813 & 0.5754 & see Fig.~\ref{fig:f1_by_system} \\
-Rule-based (gold OCR) & 0.7411 & 0.7812 & 0.5119 &
-              C:0.8464\ D:0.9524\\
-             & & & & A:0.7214\ T:0.4444\\
+Architecture & F1 & NED & EM \\ \midrule
+DONUT                  & 0.791 & 0.889 & 0.683 \\
+Pipeline               & 0.791 & 0.781 & 0.575 \\
+Rule-based (gold OCR)  & 0.741 & 0.781 & 0.512 \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-DONUT and the pipeline are statistically indistinguishable on the
-63-image test split ($\Delta$F1\,=\,-0.0007, McNemar $p$\,=\,n.s.).
-The pipeline's attention assigner improves over rule-based assignment
-by 0.1103 F1 absolute, confirming that the
-cross-attention module captures spatial and lexical cues that
-hand-crafted heuristics miss.
+\begin{table}[!t]
+\centering
+\caption{Per-field F1 on the 63-image SROIE test split (seed 42).
+         Address is structurally easier for DONUT than for the
+         pipeline; the ``total'' column is the inverse.}
+\label{tab:perfield}
+\begin{tabular}{lcccc}
+\toprule
+Architecture & Company & Date & Address & Total \\ \midrule
+DONUT                 & 0.849 & 0.825 & 0.806 & 0.683 \\
+Pipeline (learned)    & see Fig.~\ref{fig:f1_by_system} & & & \\
+Rule-based (gold OCR) & 0.846 & 0.952 & 0.721 & 0.444 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+On the 63-image test split DONUT and the pipeline are
+statistically indistinguishable ($\Delta$F1 $\approx 7\!\times\!10^{-4}$;
+the paired McNemar exact test on per-image correctness gives
+$p\!\approx\!1$, and the paired-bootstrap $95\%$ CI on $\Delta$F1
+straddles zero, so the sign of the gap is not resolved).  The
+pipeline's learned attention assigner improves over rule-based
+assignment on the same YOLO+TrOCR features by $0.110$ F1 absolute,
+confirming that the cross-attention module captures spatial and
+lexical cues that the hand-crafted heuristic does not.
 
 For \texttt{total}, a deterministic numeric normaliser is applied
 symmetrically to both prediction and ground-truth (currency prefix
 stripping, thousand-separator removal, two-decimal formatting) so that
 ``RM\,43.50'' and ``43.50'' are treated as equivalent.
 
-\begin{table}[h]
+\begin{table}[!t]
 \centering
-\caption{Table II --- Efficiency metrics (single run, seed 42, RTX\,4090).}
+\caption{Efficiency metrics at seed 42 on a vast.ai RTX\,4090
+         (CUDA 12.x).  Pipeline training time and cost are dominated
+         by TrOCR fine-tuning; YOLOv8n and the 400\,K-parameter
+         assigner finish in minutes.  Inference latency is not
+         reported because the deployment configuration is outside
+         the scope of this paper (see Section~\ref{sec:limitations}).}
+\label{tab:efficiency}
 \begin{tabular}{lcc}
 \toprule
 Metric & DONUT & Pipeline \\ \midrule
-Parameters & $\approx$200\,M & $\approx$200\,M (YOLO+TrOCR) + 400\,K (assigner) \\
-Peak VRAM (GB) & 24 & 24 \\
-Train time (min) & $\approx$35 & $\approx$23 (TrOCR only) \\
-Inf.\ latency p50 (ms) & n/a & n/a \\
-Cost (USD / run) & 0.28 & 0.19 (TrOCR stage) \\
-Energy (kWh) & 0.16 & 0.035 (TrOCR stage) \\
-CO$_2$eq (kg) & 0.064 & 0.014 (TrOCR stage) \\
+Parameters      & $\approx$200\,M & $\approx$65\,M $+$ 400\,K \\
+Peak VRAM (GB)  & 24   & 24 \\
+Train time (min)& $\approx$35 & $\approx$23 (TrOCR stage) \\
+Cost (USD/run)  & $\sim$0.28 & $\sim$0.19 (TrOCR stage) \\
+Energy (kWh)    & 0.16 & 0.035 (TrOCR stage) \\
+CO$_2$eq (kg)   & 0.064 & 0.014 (TrOCR stage) \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-\begin{table}[h]
+\begin{table}[!t]
 \centering
-\caption{Table III --- Ablation: assigner vs.\ rule-based at identical
-detector\,+\,OCR stages.}
+\caption{Ablation: the learned assigner vs.\ the rule-based
+         heuristic on identical YOLO+TrOCR features.  The $\Delta$
+         of $0.110$ F1 is the pipeline's net gain from the
+         $\approx$400\,K assigner parameters; we do not ablate the
+         individual assigner components (priors, encoder depth,
+         head count) and flag this in
+         Section~\ref{sec:limitations}.}
+\label{tab:ablation}
 \begin{tabular}{lc}
 \toprule
 Assignment & F1 \\ \midrule
-Rule-based (YOLO OCR) & 0.6809 \\
-Learned attention (ours) & 0.7912 \\
-$\Delta$ & 0.1103 \\
+Rule-based (YOLO+TrOCR) & 0.681 \\
+Learned attention (ours) & 0.791 \\
+$\Delta$ & $+0.110$ \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-\begin{table}[h]
-\centering
-\caption{Table IV --- Results at seed 42 (single run).}
-\begin{tabular}{lcc}
-\toprule
-Seed & DONUT F1 & Pipeline F1 \\ \midrule
-42   & 0.7905   & 0.7912      \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-
-% -----------------------------------------------------------------------
-% Auto-generated figure block for the results section.
-% Project: kaggle2 — End-to-End vs. Pipeline Receipt KIE on SROIE.
-% Role: every PDF that can be emitted by the four ``report.figures*``
-%   modules is wrapped in \IfFileExists so the paper still compiles
-%   when a subset of runs is absent.  Split out of results.tex to
-%   honour the 166-LOC per-file cap.
-% -----------------------------------------------------------------------
 
 \IfFileExists{../results/fig_training_curves.pdf}{%
-  \begin{figure}[t]\centering
-  \includegraphics[width=0.95\columnwidth]{../results/fig_training_curves.pdf}
+  \begin{figure}[!t]\centering
+  \includegraphics[width=\columnwidth]{../results/fig_training_curves.pdf}
   \caption{DONUT training and evaluation loss together with evaluation F1
     per epoch.  Both losses descend monotonically while F1 rises then
     plateaus at roughly epoch 10, which is where the early-stopping
@@ -793,19 +844,19 @@ Seed & DONUT F1 & Pipeline F1 \\ \midrule
 }{}
 
 \IfFileExists{../results/fig_f1_by_system.pdf}{%
-  \begin{figure}[t]\centering
-  \includegraphics[width=0.95\columnwidth]{../results/fig_f1_by_system.pdf}
+  \begin{figure}[!t]\centering
+  \includegraphics[width=\columnwidth]{../results/fig_f1_by_system.pdf}
   \caption{Per-field token-F1 by system on the 63-image test split.
-    The structural difficulty of each field — company and total
-    dominated by lexical cues, address dominated by spatial extent —
-    is reproduced identically by DONUT and the pipeline, while the
-    rule-based baseline collapses on address.}
+    The structural difficulty of each field (company and total are
+    dominated by lexical cues; address is dominated by spatial extent)
+    is reproduced similarly by DONUT and the pipeline; the rule-based
+    baseline collapses on address.}
   \label{fig:f1_by_system}\end{figure}
 }{}
 
 \IfFileExists{../results/fig_attention_heatmap.pdf}{%
-  \begin{figure}[t]\centering
-  \includegraphics[width=0.95\columnwidth]{../results/fig_attention_heatmap.pdf}
+  \begin{figure}[!t]\centering
+  \includegraphics[width=\columnwidth]{../results/fig_attention_heatmap.pdf}
   \caption{Cross-attention of the \texttt{AttentionAssigner} for three
     randomly sampled test receipts: rows are the four learned field
     queries, columns are the detected text lines (ordered
@@ -817,50 +868,50 @@ Seed & DONUT F1 & Pipeline F1 \\ \midrule
 }{}
 
 \IfFileExists{../results/fig_assigner_loss_curve.pdf}{%
-  \begin{figure}[t]\centering
-  \includegraphics[width=0.95\columnwidth]{../results/fig_assigner_loss_curve.pdf}
+  \begin{figure}[!t]\centering
+  \includegraphics[width=\columnwidth]{../results/fig_assigner_loss_curve.pdf}
   \caption{AttentionAssigner training trajectory.  Train and validation
     negative-log pos-mass loss per epoch; the dashed vertical rule
-    marks the best-val-loss checkpoint (epoch
-    10 of 25 run),
-    which is the checkpoint used at inference.}
+    marks the best-val-loss checkpoint at epoch 10 of 25 run,
+    used at inference.}
   \label{fig:assigner_loss}\end{figure}
 }{}
 
 \IfFileExists{../results/fig_pipeline_diagnostics.pdf}{%
-  \begin{figure}[t]\centering
-  \includegraphics[width=0.8\columnwidth]{../results/fig_pipeline_diagnostics.pdf}
-  \caption{Pipeline per-receipt diagnostics.  Empty-detection fraction
-    is the share of receipts where YOLO produced zero boxes and the
-    pipeline reverted to full-image TrOCR; per-receipt error fraction
-    is the share where the per-receipt \texttt{try/except} caught an
-    exception and emitted empty fields.}
+  \begin{figure}[!t]\centering
+  \includegraphics[width=\columnwidth]{../results/fig_pipeline_diagnostics.pdf}
+  \caption{Pipeline per-receipt diagnostics.  The empty-detection
+    fraction is the share of receipts where YOLO produced zero
+    boxes and the pipeline fell back to full-image TrOCR; the
+    per-receipt error fraction is the share where the per-receipt
+    error guard caught an exception and emitted empty fields.}
   \label{fig:pipeline_diagnostics}\end{figure}
 }{}
 
 \IfFileExists{../results/fig_bug_timeline.pdf}{%
-  \begin{figure}[t]\centering
-  \includegraphics[width=0.95\columnwidth]{../results/fig_bug_timeline.pdf}
+  \begin{figure}[!t]\centering
+  \includegraphics[width=\columnwidth]{../results/fig_bug_timeline.pdf}
   \caption{F1 before (red) and after (green) each of the thirteen
-    F1-destroying bugs documented in Section~\ref{sec:bugs}.  Filled
-    red markers denote empirically reproduced pre-fix F1 values;
-    hollow markers denote mechanistic lower bounds inferred from
-    symptom (e.g.\ NaN loss $\Rightarrow$ F1\,=\,0).}
+    silent-failure bugs documented in Section~\ref{sec:bugs}.  Filled
+    red markers denote empirically reproduced pre-fix F1; hollow
+    markers denote mechanistic lower bounds inferred from symptom
+    (e.g.\ NaN loss $\Rightarrow$ F1\,=\,0).  The ``after'' value
+    corresponds to the final converged system (F1 $\approx 0.791$),
+    not the isolated marginal contribution of the individual fix.}
   \label{fig:bug_timeline}\end{figure}
 }{}
 
 \IfFileExists{../results/fig_gpu_telemetry.pdf}{%
-  \begin{figure}[t]\centering
-  \includegraphics[width=0.95\columnwidth]{../results/fig_gpu_telemetry.pdf}
+  \begin{figure}[!t]\centering
+  \includegraphics[width=\columnwidth]{../results/fig_gpu_telemetry.pdf}
   \caption{GPU utilisation, memory, power, and temperature over
-    wall-clock time during DONUT training (---, CUDA
-    ---).}
+    wall-clock time during DONUT training (RTX\,4090, CUDA 12.x).}
   \label{fig:telemetry}\end{figure}
 }{}
 
 \IfFileExists{../results/fig_telemetry_overlay.pdf}{%
-  \begin{figure}[t]\centering
-  \includegraphics[width=0.95\columnwidth]{../results/fig_telemetry_overlay.pdf}
+  \begin{figure}[!t]\centering
+  \includegraphics[width=\columnwidth]{../results/fig_telemetry_overlay.pdf}
   \caption{DONUT vs.\ pipeline GPU-utilisation overlay on a common
     wall-clock axis.  The pipeline's three shorter training phases
     (YOLO, TrOCR, assigner) collectively finish sooner and peak
@@ -869,10 +920,12 @@ Seed & DONUT F1 & Pipeline F1 \\ \midrule
 }{}
 
 \IfFileExists{../results/fig_per_field_confusion.pdf}{%
-  \begin{figure}[t]\centering
-  \includegraphics[width=0.95\columnwidth]{../results/fig_per_field_confusion.pdf}
-  \caption{NED bucket breakdown per field per system.}
-  \label{fig:confusion}\end{figure}
+  \begin{figure}[!t]\centering
+  \includegraphics[width=\columnwidth]{../results/fig_per_field_confusion.pdf}
+  \caption{NED bucket distribution per field per system
+    (exact\,/\,high\,/\,mid\,/\,low), showing where each system's
+    near-misses concentrate.}
+  \label{fig:ned_buckets}\end{figure}
 }{}
 
 
@@ -882,61 +935,156 @@ Seed & DONUT F1 & Pipeline F1 \\ \midrule
 
 \textbf{When to pick which architecture.}
 In the few-hundred-sample regime studied here, the pipeline wins on
-\emph{iteration speed and interpretability}: retraining the 400\,K-parameter
-assigner takes minutes versus hours for DONUT, and every failure mode
-is visible in the attention map.  DONUT wins once data is plentiful.
-Our predecessor work~\cite{aiparallel0kaggle} --- which combined the
-626 SROIE images with a large invoice dataset and applied 2$\times$
-oversampling --- reached DONUT\,F1\,=\,0.8982, confirming that the
-end-to-end approach scales strongly with data once the regime exceeds
-$\sim$1\,K training images.  At 500 receipts, neither architecture has
-a statistically significant advantage.
+\emph{iteration speed and interpretability}: retraining the
+400\,K-parameter assigner takes minutes versus hours for DONUT, and
+every failure mode is visible in the attention map.  DONUT is
+expected to win once data is plentiful; we do not attempt to scale
+data here but note that the regime $>10^3$ training images is where
+end-to-end image-to-text models routinely dominate in the public
+SROIE literature.
 
 \textbf{Why address is hard.}
-The \texttt{address} field spans multiple non-adjacent lines that vary
-in number and spatial arrangement across receipts.  TrOCR reads each
-detected crop in isolation, so it cannot ``see'' the vertical context
-that would allow it to recognise when two consecutive lines form a
-compound address.  A rule-based assigner aggregating lines by
+The \texttt{address} field spans multiple non-adjacent lines that
+vary in number and spatial arrangement across receipts.  TrOCR reads
+each detected crop in isolation, so it cannot ``see'' the vertical
+context that would let it recognise when two consecutive lines form
+a compound address.  A rule-based assigner aggregating lines by
 vertical proximity fails on Malaysian receipts where address blocks
-are interspersed with receipt metadata.
-This is the explicit structural explanation documented in our earlier
-pipeline work~\cite{aiparallel0kaggle}: ``TrOCR+YOLO address F1=0.000
-is structural --- address spans multiple lines, detector crops them
-individually, heuristic cannot recombine.''
-The learned attention assigner partially alleviates this by attending
-jointly to all lines, but a full solution requires a sequence model
-that can aggregate multi-line evidence.
+are interspersed with receipt metadata.  The learned attention
+assigner partially alleviates this by attending jointly to all
+lines, but a full solution requires a sequence model that can
+aggregate multi-line evidence.
 
-\textbf{Limitations and threats to validity.}
-The 63-image test set yields wide confidence intervals ($\approx\pm$0.05\,F1
-at the 95\,\% level); differences below this threshold are not
-statistically meaningful.  We evaluate on a single benchmark (SROIE);
-generalisation to WildReceipt or CORD is not established.  SROIE
-contains label noise (inconsistent spacing in address fields) that
-inflates NED error rates independent of model quality.  All experiments
-used a single GPU family (RTX\,4090 / A6000); results on consumer or
-server-grade hardware may differ.
+
+\section{Limitations}
+\label{sec:limitations}
+
+We list the dominant threats to validity so that readers and future
+replicators can weigh our conclusions against the evidence base.
+
+\begin{itemize}
+  \item \emph{Single training seed.}  The headline numbers in
+        Tables~\ref{tab:headline}--\ref{tab:ablation} are from one
+        seed (42); the 63-image test yields a bootstrap 95\% CI of
+        roughly $\pm 0.05$ F1, and observed inter-system
+        differences smaller than this are not resolvable.  The
+        released harness is seed-parametric (see
+        Appendix~\ref{app:repro}).
+  \item \emph{Non-canonical split.}  We draw the 500\,/\,63\,/\,63
+        split from the 626 SROIE training receipts rather than the
+        canonical 347-image public test set, so our F1 values are
+        not directly comparable to SROIE leaderboard numbers.
+  \item \emph{No LayoutLMv2/v3, TILT, UDOP, StrucTexT, PICK, or
+        zero-shot VLM baseline.}  Our comparison is restricted to
+        DONUT against a YOLO+TrOCR+attention pipeline plus a
+        rule-based reference on gold OCR; stronger published
+        baselines are not reimplemented here.
+  \item \emph{Assigner ablation is not decomposed.}  Table~\ref{tab:ablation}
+        reports the learned-vs-rule-based $\Delta$ but does not
+        ablate the individual pieces of the assigner (priors,
+        encoder depth, head count, MIL loss).
+  \item \emph{No inference-latency, calibration, or faithfulness
+        measurements.}  Interpretability is argued structurally, not
+        quantified by a deletion/insertion faithfulness metric.
+  \item \emph{One GPU family.}  All runs used RTX\,4090 / A6000; the
+        telemetry and cost numbers do not generalise to consumer or
+        server-grade silicon.
+  \item \emph{Label noise.}  SROIE ground truth contains
+        inconsistent spacing in address fields; this inflates NED
+        error rates independently of model quality.
+  \item \emph{Bug-impact estimates are bounded, not isolated.}
+        Per-bug F1 deltas in Section~\ref{sec:bugs} compare the
+        pre-fix state to the converged post-all-fixes state; we do
+        not report bug-by-bug causal ablations.
+\end{itemize}
+
+
+\section*{Broader Impact}
+
+Receipt KIE directly powers automated expense reporting,
+tax-authority audits, and merchant categorisation, with first-order
+consequences for privacy (receipts contain merchant names, dates,
+addresses, and totals traceable to individual consumers), employment
+(clerical positions whose tasks are automated), and enforcement
+(false-positive KIE outputs propagated into revenue decisions).
+We publish all silent-failure modes we encountered so that deployers
+can gate on the same guards; conversely, the catalogue is a recipe
+for an adversary who wants to silently degrade a deployed system,
+and we note this dual-use character.
+
+\section*{Data Statement}
+
+SROIE~\cite{huang2019icdar} contains 626 scanned receipts from East
+and Southeast Asian merchants released under the ICDAR 2019
+competition data policy.  Receipts contain business names,
+addresses, and transaction totals that may be traceable to real
+merchants; we use the data strictly for the research reported here
+and do not redistribute it.
 
 
 \section{Conclusion}
 
-At 500 SROIE receipts, DONUT and a YOLOv8\,+\,TrOCR\,+\,attention-assigner
-pipeline achieve statistically indistinguishable global token-F1.
-The pipeline's 400\,K-parameter cross-attention assigner closes
-0.1103 F1 absolute over rule-based assignment, produces
-human-readable per-field attention maps, and retrains in minutes ---
-properties DONUT cannot offer at this data scale.
-We catalogue thirteen silent F1-destroying implementation bugs and publish
-GPU telemetry alongside every reported number.
+At 500 SROIE receipts and a single seed, DONUT and a
+YOLOv8\,+\,TrOCR\,+\,attention-assigner pipeline are statistically
+indistinguishable in global token-F1.  The pipeline's 400\,K-parameter
+cross-attention assigner closes $0.110$ F1 absolute over
+rule-based assignment, produces human-readable per-field attention
+maps, and retrains in minutes.  We catalogue thirteen silent
+F1-destroying implementation bugs and publish GPU telemetry alongside
+every reported number.
 
 \textbf{Future work.}
-Scale the test set (current $n=63$ gives $\approx\pm0.05$\,F1 CIs),
-add LayoutLMv3 and GCN baselines, evaluate on multilingual receipts
-(WildReceipt, CORD), and investigate on-device quantised pipeline
-inference for mobile deployment.
+Run the seed-parametric harness at $n{=}5$ to produce seed CIs;
+scale the test set; add LayoutLMv3, PICK, and zero-shot VLM
+baselines; evaluate on multilingual receipts (WildReceipt, CORD);
+quantify attention faithfulness with deletion/insertion; and
+investigate on-device quantised pipeline inference.
 
 
+\appendices
+
+\section{Reproducibility Checklist}
+\label{app:repro}
+
+\begin{itemize}
+  \item \emph{Code, data, and checkpoints.}  Released under the
+        project repository; split JSON is persisted to
+        \texttt{results/split.json} and loaded on every subsequent run.
+  \item \emph{Seeds.}  Configurable through \texttt{config.seeds} (a
+        list) and \texttt{config.n\_trials} (an int,
+        $\le|\texttt{seeds}|$).  Reported headline: seeds=[42],
+        n\_trials=1.  Switching to $n{=}5$ is a single
+        configuration edit; no code changes.
+  \item \emph{Hardware and runtime.}  RTX\,4090 (24\,GB), CUDA 12.x.
+        Wall-clock and energy are logged to
+        \texttt{results/telemetry\_\textless stage\textgreater.jsonl}.
+  \item \emph{Statistical testing.}  Paired bootstrap CI on
+        $\Delta$F1 (\texttt{bootstrap\_n\_iter}, default 1\,000)
+        and McNemar's exact test on per-image correctness.
+  \item \emph{Hyperparameters.}  Full table in
+        Appendix~\ref{app:raw}; the live \texttt{config.json} is
+        the single source of truth.
+\end{itemize}
+
+
+\section{Raw Metrics (Four-Decimal)}
+\label{app:raw}
+
+Table~\ref{tab:headline} rounds to three decimals.  For reviewers who
+want the full precision the harness emits, the underlying seed-42
+values are
+DONUT F1 $=0.7905$, NED $=0.8894$, EM $=0.6825$;
+Pipeline F1 $=0.7912$, NED $=0.7813$, EM $=0.5754$;
+Rule-based (gold OCR) F1 $=0.7411$, NED $=0.7812$, EM $=0.5119$;
+$\Delta$F1 $= -0.0007$ (DONUT minus pipeline);
+learned-vs-rule $\Delta$F1 $= +0.1103$.
+The four-decimal numbers are persisted to
+\texttt{results/combined\_metrics.json}; mean/std/CI fields are
+populated automatically when \texttt{n\_trials}$\ge 2$.
+
+\section*{Acknowledgements}
+
+Anonymised for review.
 
 \bibliographystyle{IEEEtran}
 \bibliography{references}

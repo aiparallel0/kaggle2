@@ -65,17 +65,29 @@ class CombinedMetrics(TypedDict, total=False):
     img_w: int
     img_h: int
     artifact_mode: str
-    # --- Multi-seed aggregates (only populated when --seeds N, N>1) ---
+    # --- Multi-seed aggregates (always populated; CI keys need n>=2) ---
     donut_f1_mean: float
     donut_f1_std: float
-    pipeline_f1_mean: float
-    pipeline_f1_std: float
-    seeds_used: list[int]
-    # --- Bootstrap CIs + McNemar significance (see core.statistics) ---
     donut_f1_ci_lo: float
     donut_f1_ci_hi: float
+    pipeline_f1_mean: float
+    pipeline_f1_std: float
     pipeline_f1_ci_lo: float
     pipeline_f1_ci_hi: float
+    rulebased_gold_f1_mean: float
+    rulebased_gold_f1_std: float
+    rulebased_gold_f1_ci_lo: float
+    rulebased_gold_f1_ci_hi: float
+    seeds_used: list[int]
+    seeds_configured: list[int]
+    n_trials: int
+    bootstrap_n_iter: int
+    bootstrap_ci_level: float
+    # --- Bootstrap CIs over per-image correctness + McNemar significance ---
+    pipeline_bootstrap_ci_lo: float
+    pipeline_bootstrap_ci_hi: float
+    delta_f1_ci_lo: float
+    delta_f1_ci_hi: float
     mcnemar_p: float
     # --- Parameter counts + assigner training telemetry ---
     donut_params_m: float

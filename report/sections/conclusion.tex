@@ -1,17 +1,18 @@
 \section{Conclusion}
 
-At 500 SROIE receipts, DONUT and a YOLOv8\,+\,TrOCR\,+\,attention-assigner
-pipeline achieve statistically indistinguishable global token-F1.
-The pipeline's $\approx$\VAR{assigner_params_k}\,K-parameter cross-attention assigner closes
-\VAR{assigner_delta} F1 absolute over rule-based assignment, produces
-human-readable per-field attention maps, and retrains in minutes ---
-properties DONUT cannot offer at this data scale.
-We catalogue thirteen silent F1-destroying implementation bugs and publish
-GPU telemetry alongside every reported number.
+At 500 SROIE receipts and a single seed, DONUT and a
+YOLOv8\,+\,TrOCR\,+\,attention-assigner pipeline are statistically
+indistinguishable in global token-F1.  The pipeline's
+$\approx$\VAR{assigner_params_k}\,K-parameter cross-attention
+assigner closes \VAR{assigner_delta} F1 absolute over rule-based
+assignment, produces human-readable per-field attention maps, and
+retrains in minutes.  We catalogue thirteen silent F1-destroying
+implementation bugs and publish GPU telemetry alongside every
+reported number.
 
 \textbf{Future work.}
-Scale the test set (current $n=63$ gives $\approx\pm0.05$\,F1 CIs),
-add LayoutLMv3 and GCN baselines, evaluate on multilingual receipts
-(WildReceipt, CORD), and investigate on-device quantised pipeline
-inference for mobile deployment.
-
+Run the seed-parametric harness at $n{=}5$ to produce seed CIs;
+scale the test set; add LayoutLMv3, PICK, and zero-shot VLM
+baselines; evaluate on multilingual receipts (WildReceipt, CORD);
+quantify attention faithfulness with deletion/insertion; and
+investigate on-device quantised pipeline inference.

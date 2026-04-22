@@ -78,6 +78,13 @@ def build_combined(
         # reviewers can see they did not influence results.
         "kd_attn_weight": config.kd_attn_weight,
         "kd_logits_weight": config.kd_logits_weight,
+        # Seed harness provenance — surfaced so the paper's Reproducibility
+        # subsection and the \VAR{n_trials} / \VAR{seeds_str} placeholders
+        # resolve without branching on dict presence.
+        "n_trials": config.n_trials,
+        "seeds_configured": list(config.seeds),
+        "bootstrap_n_iter": config.bootstrap_n_iter,
+        "bootstrap_ci_level": config.bootstrap_ci_level,
     }
 
 

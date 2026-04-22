@@ -65,11 +65,29 @@ def load_config(path: str, defaults: dict[str, Any] | None = None) -> ExpConfig:
         "kd_attn_weight", "kd_logits_weight",
         "assigner_patience", "assigner_min_delta",
         "weight_decay_assigner", "dropout_assigner", "priors_v2",
+        "seeds", "n_trials", "bootstrap_n_iter", "bootstrap_ci_level",
     }
     known = set(_REQUIRED) | _optional
     extra = {k: v for k, v in raw.items() if k not in known}
 
     img = raw["image_size"]
+    # Seeds are the single source of truth for how many trials to run.
+    # `seed` is retained for back-compat as the scalar legacy key, but
+    # `seeds` (a list) is what drives the multi-trial loops in
+    # `stages.eval` and `core.statistics`.  `n_trials` is derived from
+    # `seeds` unless explicitly overridden (useful for truncated smoke runs).
+    raw_seeds = raw.get("seeds")
+    if isinstance(raw_seeds, list) and raw_seeds:
+        seeds_list = [int(s) for s in raw_seeds]
+    else:
+        seeds_list = [int(raw["seed"])]
+    raw_n = raw.get("n_trials")
+    n_trials = int(raw_n) if raw_n is not None else len(seeds_list)
+    if n_trials > len(seeds_list):
+        raise TrainError(
+            f"n_trials={n_trials} exceeds len(seeds)={len(seeds_list)}; "
+            "extend the `seeds` list or reduce `n_trials`.",
+        )
     return ExpConfig(
         seed=int(raw["seed"]),
         base_model=str(raw["base_model"]),
@@ -122,5 +140,9 @@ def load_config(path: str, defaults: dict[str, Any] | None = None) -> ExpConfig:
         weight_decay_assigner=float(raw.get("weight_decay_assigner", 5e-4)),
         dropout_assigner=float(raw.get("dropout_assigner", 0.2)),
         priors_v2=bool(raw.get("priors_v2", True)),
+        seeds=seeds_list,
+        n_trials=n_trials,
+        bootstrap_n_iter=int(raw.get("bootstrap_n_iter", 1000)),
+        bootstrap_ci_level=float(raw.get("bootstrap_ci_level", 0.95)),
         extra=extra,
     )
