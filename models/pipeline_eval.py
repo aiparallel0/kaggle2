@@ -10,6 +10,7 @@ Role: runs the three-stage pipeline (detect → read → assign) and produces
 from __future__ import annotations
 
 import json
+import logging
 import os
 from pathlib import Path
 from typing import Any
@@ -40,6 +41,8 @@ try:
     from torch import Tensor as _Tensor  # noqa: F401  (silence ruff SIM105)
 except ImportError as _exc:  # lightweight CI — torch not installed
     _import_error = _exc
+
+log = logging.getLogger("kaggle2")
 
 
 def _nt(fields: list[Field]) -> list[Field]:
@@ -102,26 +105,29 @@ def eval_pipeline(config: ExpConfig, test: list[Receipt]) -> PipelineResult:
     preds_r: list[Prediction] = []
     n_empty_detect = 0  # receipts where YOLO found zero boxes → full-image fallback
     n_receipt_err = 0  # receipts where per-receipt try/except caught a failure
+    receipt_error_samples: list[str] = []
+    receipt_error_type_set: set[str] = set()
     attn_sampler = AttentionSampler(k=DEFAULT_SAMPLE_K)
     with torch.no_grad():
+        if test:  # canary: raises real traceback on systematic shape/device mismatch
+            img0 = Image.open(test[0].image_path).convert("RGB")
+            t0, f0, b0 = _detect_and_read(yolo, trocr_proc, trocr_model, img0,
+                                           str(test[0].image_path), config, yolo_img, device)
+            if not t0:
+                t0, f0, b0 = _fallback_full_image(trocr_proc, trocr_model, img0, config, device)
+            _assign_learned_with_attn(assigner, t0, f0, b0, config.fields, device)
         for rec in test:
             rid = rec.image_path.stem
-            # Per-receipt try/except so one unreadable scan (corrupt PNG,
-            # truncated JPEG, CUDA hiccup) does not abort the entire eval
-            # run. We still emit an (empty-fields) Prediction for the
-            # receipt so ``compute_metrics`` — which zips predictions and
-            # receipts with ``strict=True`` — stays aligned; the receipt
-            # then scores F1=0 for every field, which is the correct
-            # accounting for "pipeline failed on this input".
+            # Per-receipt isolation: one corrupt scan (OSError), CUDA hiccup
+            # (RuntimeError), or bad value (ValueError) must not abort the
+            # entire eval run; the receipt scores F1=0 for every field.
             try:
                 img = Image.open(rec.image_path).convert("RGB")
                 texts, feats, bboxes = _detect_and_read(
                     yolo, trocr_proc, trocr_model, img, str(rec.image_path),
                     config, yolo_img, device,
                 )
-                # Empty-detection fallback: rare on SROIE but happens on
-                # dark scans. Without it the receipt contributes 0 to all
-                # four field F1s.
+                # Empty-detect fallback: rare on SROIE but preserves contribution.
                 if not texts:
                     n_empty_detect += 1
                     texts, feats, bboxes = _fallback_full_image(
@@ -133,7 +139,11 @@ def eval_pipeline(config: ExpConfig, test: list[Receipt]) -> PipelineResult:
                 if attn is not None and not attn_sampler.full:
                     attn_sampler.capture(str(rec.image_path), bboxes, attn)
                 rule = rule_based_assign(texts, bboxes) if texts else {}
-            except (OSError, RuntimeError, ValueError):
+            except (OSError, RuntimeError, ValueError) as exc:
+                log.exception("pipeline_eval: receipt %s failed", rid)
+                receipt_error_type_set.add(type(exc).__name__)
+                if len(receipt_error_samples) < 3:
+                    receipt_error_samples.append(repr(exc))
                 n_receipt_err += 1
                 learned, rule = {}, {}
             preds_l.append(Prediction(
@@ -144,8 +154,7 @@ def eval_pipeline(config: ExpConfig, test: list[Receipt]) -> PipelineResult:
                 receipt_id=rid,
                 fields=[Field(name=k, value=v) for k, v in rule.items()],
             ))
-    # Symmetric TOTAL normalization (learned + rule-based + GT) matches
-    # ``eval_donut`` so pipeline F1 is directly comparable to DONUT F1.
+    # Symmetric TOTAL normalisation keeps pipeline F1 comparable to DONUT F1.
     n_preds_l = [Prediction(receipt_id=p.receipt_id, fields=_nt(p.fields))
                  for p in preds_l]
     n_preds_r = [Prediction(receipt_id=p.receipt_id, fields=_nt(p.fields))
@@ -165,5 +174,7 @@ def eval_pipeline(config: ExpConfig, test: list[Receipt]) -> PipelineResult:
             "empty_detection_fraction": n_empty_detect / n_total,
             "per_receipt_error_fraction": n_receipt_err / n_total,
             "n_test_receipts": len(test),
+            "receipt_error_samples": receipt_error_samples,
+            "receipt_error_types": sorted(receipt_error_type_set),
         }, f, indent=2)
     return PipelineResult(assigner=m_l, rulebased=m_r)
