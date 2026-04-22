@@ -51,10 +51,11 @@ def main() -> None:
         config.skip_donut = True
     # CLI --seeds wins over config.seeds; config.seeds wins over legacy config.seed.
     # config.seeds and config.n_trials are the durable way to switch to n=5 etc.
-    if args.seeds:
-        seeds = _parse_seeds(args.seeds)
-    else:
-        seeds = list(config.seeds[: config.n_trials])
+    seeds = (
+        _parse_seeds(args.seeds)
+        if args.seeds
+        else list(config.seeds[: config.n_trials])
+    )
     seed_everything(seeds[0])
     if args.stage in ("train", "all"):
         stage_train(config)
