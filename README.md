@@ -228,7 +228,10 @@ All hyperparameters live in `config.json`. F1-affecting knobs:
  8. YOLO project path resolution (ultralytics ≥8.3 relative-path bug)
  9. Stale `generation_config` on reload (eval_F1 ≡ 0 with healthy
     eval_loss; `Seq2SeqTrainer(predict_with_generate=True)` reads the
-    snapshot, not live overrides on `model.config`)
+    snapshot, not live overrides on `model.config`); guard is now
+    symmetric across DONUT and TrOCR trainers via
+    `models/_gen_config.py::_persist_generation_config`, with a
+    disk-assertion that raises `TrainError` on any mismatch
 10. `tie_word_embeddings=False` subtlety (post-resize `lm_head` must
     be re-initialised explicitly)
 11. `num_items_in_batch` kwargs leak into `SwinModel.forward`
