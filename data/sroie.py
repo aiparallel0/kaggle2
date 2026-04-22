@@ -10,6 +10,7 @@ Role: clones the SROIE repository, parses JSON/TXT entity files, and
 from __future__ import annotations
 
 import json
+import logging
 import random
 import shutil
 import subprocess
@@ -163,6 +164,8 @@ def _canonical_test_split(
     train_receipts = _load_receipts(
         data_path / "train" / "img", data_path / "train" / "entities",
     )
+    if not train_receipts:
+        return None
     random.Random(config.seed).shuffle(train_receipts)
     # Reserve _N_VAL images from the training pool for early-stopping;
     # the test set is the canonical held-out set — not drawn from train.
@@ -185,7 +188,6 @@ def load_or_create_split(config: ExpConfig, data_path: Path) -> DataSplit:
     # Attempt canonical test split first (prefers leaderboard protocol).
     canonical = _canonical_test_split(data_path, config)
     if canonical is not None:
-        import logging
         logging.getLogger("kaggle2").info(
             "Using canonical SROIE test split: %d train / %d val / %d test",
             len(canonical.train), len(canonical.val), len(canonical.test),
