@@ -48,6 +48,7 @@ class Metrics:
     per_field_f1: dict[str, float]
     per_field_ned: dict[str, float]
     per_field_em: dict[str, float]
+    per_image_correct: list[bool] = field(default_factory=list)
 
 
 @dataclass

@@ -83,6 +83,9 @@ class CombinedMetrics(TypedDict, total=False):
     n_trials: int
     bootstrap_n_iter: int
     bootstrap_ci_level: float
+    # --- Per-image correctness vectors (all-fields EM per receipt) ---
+    donut_per_image_correct: list[bool]
+    pipeline_per_image_correct: list[bool]
     # --- Bootstrap CIs over per-image correctness + McNemar significance ---
     pipeline_bootstrap_ci_lo: float
     pipeline_bootstrap_ci_hi: float

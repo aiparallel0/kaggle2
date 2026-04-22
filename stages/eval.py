@@ -19,7 +19,7 @@ from pathlib import Path
 
 from core.errors import EvalError
 from core.seed import seed_everything
-from core.statistics import bootstrap_ci
+from core.statistics import bootstrap_ci, mcnemar, paired_bootstrap_delta_ci
 from core.types import DataSplit, ExpConfig, Metrics
 from core.validate import validate_f1
 from data.sroie import download_sroie, load_or_create_split
@@ -151,18 +151,31 @@ def stage_eval(config: ExpConfig, seeds: list[int] | None = None) -> None:
     _aggregate_seed_variance(donut_f1s, "donut_f1", last)
     _aggregate_seed_variance(pipeline_f1s, "pipeline_f1", last)
     _aggregate_seed_variance(rulebased_gold_f1s, "rulebased_gold_f1", last)
-    # Per-image bootstrap CI: the single-run fallback when n_seeds = 1.
-    # Uses the last run's per-image correctness so the bound reflects the
-    # reported point estimate exactly.
-    per_image = last.get("pipeline_per_image_correct")
-    if isinstance(per_image, list) and per_image:
+    # Per-image bootstrap CI + paired McNemar: uses the last run's per-image
+    # all-fields-EM correctness vectors (populated by compute_metrics via
+    # build_combined). Paired test is valid because DONUT and pipeline are
+    # evaluated on the same 63 test images in fixed order.
+    d_raw = last.get("donut_per_image_correct")
+    p_raw = last.get("pipeline_per_image_correct")
+    d_vec = [bool(x) for x in d_raw] if isinstance(d_raw, list) else []
+    p_vec = [bool(x) for x in p_raw] if isinstance(p_raw, list) else []
+    if p_vec:
         lo, hi = bootstrap_ci(
-            [bool(x) for x in per_image],
+            p_vec,
             n_iter=config.bootstrap_n_iter,
             ci_level=config.bootstrap_ci_level,
         )
         last["pipeline_bootstrap_ci_lo"] = round(lo, 4)
         last["pipeline_bootstrap_ci_hi"] = round(hi, 4)
+    if d_vec and p_vec and len(d_vec) == len(p_vec):
+        _, ci_lo, ci_hi = paired_bootstrap_delta_ci(
+            d_vec, p_vec,
+            n_iter=config.bootstrap_n_iter,
+            ci_level=config.bootstrap_ci_level,
+        )
+        last["delta_f1_ci_lo"] = round(ci_lo, 4)
+        last["delta_f1_ci_hi"] = round(ci_hi, 4)
+        last["mcnemar_p"] = round(mcnemar(d_vec, p_vec), 4)
     last["seeds_used"] = list(run_seeds)
     last["n_trials"] = len(run_seeds)
     last["bootstrap_n_iter"] = config.bootstrap_n_iter

@@ -85,6 +85,10 @@ def build_combined(
         "seeds_configured": list(config.seeds),
         "bootstrap_n_iter": config.bootstrap_n_iter,
         "bootstrap_ci_level": config.bootstrap_ci_level,
+        # Per-image correctness vectors (all-fields EM per receipt):
+        # consumed by stages/eval.py for bootstrap CI and McNemar's test.
+        "donut_per_image_correct": list(dm.per_image_correct),
+        "pipeline_per_image_correct": list(pm.assigner.per_image_correct),
     }
 
 
