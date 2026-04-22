@@ -71,7 +71,7 @@ def _detect_and_read(
         and getattr(first, "boxes", None) is not None
         and len(first.boxes) > 0
     )
-    boxes = first.boxes.xyxyn.cpu().tolist() if has_boxes else []
+    boxes = first.boxes.xyxyn.cpu().tolist() if has_boxes else []  # type: ignore[union-attr]
     boxes.sort(key=lambda b: b[1])
     texts: list[str] = []
     feats: list[torch.Tensor] = []
