@@ -13,16 +13,12 @@ import json
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
-from unittest.mock import patch
 
 import pytest
 
 from core.errors import TrainError
 from models._gen_config import _persist_generation_config
 
-
-# ---------------------------------------------------------------------------
-# Minimal stubs
 # ---------------------------------------------------------------------------
 
 class _FakeGC:
@@ -151,35 +147,41 @@ def test_persist_raises_train_error_when_disk_mismatch(tmp_path: Path) -> None:
 
 
 def test_persist_noop_helper_raises_train_error(tmp_path: Path) -> None:
-    """Omitting the re-pin (no-op helper) causes TrainError on assertion check."""
-    # Write a stale generation_config.json to disk (simulating what
-    # trainer.save_model would write if re-pin were missing)
-    (tmp_path / "generation_config.json").write_text(json.dumps({
-        "decoder_start_token_id": 0,  # stale
-        "eos_token_id": 2,
-        "pad_token_id": 1,
-    }))
+    """Regression: if re-pin is missing (gc writes stale IDs), TrainError is raised.
 
-    model = _make_model(str(tmp_path), stale_start_id=0)
+    Simulates the state after load_best_model_at_end if _persist_generation_config
+    were a no-op: the gc on disk has the stale decoder_start_token_id (0 instead of
+    the SROIE id), and the assertion guard fires on the next call that DOES run.
+    """
     start_id, eos_id, pad_id = 50265, 50266, 1
 
-    # Patch _persist_generation_config to no-op (regression simulation)
-    def _noop(
-        m: Any, d: str, s: int, e: int, p: int,  # noqa: E741
-    ) -> None:
-        pass
+    class _StaleGC(_FakeGC):
+        """gc.save_pretrained writes stale IDs, simulating no-re-pin path."""
 
-    with patch(
-        "models._gen_config._persist_generation_config", side_effect=_noop,
-    ):
-        # Call the no-op — then manually trigger the assertion check
-        _noop(model, str(tmp_path), start_id, eos_id, pad_id)
+        def save_pretrained(self, path: str) -> None:
+            gc_path = Path(path) / "generation_config.json"
+            gc_path.parent.mkdir(parents=True, exist_ok=True)
+            gc_path.write_text(json.dumps({
+                "decoder_start_token_id": 0,  # stale — not re-pinned
+                "eos_token_id": eos_id,
+                "pad_token_id": pad_id,
+                "bos_token_id": 0,
+                "forced_bos_token_id": 99,
+                "forced_eos_token_id": 99,
+            }))
 
-    # Now manually verify that the stale file on disk would trip the assertion
-    data = json.loads((tmp_path / "generation_config.json").read_text())
-    assert data.get("decoder_start_token_id") != start_id, (
-        "Test setup error: expected stale value on disk"
-    )
+    model = _make_model(str(tmp_path))
+    model.generation_config = _StaleGC(str(tmp_path), {
+        "decoder_start_token_id": 0,
+        "eos_token_id": eos_id,
+        "pad_token_id": pad_id,
+        "bos_token_id": 0,
+        "forced_bos_token_id": 99,
+        "forced_eos_token_id": 99,
+    })
+
+    with pytest.raises(TrainError, match="Bug-9 guard"):
+        _persist_generation_config(model, str(tmp_path), start_id, eos_id, pad_id)
 
 
 def test_persist_clears_forced_eos(tmp_path: Path) -> None:
