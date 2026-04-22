@@ -73,7 +73,7 @@ const resultEl = document.getElementById("result");
 const previewEl = document.getElementById("preview");
 const statusEl = document.getElementById("status");
 
-fetch("/health").then(r => r.json()).then(h => {
+fetch("health").then(r => r.json()).then(h => {
   if (!h.model_loaded) {
     statusEl.className = "banner";
     statusEl.textContent = "Model will load on first prediction.";
@@ -102,7 +102,7 @@ async function upload(file) {
   resultEl.innerHTML = `<div class="spin">Running DONUT…</div>`;
   const fd = new FormData(); fd.append("file", file);
   try {
-    const r = await fetch("/predict", { method: "POST", body: fd });
+    const r = await fetch("predict", { method: "POST", body: fd });
     const j = await r.json();
     if (!r.ok) throw new Error(j.detail || ("HTTP " + r.status));
     const order = ["company", "date", "address", "total"];

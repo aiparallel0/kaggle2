@@ -1,0 +1,18 @@
+[Unit]
+Description=kaggle2 DONUT demo (uvicorn)
+After=network.target
+
+[Service]
+Type=simple
+User=www-data
+WorkingDirectory=/var/www/kaggle2
+ExecStart=/usr/local/bin/uvicorn app.server:app \
+    --host 127.0.0.1 \
+    --port 8000 \
+    --root-path /teb2
+Restart=on-failure
+RestartSec=5
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target

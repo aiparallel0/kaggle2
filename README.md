@@ -73,6 +73,40 @@ Endpoints:
 | `POST /predict` | multipart `file` → `{"fields": {...}, "model_source": ...}`. |
 | `GET  /health`  | `{"model_loaded": bool, "model_source": "finetuned"\|"base", ...}`. |
 
+### Production deployment (nginx sub-path `/teb2/`)
+
+The demo is deployed at `https://portearchive.com/teb2/` behind nginx.
+`deploy/` contains the required configuration files.
+
+**1. Install the app**
+
+```bash
+sudo cp -r . /var/www/kaggle2
+cd /var/www/kaggle2
+sudo pip install -r requirements.txt
+```
+
+**2. Enable the systemd service** (keeps uvicorn alive across reboots)
+
+```bash
+sudo cp deploy/kaggle2.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now kaggle2
+sudo systemctl status kaggle2   # should show "active (running)"
+```
+
+**3. Add the nginx location block**
+
+```bash
+sudo cp deploy/nginx-teb2.conf /etc/nginx/snippets/kaggle2.conf
+# then inside your server { } block add:  include snippets/kaggle2.conf;
+sudo nginx -t && sudo systemctl reload nginx
+```
+
+The `deploy/kaggle2.service` binds uvicorn to `127.0.0.1:8000` with
+`--root-path /teb2`; `deploy/nginx-teb2.conf` proxies
+`location /teb2/ → http://127.0.0.1:8000/`.
+
 ## Quick start (vast.ai — three copy-pastes)
 
 1. Rent a **PyTorch** instance with **≥24 GB GPU** (RTX 4090, 3090, A6000,

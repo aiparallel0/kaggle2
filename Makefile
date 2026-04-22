@@ -33,4 +33,4 @@ clean:
 # Uses the fine-tuned checkpoint in results/donut if present, otherwise
 # falls back to config.base_model so the page works before training.
 serve:
-	python -m uvicorn app.server:app --host 0.0.0.0 --port 8000
+	python -m uvicorn app.server:app --host 0.0.0.0 --port 8000 --root-path /teb2
