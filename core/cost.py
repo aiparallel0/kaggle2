@@ -55,17 +55,45 @@ def _integrate_power(rows: list[dict[str, object]]) -> tuple[float, float]:
     return run_h, energy_wh / 1000.0  # Wh → kWh
 
 
+def _peak_vram_gb(rows: list[dict[str, object]]) -> float:
+    """Return peak GPU memory across the run in GB, or 0.0 if unavailable.
+
+    Reads ``gpu_mem_used_mb`` samples from the telemetry log written by
+    :mod:`core.telemetry` (populated from ``nvidia-smi``) and converts
+    the maximum to GB.  Drives the ``donut_peak_vram_gb`` /
+    ``pipeline_peak_vram_gb`` cells in Table II of the paper
+    (paper_corrections.md items 4, 5).
+    """
+    peaks: list[float] = []
+    for r in rows:
+        v = r.get("gpu_mem_used_mb")
+        if isinstance(v, int | float):
+            peaks.append(float(v))
+    if not peaks:
+        return 0.0
+    return round(max(peaks) / 1024.0, 2)
+
+
 def summarise(
     log_path: str,
     rate_usd_per_hr: float,
     intensity_kg_per_kwh: float = _DEFAULT_INTENSITY_KG_KWH,
 ) -> dict[str, float]:
-    """Reduce telemetry to run_hours/energy_kwh/cost_usd/co2_kg for Table II."""
+    """Reduce telemetry to run_hours/energy_kwh/cost_usd/co2_kg for Table II.
+
+    Also surfaces ``train_minutes`` and ``peak_vram_gb`` so the paper's
+    efficiency table (Table II) can render those cells directly from
+    telemetry rather than hard-coded prose (paper_corrections.md
+    items 4, 5).  All keys are merged into ``combined_metrics.json``
+    under the ``<stage>_`` prefix by ``report.combine.merge_cost_json``.
+    """
     rows = _read_log(log_path)
     run_h, energy_kwh = _integrate_power(rows)
     return {
         "run_hours": round(run_h, 4),
+        "train_minutes": round(run_h * 60.0, 2),
         "energy_kwh": round(energy_kwh, 6),
         "cost_usd": round(run_h * rate_usd_per_hr, 4),
         "co2_kg": round(energy_kwh * intensity_kg_per_kwh, 6),
+        "peak_vram_gb": _peak_vram_gb(rows),
     }

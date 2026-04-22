@@ -42,7 +42,7 @@ The central question this paper asks is: \emph{can a lightweight
 learned assigner close the F1 gap between an end-to-end model and a
 pipeline, and at what interpretability cost to each?}  We answer this
 question on the SROIE dataset with a fixed 500\,/\,63\,/\,63
-train\,/\,val\,/\,test split, no validation leakage, and three seeds.
+train\,/\,val\,/\,test split, no validation leakage, and a fixed seed (42).
 
 \medskip
 \noindent\textbf{Contributions.}
@@ -56,7 +56,7 @@ train\,/\,val\,/\,test split, no validation leakage, and three seeds.
   learned field queries (\texttt{company}, \texttt{date},
   \texttt{address}, \texttt{total}), 6-d handcrafted text priors,
   and a multi-instance negative-log pos-mass loss; published with
-  reproducible code, a fixed data split, and three seeds.\footnote{The repo's
+  reproducible code, a fixed data split, and seed 42.\footnote{The repo's
   architectural discipline --- 166-LOC cap, 2-in/1-out function
   contracts, flat module layout, and mypy --strict as the test suite
   --- is adapted from the C99 companion project

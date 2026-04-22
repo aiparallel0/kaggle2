@@ -59,7 +59,11 @@ def _has_multi_seed(metrics: dict[str, Any], base_key: str) -> bool:
 
 
 def _format_value(key: str, value: Any, metrics: dict[str, Any]) -> str:
-    if key == "lr" and isinstance(value, int | float):
+    # Learning-rate keys (``lr``, ``lr_encoder``, ``lr_decoder``) must
+    # render in scientific notation; otherwise small LRs like ``5e-5``
+    # round to ``0.0001`` under the generic ``{:.4f}`` formatter
+    # (paper_corrections.md item 9).
+    if (key == "lr" or key.startswith("lr_")) and isinstance(value, int | float):
         return _format_lr(float(value))
     if key == "seeds_used" and isinstance(value, list):
         ids = ", ".join(str(s) for s in value)

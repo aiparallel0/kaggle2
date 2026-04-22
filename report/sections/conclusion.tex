@@ -2,11 +2,11 @@
 
 At 500 SROIE receipts, DONUT and a YOLOv8\,+\,TrOCR\,+\,attention-assigner
 pipeline achieve statistically indistinguishable global token-F1.
-The pipeline's 50\,K-parameter cross-attention assigner closes
+The pipeline's $\approx$\VAR{assigner_params_k}\,K-parameter cross-attention assigner closes
 \VAR{assigner_delta} F1 absolute over rule-based assignment, produces
 human-readable per-field attention maps, and retrains in minutes ---
 properties DONUT cannot offer at this data scale.
-We catalogue ten silent F1-destroying implementation bugs and publish
+We catalogue thirteen silent F1-destroying implementation bugs and publish
 GPU telemetry alongside every reported number.
 
 \textbf{Future work.}

@@ -78,13 +78,14 @@ McNemar's exact test compares per-image correctness between DONUT and
 pipeline.
 
 \textbf{Reproducibility.}
-Seeds \{13, 17, 42\} with \texttt{core.seed.seed\_everything} and
-\texttt{cudnn.deterministic=True}; we report mean\,$\pm$\,std when
-more than one seed is available.
+Seed 42 with \texttt{core.seed.seed\_everything} and
+\texttt{cudnn.deterministic=True}.  Multi-seed runs
+(\{13,\,17,\,42\}) are left for future work; where more than one
+seed is available we report mean\,$\pm$\,std.
 
 \textbf{Hardware.}
-RTX\,4090 or A6000 on vast.ai (\VAR{gpu_model});
-CUDA~\VAR{cuda_version}.  All telemetry sampled at 5\,s intervals
+RTX\,4090 on vast.ai (24\,GB VRAM); CUDA 12.x.
+All telemetry sampled at 5\,s intervals
 via \texttt{nvidia-smi} and \texttt{psutil}, written to
 \texttt{results/telemetry\_\textless stage\textgreater .jsonl}.
 Following~\cite{strubell2019energy}, we report energy (kWh) and

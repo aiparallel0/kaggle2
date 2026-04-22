@@ -45,6 +45,11 @@ def build_combined(
         "rulebased_ned": pm.rulebased.global_ned,
         "rulebased_gold_f1": rb_gold.global_f1,
         "rulebased_gold_ned": rb_gold.global_ned,
+        # Rule-based exact-match rate — surfaced so Table I's rule-based
+        # EM cell resolves to a concrete number instead of the ``---``
+        # backstop (paper_corrections.md item 6; source of truth
+        # ``rulebased_gold_metrics.json`` → ``global_em``).
+        "rulebased_gold_em": rb_gold.global_em,
         "f1_gap": round(dm.global_f1 - pm.assigner.global_f1, 4),
         "assigner_delta": round(pm.assigner.global_f1 - pm.rulebased.global_f1, 4),
         "donut_f1_company": dm.per_field_f1.get("company", 0.0),
@@ -89,7 +94,10 @@ def merge_assigner_metrics(config: ExpConfig, metrics: dict[str, object]) -> Non
         return
     n_params = am.get("n_params")
     if isinstance(n_params, int | float):
-        metrics["assigner_params_k"] = round(float(n_params) / 1000.0, 1)
+        # Store as int so the paper renders ``400\,K`` rather than
+        # ``400.0000\,K`` (paper_corrections.md item 1 — the default
+        # float formatter in ``report.inject`` uses ``{:.4f}``).
+        metrics["assigner_params_k"] = int(round(float(n_params) / 1000.0))
     for src, dst in (
         ("best_epoch", "assigner_best_epoch"),
         ("stopped_at_epoch", "assigner_stopped_at"),
