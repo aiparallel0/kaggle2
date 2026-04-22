@@ -3,7 +3,8 @@
 
 \textbf{When to pick which architecture.}
 In the few-hundred-sample regime studied here, the pipeline wins on
-\emph{iteration speed and interpretability}: retraining the 50\,K-parameter
+\emph{iteration speed and interpretability}: retraining the
+$\approx$\VAR{assigner_params_k}\,K-parameter
 assigner takes minutes versus hours for DONUT, and every failure mode
 is visible in the attention map.  DONUT wins once data is plentiful.
 Our predecessor work~\cite{aiparallel0kaggle} --- which combined the

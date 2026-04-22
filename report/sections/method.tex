@@ -36,8 +36,8 @@ The \texttt{token2json} helper then parses the XML to a Python dict
 (after flattening any outer \texttt{sroie} wrapper key; Bug~12).
 
 \textbf{Differential learning rate.}
-We train the decoder at $\VAR{lr_decoder}$ and the encoder at
-$\VAR{lr_encoder}$ --- a 10$\times$ ratio.  The decoder's embedding
+We train the decoder at \VAR{lr_decoder} and the encoder at
+\VAR{lr_encoder} --- a 10$\times$ ratio.  The decoder's embedding
 matrix is \emph{resized} to accept ten newly-added special tokens
 (\texttt{<s\_sroie>}, per-field open/close tags); those rows have no
 meaningful pretrained initialisation and need fast adaptation, while
