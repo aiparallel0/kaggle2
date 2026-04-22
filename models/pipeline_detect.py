@@ -66,12 +66,14 @@ def _detect_and_read(
     # when empty; use an explicit length check so a detection-miss scan
     # falls through to the full-image fallback instead of iterating an
     # empty tensor-view and producing junk coordinates.
-    has_boxes = (
-        first is not None
-        and getattr(first, "boxes", None) is not None
-        and len(first.boxes) > 0
-    )
-    boxes = first.boxes.xyxyn.cpu().tolist() if has_boxes else []  # type: ignore[union-attr]
+    if (
+        first is None
+        or getattr(first, "boxes", None) is None
+        or len(first.boxes) == 0
+    ):
+        boxes: list[list[float]] = []
+    else:
+        boxes = first.boxes.xyxyn.cpu().tolist()
     boxes.sort(key=lambda b: b[1])
     texts: list[str] = []
     feats: list[torch.Tensor] = []
