@@ -152,7 +152,7 @@ def _ocr_noise_money(text: str, rng: random.Random) -> str:
             return tok.replace("0", "O", 1) if "0" in tok else tok.replace("1", "I", 1)
         # Trailing-zero drop that keeps at least one fractional digit
         # (``12.50`` → ``12.5`` but never ``12.00`` → ``12``, which
-        # would produce an un-parseable money token).  Fallback: the
+        # would produce an unparseable money token).  Fallback: the
         # unmodified original.
         if "." in tok:
             head, frac = tok.rsplit(".", 1)
