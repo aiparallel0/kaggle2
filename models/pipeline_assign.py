@@ -12,7 +12,14 @@ from __future__ import annotations
 import re
 from typing import TYPE_CHECKING
 
-from models.attention_assign import AttentionAssigner, text_priors
+from models.attention_assign import (
+    N_TEXT_PRIORS,
+    N_TEXT_PRIORS_V2,
+    AttentionAssigner,
+    text_priors,
+    text_priors_v2,
+)
+from models.attention_priors import _MONEY_RE as _PRIORS_MONEY_RE
 from models.rule_based import DATE_RE, MONEY_RE
 
 try:
@@ -35,6 +42,39 @@ _MULTI_LINE_FIELDS = frozenset({"address"})
 _MULTI_LINE_FRACTION = 0.5
 
 _FIELD_REGEX = {"date": DATE_RE, "total": MONEY_RE}
+
+
+def _build_priors(
+    texts: list[str], bboxes: list[list[float]], n_priors: int,
+) -> list[list[float]]:
+    """Build per-region text priors matching the assigner's expected dim.
+
+    For ``n_priors == N_TEXT_PRIORS_V2`` (9) this replicates the v2 signals
+    used in :mod:`models.assigner_data` at training time: ``y_norm`` (region
+    y-bottom divided by the max y-bottom on the receipt) and
+    ``is_last_money_line`` (region index of the last MONEY_RE hit). Using the
+    same regex (``attention_priors._MONEY_RE``) as training keeps the signal
+    distribution identical at train and inference time.
+
+    Raises ``ValueError`` for any unsupported ``n_priors`` so future prior
+    schemes fail loudly instead of silently feeding zero-padded features.
+    """
+    if n_priors == N_TEXT_PRIORS:
+        return [text_priors(t) for t in texts]
+    if n_priors == N_TEXT_PRIORS_V2:
+        money_idxs = [i for i, t in enumerate(texts) if _PRIORS_MONEY_RE.search(t)]
+        last_money = max(money_idxs) if money_idxs else -1
+        y_vals = [bb[3] for bb in bboxes]
+        max_y = max(y_vals) if y_vals else 1.0
+        denom = max(max_y, 1e-6)
+        return [
+            text_priors_v2(texts[i], bboxes[i][3] / denom, i == last_money)
+            for i in range(len(texts))
+        ]
+    raise ValueError(
+        f"Unsupported n_text_priors={n_priors}; "
+        f"expected {N_TEXT_PRIORS} or {N_TEXT_PRIORS_V2}.",
+    )
 
 
 def postprocess_value(name: str, value: str) -> str:
@@ -76,10 +116,11 @@ def _assign_learned_with_attn(
     """
     if not texts:
         return {}, None
-    tf = torch.cat(feats, dim=0).unsqueeze(0)
+    tf = torch.cat(feats, dim=0).unsqueeze(0).to(device)
     bf = torch.tensor(bboxes, dtype=torch.float32).unsqueeze(0).to(device)
+    prior_list = _build_priors(texts, bboxes, assigner.n_text_priors)
     priors = torch.tensor(
-        [text_priors(t) for t in texts], dtype=torch.float32,
+        prior_list, dtype=torch.float32,
     ).unsqueeze(0).to(device)
     _logits, attn_w = assigner(tf, bf, priors)
     attn_sample = attn_w[0].detach().cpu()  # (F, N), kept for the sampler

@@ -9,6 +9,8 @@ Role: re-exports AttentionAssigner and text_priors so callers need not
 """
 from __future__ import annotations
 
+import logging
+
 try:
     import torch
     from torch import Tensor as _Tensor  # noqa: F401  (silence ruff SIM105)
@@ -35,6 +37,8 @@ __all__ = [
     "text_priors",
     "text_priors_v2",
 ]
+
+_log = logging.getLogger("kaggle2")
 
 
 def _architecture_config(model: AttentionAssigner) -> dict[str, int]:
@@ -91,4 +95,15 @@ def _load_assigner(
         text_feat_dim=cfg.get("text_feat_dim", 768),
     )
     m.load_state_dict(sd)
+    if m.n_text_priors not in (N_TEXT_PRIORS, N_TEXT_PRIORS_V2):
+        raise ValueError(
+            f"Loaded assigner has unsupported n_text_priors={m.n_text_priors}; "
+            f"expected {N_TEXT_PRIORS} or {N_TEXT_PRIORS_V2}. "
+            f"Inference priors builder cannot match this checkpoint.",
+        )
+    _log.info(
+        "Loaded AttentionAssigner from %s (n_text_priors=%d, n_fields=%d, "
+        "hidden_dim=%d)",
+        path, m.n_text_priors, m.n_fields, m.hidden_dim,
+    )
     return m
