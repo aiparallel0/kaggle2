@@ -33,6 +33,33 @@ _MULTI_WS_RE = re.compile(r"\s+")
 _TRAILING_PUNCT_RE = re.compile(r"[\s,;:.\-_]+$")
 _LEADING_PUNCT_RE = re.compile(r"^[\s,;:.\-_]+")
 _NUM_DATE_RE = re.compile(r"^(\d{1,4})[/\-\.](\d{1,2})[/\-\.](\d{1,4})$")
+# Word-form date normalisation (``1 MAR 2018``, ``1-MAR-2018``,
+# ``1/MAR/2018``, ``MAR 1, 2018``, ``AUG 01 2019``) → canonical numeric
+# ``DD/MM/YYYY``.  GT on SROIE mixes word and numeric formats for the
+# same receipt date; keeping both as-is leaks a full token-F1 point per
+# mismatch.  The month alternations are kept in sync with
+# :data:`models.rule_regex._MONTHS` so the refiner extracts and the
+# normaliser canonicalises the same set.
+_MONTH_MAP: dict[str, str] = {
+    "jan": "01", "january": "01", "feb": "02", "february": "02",
+    "mar": "03", "march": "03", "apr": "04", "april": "04",
+    "may": "05", "jun": "06", "june": "06", "jul": "07", "july": "07",
+    "aug": "08", "august": "08",
+    "sep": "09", "sept": "09", "september": "09",
+    "oct": "10", "october": "10", "nov": "11", "november": "11",
+    "dec": "12", "december": "12",
+}
+_MONTH_ALT = (r"jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|"
+              r"jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|"
+              r"oct(?:ober)?|nov(?:ember)?|dec(?:ember)?")
+_WORD_DATE_DMY_RE = re.compile(
+    rf"^(\d{{1,2}})[\s/\-\.]+({_MONTH_ALT})[\s/\-\.]+(\d{{2,4}})$",
+    re.IGNORECASE,
+)
+_WORD_DATE_MDY_RE = re.compile(
+    rf"^({_MONTH_ALT})[\s/\-\.]+(\d{{1,2}})[,\s/\-\.]+(\d{{2,4}})$",
+    re.IGNORECASE,
+)
 # Internal punctuation to collapse to a single space inside company/address
 # strings before token-F1 so pred ``"ACME SDN. BHD."`` and GT ``"ACME SDN
 # BHD"`` reduce to the same whitespace-token set.  Numeric separators
@@ -54,26 +81,64 @@ def _strip_text_punct(s: str) -> str:
     return _TEXT_INTERNAL_PUNCT_RE.sub(" ", s)
 
 
-def normalize_date(value: str) -> str:
-    """Extract a DATE_RE match and canonicalise numeric separators to ``/``.
+def _expand_year(y: str) -> str:
+    """2-digit receipt years → 20XX; keep 4-digit as-is."""
+    if len(y) == 2:
+        return f"20{y}"
+    if len(y) == 3:  # extremely rare OCR 3-digit year; left-pad with 2
+        return f"2{y}"
+    return y
 
-    Applies :func:`repair_date_ocr` first so compact TrOCR outputs like
-    ``"12032026"`` become ``"12/03/2026"`` and common digit confusions
-    (``"l2/O3/2O26"`` → ``"12/03/2026"``) are recovered before the regex
-    extractor runs.  Numeric three-part dates (``15-03-2018``,
-    ``15.03.2018``) all become ``15/03/2018`` so pred/GT compare equal
-    under whitespace-token F1.  Word dates (``15 MAR 2018``) are kept
-    as-is.  Falls back to the raw value on no regex hit.
+
+def normalize_date(value: str) -> str:
+    """Canonicalise a date to ``DD/MM/YYYY`` regardless of input format.
+
+    Pipeline:
+
+    1. :func:`repair_date_ocr` first so compact TrOCR outputs
+       (``"12032026"``) and common digit confusions (``"l2/O3/2O26"``)
+       are recovered into a numeric form.
+    2. Extract the first date-shaped substring via
+       :data:`models.rule_regex._DATE_RE`.
+    3. Canonicalise four families:
+
+       * ``DD[-/.]MM[-/.]YYYY`` (numeric three-part) → ``DD/MM/YYYY``,
+         zero-padded, year expanded from 2-digit → ``20XX``.
+       * ``D MMM YYYY`` / ``D-MMM-YYYY`` / ``D/MMM/YYYY`` (word-DMY) →
+         ``DD/MM/YYYY``.
+       * ``MMM DD YYYY`` / ``MMM DD, YYYY`` (word-MDY, US-style) →
+         ``DD/MM/YYYY``.
+       * Anything unparseable → collapsed-whitespace raw.
+
+    The normaliser is applied SYMMETRICALLY to pred and GT in
+    :func:`models.pipeline_eval._nt`, so canonicalising word and
+    numeric into the same representation eliminates per-format token-F1
+    losses that were observed when GT used one convention and OCR
+    produced another (e.g. GT ``"1 MAR 2018"`` vs pred ``"01/03/2018"``).
     """
     repaired = repair_date_ocr(value)
     m = _DATE_RE.search(repaired)
     if m is None:
         return _collapse_ws(repaired)
-    raw = m.group(0)
-    num = _NUM_DATE_RE.match(raw.strip())
-    if num is None:
-        return _collapse_ws(raw)
-    return f"{num.group(1)}/{num.group(2)}/{num.group(3)}"
+    raw = m.group(0).strip()
+    # Numeric three-part (after repair, most dates land here).
+    num = _NUM_DATE_RE.match(raw)
+    if num is not None:
+        d, mo, y = num.group(1), num.group(2), num.group(3)
+        return f"{int(d):02d}/{int(mo):02d}/{_expand_year(y)}"
+    # Word-form DMY: ``15 MAR 2018`` / ``15-MAR-2018`` / ``15/MAR/2018``.
+    wdmy = _WORD_DATE_DMY_RE.match(raw)
+    if wdmy is not None:
+        d, mon, y = wdmy.group(1), wdmy.group(2).lower(), wdmy.group(3)
+        mo = _MONTH_MAP.get(mon, mon)
+        return f"{int(d):02d}/{mo}/{_expand_year(y)}"
+    # Word-form MDY: ``MAR 15 2018`` / ``MAR 15, 2018`` / ``MAR-15-2018``.
+    wmdy = _WORD_DATE_MDY_RE.match(raw)
+    if wmdy is not None:
+        mon, d, y = wmdy.group(1).lower(), wmdy.group(2), wmdy.group(3)
+        mo = _MONTH_MAP.get(mon, mon)
+        return f"{int(d):02d}/{mo}/{_expand_year(y)}"
+    return _collapse_ws(raw)
 
 
 def normalize_company(value: str) -> str:
