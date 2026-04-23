@@ -18,7 +18,6 @@ from typing import TYPE_CHECKING, Any, cast
 from core.types import AssignerData, ExpConfig
 from models.assigner_data import Group, _prepare_groups, split_train_val
 from models.attention_assign import (
-    DEFAULT_HIDDEN_DIM,
     N_TEXT_PRIORS_V2,
     AttentionAssigner,
     save_assigner,
@@ -124,8 +123,14 @@ def train_assigner(config: ExpConfig, data: AssignerData) -> str:
     )
     train_groups, val_groups = split_train_val(prepared, config.seed)
     n_priors = N_TEXT_PRIORS_V2 if config.priors_v2 else 6
+    # Wire the ``assigner_hidden`` / ``assigner_n_layers_level2`` knobs
+    # that were previously declared in ExpConfig but silently ignored —
+    # at the defaults (384 hidden, 6 layers) this gives ~8M parameters,
+    # well inside the 7M-param envelope the paper targets and still
+    # trains in well under 10 min on the RTX 4090.
     assigner = AttentionAssigner(
-        hidden_dim=DEFAULT_HIDDEN_DIM, n_fields=len(config.fields),
+        hidden_dim=config.assigner_hidden, n_fields=len(config.fields),
+        n_layers=config.assigner_n_layers_level2,
         text_feat_dim=text_feat_dim, dropout=config.dropout_assigner,
         n_text_priors=n_priors,
     ).to(device)

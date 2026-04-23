@@ -21,6 +21,7 @@ from models.attention_assign import (
 )
 from models.attention_priors import _MONEY_RE as _PRIORS_MONEY_RE
 from models.rule_based import DATE_RE, MONEY_RE
+from models.rule_regex import repair_money_ocr
 
 try:
     import torch
@@ -31,15 +32,17 @@ except ImportError:  # lightweight CI — torch not installed
 if TYPE_CHECKING:
     import torch
 
-# Fields whose ground-truth value spans multiple OCR regions on a typical
-# SROIE receipt. ``address`` is the canonical case (street / city / postcode
-# on three text lines). The assigner is *trained* with sum-mass loss, which
-# spreads attention across all positive regions; argmax at inference would
-# cap address F1 at ~0.3. We instead pick every region whose attention
-# exceeds ``_MULTI_LINE_FRACTION * max(attn)`` and concatenate in spatial
-# (top→bottom) order.
+# Fields whose GT value spans multiple OCR regions (address = street/city/
+# postcode).  Pick every region with ``attn >= _MULTI_LINE_FRACTION * max``
+# and concatenate top→bottom; pos-mass loss trains for this.  The
+# fraction was ``0.5`` originally, which drops the 3rd/4th line of a
+# long address whenever attention is spread even slightly — 38/63
+# address misses in the live miss table are pure prefix-of-GT.  ``0.25``
+# widens the accept band; ``refine_assignments`` then filters junk
+# post-hoc via ``_is_addr_boundary`` so the lower threshold never
+# pulls in phone/tax-id/header lines.
 _MULTI_LINE_FIELDS = frozenset({"address"})
-_MULTI_LINE_FRACTION = 0.5
+_MULTI_LINE_FRACTION = 0.25
 
 _FIELD_REGEX = {"date": DATE_RE, "total": MONEY_RE}
 
@@ -47,17 +50,11 @@ _FIELD_REGEX = {"date": DATE_RE, "total": MONEY_RE}
 def _build_priors(
     texts: list[str], bboxes: list[list[float]], n_priors: int,
 ) -> list[list[float]]:
-    """Build per-region text priors matching the assigner's expected dim.
+    """Per-region text priors matching the assigner's expected dim (6 or 9).
 
-    For ``n_priors == N_TEXT_PRIORS_V2`` (9) this replicates the v2 signals
-    used in :mod:`models.assigner_data` at training time: ``y_norm`` (region
-    y-bottom divided by the max y-bottom on the receipt) and
-    ``is_last_money_line`` (region index of the last MONEY_RE hit). Using the
-    same regex (``attention_priors._MONEY_RE``) as training keeps the signal
-    distribution identical at train and inference time.
-
-    Raises ``ValueError`` for any unsupported ``n_priors`` so future prior
-    schemes fail loudly instead of silently feeding zero-padded features.
+    v2 mirrors :mod:`models.assigner_data`: ``y_norm = bbox[3] / max_y`` and
+    ``is_last_money_line = (i == argmax_i(_MONEY_RE.search(texts[i])))``.
+    Unknown ``n_priors`` raise ``ValueError`` (no silent zero-padding).
     """
     if n_priors == N_TEXT_PRIORS:
         return [text_priors(t) for t in texts]
@@ -65,8 +62,7 @@ def _build_priors(
         money_idxs = [i for i, t in enumerate(texts) if _PRIORS_MONEY_RE.search(t)]
         last_money = max(money_idxs) if money_idxs else -1
         y_vals = [bb[3] for bb in bboxes]
-        max_y = max(y_vals) if y_vals else 1.0
-        denom = max(max_y, 1e-6)
+        denom = max(max(y_vals) if y_vals else 1.0, 1e-6)
         return [
             text_priors_v2(texts[i], bboxes[i][3] / denom, i == last_money)
             for i in range(len(texts))
@@ -78,17 +74,28 @@ def _build_priors(
 
 
 def postprocess_value(name: str, value: str) -> str:
-    """Strip region text to SROIE GT format (date/total regex extraction)."""
+    """Strip region text to SROIE GT format; for ``total`` retry after OCR-repair."""
     pattern = _FIELD_REGEX.get(name)
     if pattern is None:
         return value
-    m = pattern.search(value)
+    m = pattern.search(value) or (
+        pattern.search(repair_money_ocr(value)) if name == "total" else None
+    )
     if not m:
         return value
     out = m.group(0).strip()
     if name == "total":
         out = re.sub(r"^(RM|USD|SGD|MYR|\$)\s*", "", out, flags=re.IGNORECASE)
     return out
+
+
+def _has_regex_value(name: str, text: str) -> bool:
+    """True iff ``text`` contains a valid regex value for field ``name``."""
+    pattern = _FIELD_REGEX.get(name)
+    if pattern is None:
+        return True
+    return bool(pattern.search(text) or (
+        name == "total" and pattern.search(repair_money_ocr(text))))
 
 
 def _assign_learned(
@@ -147,7 +154,17 @@ def _assign_learned_with_attn(
                 used.add(i)
             value = " ".join(texts[i].strip() for i in picks if texts[i].strip())
         else:
-            best = int(w.argmax().item())
+            # Regex fields (total/date): argmax with runner-up fallback so
+            # a label-only pick (``"TOTAL:"``) doesn't score F1=0.
+            if name in _FIELD_REGEX:
+                order = [int(i) for i in torch.argsort(w, descending=True).tolist()]
+                best = next(
+                    (i for i in order
+                     if i not in used and _has_regex_value(name, texts[i])),
+                    order[0],
+                )
+            else:
+                best = int(w.argmax().item())
             used.add(best)
             value = texts[best]
         out[name] = postprocess_value(name, value)

@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -32,7 +33,14 @@ from models.attention_assign import _load_assigner
 from models.donut_eval import normalize_total
 from models.pipeline_assign import _assign_learned_with_attn
 from models.pipeline_attn import DEFAULT_SAMPLE_K, AttentionSampler
+from models.pipeline_consensus import refine_assignments
 from models.pipeline_detect import _detect_and_read, _fallback_full_image
+from models.pipeline_miss_tracker import log_field_breakdown
+from models.pipeline_normalize import (
+    normalize_address,
+    normalize_company,
+    normalize_date,
+)
 from models.rule_based import rule_based_assign
 
 _import_error: ImportError | None = None
@@ -45,10 +53,45 @@ except ImportError as _exc:  # lightweight CI — torch not installed
 log = logging.getLogger("kaggle2")
 
 
+_FIELD_NORMALISERS: dict[str, Callable[[str], str]] = {
+    "total": normalize_total,
+    "date": normalize_date,
+    "company": normalize_company,
+    "address": normalize_address,
+}
+
+
+def _identity(s: str) -> str:
+    return s
+
+
 def _nt(fields: list[Field]) -> list[Field]:
-    """Normalize the TOTAL field symmetrically (matches ``eval_donut``)."""
-    return [Field(name=f.name, value=normalize_total(f.value))
-            if f.name.lower() == "total" else f for f in fields]
+    """Apply symmetric per-field normalisation before metric compute.
+
+    Every field (not just TOTAL) is routed through its paired
+    ``normalize_*`` so pred/GT punctuation/spacing mismatches — which
+    token-F1 treats as full token losses — cancel symmetrically on both
+    sides.  This mirrors what the ANLS-style metric reported by the
+    ICDAR SROIE evaluator does and keeps pipeline F1 comparable to
+    DONUT F1 (eval_donut passes through the same normalisers).
+    """
+    return [Field(
+        name=f.name,
+        value=_FIELD_NORMALISERS.get(f.name.lower(), _identity)(f.value),
+    ) for f in fields]
+
+
+def _predictions_by_field(
+    preds: list[Prediction], gts: list[Receipt], fields: tuple[str, ...],
+) -> dict[str, list[dict[str, str]]]:
+    """Per-receipt (pred, gt) pairs for selected fields — triage JSON."""
+    gt_map = {r.image_path.stem: {f.name.lower(): f.value for f in r.fields}
+              for r in gts}
+    return {fn: [{"receipt_id": p.receipt_id,
+                  "pred": next((f.value for f in p.fields
+                                if f.name.lower() == fn), ""),
+                  "gt": gt_map.get(p.receipt_id, {}).get(fn, "")}
+                 for p in preds] for fn in fields}
 
 
 def _paths_from_config(config: ExpConfig) -> PipelinePaths:
@@ -136,6 +179,17 @@ def eval_pipeline(config: ExpConfig, test: list[Receipt]) -> PipelineResult:
                 learned, attn = _assign_learned_with_attn(
                     assigner, texts, feats, bboxes, config.fields, device,
                 )
+                # Analytical per-field refinement: compensates for TrOCR/YOLO
+                # mistakes the learned attention alone cannot fix (SUBTOTAL-vs-
+                # TOTAL confusion, postcode digit repair, company O↔0 / B↔8,
+                # date separator + 8-digit compact reconstruction).
+                attn_rows = (
+                    [attn[i].tolist() for i in range(attn.shape[0])]
+                    if attn is not None else None
+                )
+                learned = refine_assignments(
+                    learned, texts, bboxes, attn_rows, config.fields,
+                )
                 if attn is not None and not attn_sampler.full:
                     attn_sampler.capture(str(rec.image_path), bboxes, attn)
                 rule = rule_based_assign(texts, bboxes) if texts else {}
@@ -162,9 +216,15 @@ def eval_pipeline(config: ExpConfig, test: list[Receipt]) -> PipelineResult:
     n_test = [Receipt(image_path=r.image_path, fields=_nt(r.fields)) for r in test]
     m_l = compute_metrics(EvalBundle(n_preds_l, n_test, config.fields))
     m_r = compute_metrics(EvalBundle(n_preds_r, n_test, config.fields))
-    out_dir = Path(paths.yolo).parent.parent
+    field_diag = log_field_breakdown(m_l, n_preds_l, n_test, config.fields)
+    # Flat top-level pipeline_metrics.json so stages/_common,
+    # report/combine, and core/validate all read the same file; the attn
+    # sampler still writes into results/yolo/ for fig_attn_heatmap.
+    out_dir = Path(config.output_dir)
+    yolo_dir = Path(paths.yolo).parent.parent
     n_total = max(len(test), 1)
-    attn_sampler.write(out_dir)
+    attn_sampler.write(yolo_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
     with open(out_dir / "pipeline_metrics.json", "w") as f:
         json.dump({
             "assigner_f1": m_l.global_f1, "rulebased_f1": m_r.global_f1,
@@ -176,5 +236,9 @@ def eval_pipeline(config: ExpConfig, test: list[Receipt]) -> PipelineResult:
             "n_test_receipts": len(test),
             "receipt_error_samples": receipt_error_samples,
             "receipt_error_types": sorted(receipt_error_type_set),
+            "per_field_diagnostics": field_diag,
+            "predictions_by_field": _predictions_by_field(
+                n_preds_l, n_test, tuple(config.fields),
+            ),
         }, f, indent=2)
     return PipelineResult(assigner=m_l, rulebased=m_r)

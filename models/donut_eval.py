@@ -57,16 +57,31 @@ def normalize_total(s: str) -> str:
 def _apply_total_normalizer(preds: list[Prediction], gts: list[Receipt]) -> tuple[
     list[Prediction], list[Receipt],
 ]:
-    """Return normalized copies with ``total`` fields passed through
-    :func:`normalize_total` — preds and GT both, so the metric is symmetric."""
+    """Return normalized copies with every field routed through its paired
+    ``normalize_*`` — preds and GT both, so metric is symmetric and token-F1
+    stops penalising pred/GT pairs that differ only in SROIE-GT-inconsistent
+    punctuation (``SDN BHD.`` vs ``SDN BHD``, ``NO 12, BLOCK 3,`` vs
+    ``NO 12 BLOCK 3``).  Mirrors ``pipeline_eval._nt``; keeps DONUT and
+    pipeline F1 directly comparable."""
+    # Lazy import to keep the DONUT eval importable in the torch-free CI
+    # environment (pipeline_normalize pulls in rule_regex only).
+    from models.pipeline_normalize import (
+        normalize_address,
+        normalize_company,
+        normalize_date,
+    )
+    norms: dict[str, Any] = {
+        "total": normalize_total, "date": normalize_date,
+        "company": normalize_company, "address": normalize_address,
+    }
+
+    def _identity(s: str) -> str:
+        return s
+
     def _norm_fields(fs: list[Field]) -> list[Field]:
-        out: list[Field] = []
-        for fld in fs:
-            if fld.name.lower() == "total":
-                out.append(Field(name=fld.name, value=normalize_total(fld.value)))
-            else:
-                out.append(fld)
-        return out
+        return [Field(name=f.name,
+                      value=norms.get(f.name.lower(), _identity)(f.value))
+                for f in fs]
 
     n_preds = [Prediction(receipt_id=p.receipt_id, fields=_norm_fields(p.fields))
                for p in preds]

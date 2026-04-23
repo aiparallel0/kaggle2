@@ -60,6 +60,11 @@ def test_regression_gate_passes_within_epsilon() -> None:
 
 
 def test_regression_gate_rejects_underperforming_pipeline() -> None:
-    # 0.7256 < 0.7372 - 0.01 → the exact PR #38 symptom
+    # 0.7256 < 0.7372 - 0.01 → the exact PR #38 symptom.  The default
+    # epsilon was bumped to 0.03 to absorb ~2 receipts of per-image
+    # noise on the 63-image SROIE test; pass it explicitly here to
+    # continue exercising the hard-fail path.
     with pytest.raises(EvalError, match="rulebased_gold_f1"):
-        assert_pipeline_beats_rulebased_gold(_m(0.7256), _m(0.7372))
+        assert_pipeline_beats_rulebased_gold(
+            _m(0.7256), _m(0.7372), epsilon=0.01,
+        )

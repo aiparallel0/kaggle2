@@ -71,7 +71,7 @@ def _per_seed_metrics(
     log.info("DONUT F1=%.4f", dm.global_f1)
     pm = eval_pipeline(config, data.test)
     validate_f1(pm.assigner, "pipeline",
-                os.path.join(config.output_dir, "yolo", "pipeline_metrics.json"))
+                os.path.join(config.output_dir, "pipeline_metrics.json"))
     warn_below_expected(pm.assigner, config, "pipeline")
     warn_pipeline_diagnostics(config)
     log.info("Pipeline (assigner)  F1=%.4f", pm.assigner.global_f1)
@@ -136,7 +136,7 @@ def stage_eval(config: ExpConfig, seeds: list[int] | None = None) -> None:
         seed_everything(seed)
         pm = eval_pipeline(config, data.test)
         validate_f1(pm.assigner, "pipeline",
-                    os.path.join(config.output_dir, "yolo", "pipeline_metrics.json"))
+                    os.path.join(config.output_dir, "pipeline_metrics.json"))
         warn_below_expected(pm.assigner, config, "pipeline")
         warn_pipeline_diagnostics(config)
         log.info("Pipeline (assigner)  F1=%.4f", pm.assigner.global_f1)

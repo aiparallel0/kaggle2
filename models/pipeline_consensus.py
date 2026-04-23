@@ -1,0 +1,530 @@
+"""Per-field analytical propagation on top of the learned draft picks.
+
+Project: kaggle2 — End-to-End vs. Pipeline Receipt KIE on SROIE.
+Article: "End-to-End vs. Pipeline Receipt KIE: DONUT Against
+    YOLO+TrOCR+Attention on SROIE" (IEEE/ICDAR submission).
+Role: refines the learned AttentionAssigner's draft field→value dict
+    using the same four-step recipe that lifts ``date`` to F1≥0.95 —
+    regex/validator, value extractor, runner-up fallback, output
+    normaliser.  Per-field fixes: total (SUBTOTAL/``TOTAL:``) →
+    money-candidate scoring with ±1-line keyword context; address
+    → spatial propagation via rule ``_pick_address``; company →
+    validate-and-fallback to topmost non-junk; date → regex-first
+    with reading-order fallback.  No torch dep — runs on any
+    assigner checkpoint without retraining.
+"""
+from __future__ import annotations
+
+import re
+
+from models.pipeline_normalize import (
+    normalize_address,
+    normalize_company,
+    normalize_date,
+    normalize_total_value,
+)
+from models.rule_fields import (
+    _SUBTOTAL_KW_RE,
+    _is_short_junk,
+    _pick_address,
+    _pick_company,
+    extract_date,
+    extract_total,
+)
+from models.rule_regex import (
+    _ADDR_EXCLUDE,
+    _DATE_RE,
+    _HEADER_JUNK,
+    _MONEY_RE,
+    _TOTAL_NEGATIVE,
+    _TOTAL_STRONG,
+    _TOTAL_WEAK,
+    repair_money_ocr,
+)
+
+_CURRENCY_PREFIX_RE = re.compile(r"^(RM|USD|SGD|MYR|\$)\s*", re.IGNORECASE)
+# Address anchor: Malaysian-receipt address-line openers.  The topmost
+# region matching this pattern is the first line of the postal address,
+# regardless of where the assigner's attention fell.  Coverage extended
+# beyond the street openers (``NO.``/``LOT``/``JALAN``) to include mall /
+# floor / place tokens (``PARADIGM``, ``AEON``, ``CITTA``, ``SQUARE``,
+# ``CENTRE``/``CENTER``, ``TINGKAT``, ``MILES``, ``BUILDING``, ``LORONG``,
+# ``LRG``, ``PERSIARAN``, ``PUSAT``, ``DESA``, ``UTAMA``) and the 5-digit
+# Malaysian postcode.  The postcode alternative makes the anchor search
+# terminate on the tail line for receipts whose only address-like cue is
+# ``43200 CHERAS, SELANGOR``-style postcode + city/state, and lets the
+# backward-extend below still recover the street/floor prefix.
+_ADDR_ANCHOR = re.compile(
+    r"\b(NO\.?|LOT|JALAN|JLN|TAMAN|TMN|BANDAR|BDR|PLAZA|"
+    r"GROUND|GRD|FLR|FLOOR|KAWASAN|SEKSYEN|BLOCK|BLK|MALL|"
+    r"LORONG|LRG|PERSIARAN|PUSAT|DESA|PARADIGM|AEON|CITTA|"
+    r"SQUARE|CENTRE|CENTER|TINGKAT|MILES|BUILDING|BLDG|UTAMA)\b"
+    r"|\b\d{5}\b",
+    re.IGNORECASE,
+)
+# Malaysian postcode — definitive signal of a complete postal address.
+_POSTCODE_RE = re.compile(r"\b\d{5}\b")
+# City/state tokens that confirm a line is still inside the address span
+# even when it lacks a street keyword (e.g. ``SETIA ALAM`` continuation,
+# ``SELANGOR`` tail).  Used both for same-span extension and for picking
+# between (learned, rule, span) in :func:`_refine_address`.
+_ADDR_CONTINUATION = re.compile(
+    r"\b(SELANGOR|JOHOR|KEDAH|KELANTAN|MELAKA|MALACCA|"
+    r"PAHANG|PERAK|PERLIS|PENANG|PULAU\s+PINANG|SABAH|SARAWAK|"
+    r"TERENGGANU|KUALA\s+LUMPUR|KL|PUTRAJAYA|LABUAN|MALAYSIA|"
+    r"DARUL\s+EHSAN|DARUL\s+KHUSUS|DARUL\s+MAKMUR|DARUL\s+NAIM|"
+    r"D\.E\.?|N\.S\.?|"
+    r"CHERAS|PUCHONG|SUBANG|KLANG|SHAH\s+ALAM|KAJANG|KEPONG|"
+    r"PETALING|SKUDAI|JAYA|BRINCHANG|BALAKONG|DENGKIL|SERDANG|"
+    r"SETIA\s+ALAM|SETAPAK|BATANG\s+BERJUNTAI|AMPANG|GOMBAK|"
+    r"JOHOR\s+BAHRU|SEREMBAN|IPOH|KUANTAN|MASAI|BAHRU)\b",
+    re.IGNORECASE,
+)
+# Currency-prefix cue on the SAME line as the money value — a weak positive
+# because TOTAL lines are the ones most often printed with ``RM``/``MYR``.
+_CURRENCY_CUE_RE = re.compile(r"\b(?:RM|MYR|\$)\b", re.IGNORECASE)
+
+# How much better (in _score_money units) a candidate must be than the
+# learned argmax before ``_refine_total`` overrides a valid learned
+# money value.  Calibrated from the live miss table: a SUBTOTAL line
+# with learned attention scores ~1 (attn argmax) while the real TOTAL
+# line scores ~4 (``_TOTAL_STRONG`` match) — a 2-point margin preserves
+# that correction while leaving weak-evidence cases to the assigner.
+_TOTAL_OVERRIDE_MARGIN = 2.0
+
+
+# Keywords that mark a transition OUT of the address block into invoice
+# metadata, cashier info, or post-address footer junk.  Observed in the
+# miss table as over-extension cases: the learned-pick + span merge ran
+# past the postcode line into ``INV NO 1053110 CASHIER THANDAR`` /
+# ``SIMPLIFIED TAX INVOICE`` / ``BILL TO SUCI ALAM JAYA TRANSPORT`` etc.
+# Matching is word-boundary-anchored so a city like ``TABLETON`` could
+# never match ``TABLE``.  Used only by :func:`_is_addr_boundary`.
+_ADDR_TERMINATOR = re.compile(
+    r"\b(INVOICE(?:\s+NO)?|INV\s+NO|TAX\s+INVOICE|"
+    r"CASH(?:IER|\s+SALES?|\s+RECEIPT)|"
+    r"BILL\s+(?:TO|NO)|"
+    r"RECEIPT\s+NO|TABLE\s+NO?\b|TABLE\s+\d|"
+    r"COUNTER|GUEST\s+CHECK|ORDER\s+NO|DOC\s*#|"
+    r"SIMPLIFIED(?:\s+TAX)?|SHOPPING\s+HOURS|"
+    r"ADJUSTMENT\s+NOTE|PAY\s+BY|CARRY\s+OUT|"
+    r"WEBSITE|\bBRN\b|SITE\s+\d|POSTED|RETAIL\b|TAKEAWAY|"
+    r"OWNED\s+BY|SUN-THU|MON-SUN|ROC\s+NO|DEPT\s+(?:DOC|SO))\b",
+    re.IGNORECASE,
+)
+# Company-identifier tokens — any line carrying one of these is a
+# company header, never an address line.  Kept strictly to tokens that
+# *only* appear in company names so we never mistakenly boundary-stop
+# on a legitimate address like ``LOT 1851-A`` (where a naive trailing
+# reg-no pattern ``\d+-[A-Z]`` would match).
+_COMPANY_TOKEN = re.compile(
+    r"\b(SDN\.?\s*BHD\.?|BERHAD|ENTERPRISE|HOLDINGS|"
+    r"TRADING|MARKETING|CORPORATION|CORP\.?|"
+    r"CO\.?\s*M\s*BHD|CO\.\s*LTD\.?|LIMITED|INC\.?)\b",
+    re.IGNORECASE,
+)
+# Leading company-registration / tax-ID tokens that OCR sometimes fuses
+# onto the learned address pick (miss #240: ``"CO. NO. 37365-A LOT F15,
+# GIANT BANDAR PUTERI"``).  Matches only at the start of the string so
+# we never strip a legitimate address containing ``NO.`` / ``LOT``.
+# Also used by :func:`_address_span` to reject such lines as anchor
+# candidates — the shared ``_ADDR_EXCLUDE`` doesn't tolerate a period
+# between ``CO`` and ``NO``, so we need a localised guard here.
+_ADDR_LEADING_JUNK_RE = re.compile(
+    r"^\s*(?:CO\.?\s*NO\.?\s*[\w\-]+"
+    r"|COMPANY\s*NO\.?\s*[\w\-]+"
+    r"|REG(?:ISTRATION)?\s*NO\.?\s*[\w\-]+"
+    r"|GST(?:\s*NO\.?)?\s*[\w\-]+"
+    r"|SST(?:\s*NO\.?)?\s*[\w\-]+"
+    r"|TIN(?:\s*NO\.?)?\s*[\w\-]+)[,\s:;\-]*",
+    re.IGNORECASE,
+)
+
+
+def _strip_currency(s: str) -> str:
+    return _CURRENCY_PREFIX_RE.sub("", s).strip()
+
+
+def _strip_leading_junk(value: str) -> str:
+    """Drop ``CO. NO. 37365-A`` / ``GST NO. 123...`` leading fragments.
+
+    Never returns the empty string — if the regex would consume the
+    entire value (the input was *only* junk), we keep the original so
+    the candidate scorer can still rank it (it will simply lose to the
+    span).
+    """
+    prev = value
+    cur = _ADDR_LEADING_JUNK_RE.sub("", prev).strip()
+    # Re-run once in case two junk tokens were concatenated.
+    if cur != prev:
+        cur = _ADDR_LEADING_JUNK_RE.sub("", cur).strip()
+    return cur or value
+
+
+def _attn_rank(row: list[float]) -> dict[int, int]:
+    """``{region_idx: rank}`` with rank 0 = highest attention."""
+    order = sorted(range(len(row)), key=lambda i: -row[i])
+    return {i: r for r, i in enumerate(order)}
+
+
+def _score_money(
+    i: int, texts: list[str], rank: dict[int, int], money_idxs: list[int],
+) -> float:
+    """Higher = more likely the real TOTAL line.
+
+    Signals (tuned to the kaggle2 SROIE miss table where ~1/3 of losses
+    are SUBTOTAL/TAX/CASH/CHANGE picked instead of GRAND TOTAL):
+
+    - ±1-line keyword window: ``_TOTAL_STRONG`` (+4), ``_TOTAL_WEAK``
+      w/o SUBTOTAL (+2.5), ``_SUBTOTAL_KW_RE`` (-4), ``_TOTAL_NEGATIVE``
+      (-2).  Asymmetric weights prevent a ``SUBTOTAL: RM 38`` line that
+      is also near ``TOTAL:`` (two lines down) from winning.
+    - ``RM``/``MYR`` cue on the SAME line as the money value (+0.3) —
+      grand totals are the ones printed with a currency symbol.
+    - Positional: the **last** money line gets +1.5, the 2nd-to-last
+      gets +0.5 (this is the strongest single signal on SROIE).
+    - Attention rank tie-break: argmax +1.0, top-3 +0.3.
+
+    Note the previous version multiplied ``bboxes[i][1]`` (raw pixel y)
+    by 0.5 which produced dominating 500+ scores on tall receipts; the
+    pixel-y term is removed and replaced by the relative money-line
+    position above.
+    """
+    nbr = " ".join(texts[max(0, i - 1): i + 2])
+    same_line = texts[i] if i < len(texts) else ""
+    s = 0.0
+    if _TOTAL_STRONG.search(nbr):
+        s += 4.0
+    elif _TOTAL_WEAK.search(nbr) and not _SUBTOTAL_KW_RE.search(nbr):
+        s += 2.5
+    if _SUBTOTAL_KW_RE.search(nbr):
+        s -= 4.0
+    if _TOTAL_NEGATIVE.search(nbr):
+        s -= 2.0
+    if _CURRENCY_CUE_RE.search(same_line):
+        s += 0.3
+    if money_idxs:
+        if i == money_idxs[-1]:
+            s += 1.5
+        elif len(money_idxs) >= 2 and i == money_idxs[-2]:
+            s += 0.5
+    r = rank.get(i, len(rank))
+    if r == 0:
+        s += 1.0
+    elif r <= 2:
+        s += 0.3
+    return s
+
+
+def _refine_total(
+    learned: str, texts: list[str], bboxes: list[list[float]],
+    attn_row: list[float] | None,
+) -> str:
+    """Score every money-bearing region; override learned only on strong
+    positive margin.
+
+    *Number fields should be near-100%* — unlike address, a total is a
+    single value with a tight regex.  But the learned assigner is
+    trained on SROIE targets and is usually right; overriding it on
+    weak evidence regresses total-F1 (a 0.619 → 0.540 drop was observed
+    when any ``best_score > 0`` triggered an override).  The
+    conservative rule below only overrides the learned pick when:
+
+    * the learned value is **not** a well-formed money string, **or**
+    * the best-scoring candidate beats the learned one by a margin of
+      at least :data:`_TOTAL_OVERRIDE_MARGIN` — i.e. there is positive
+      keyword evidence for the new pick that the learned line lacks.
+
+    The margin-based rule naturally keeps the learned pick on receipts
+    where the scorer finds no decisive signal, while still correcting
+    the classic SUBTOTAL-vs-GRAND-TOTAL confusion when ``_TOTAL_STRONG``
+    matches only the right line.
+    """
+    repaired = [repair_money_ocr(t) for t in texts]
+    money_idxs = [i for i, t in enumerate(repaired) if _MONEY_RE.search(t)]
+    if not money_idxs:
+        return learned
+    rank = _attn_rank(attn_row) if attn_row else {}
+    scored: list[tuple[float, int, str]] = sorted(
+        ((_score_money(i, repaired, rank, money_idxs), i,
+          _MONEY_RE.search(repaired[i]).group(0))  # type: ignore[union-attr]
+         for i in money_idxs),
+        reverse=True,
+    )
+    best_score, _, best_val = scored[0]
+    learned_clean = _strip_currency(learned)
+    if not _MONEY_RE.fullmatch(learned_clean):
+        # Learned value isn't a usable money string; take the scored
+        # pick unconditionally (fall back to learned if no positive
+        # evidence either).
+        return _strip_currency(best_val) if best_score > 0 else learned_clean
+    # Learned value is a well-formed money string — protect it unless a
+    # competing candidate is decisively better.
+    learned_score = next(
+        (sc for sc, _, v in scored if v.strip() == learned_clean), float("-inf"),
+    )
+    if best_score - learned_score >= _TOTAL_OVERRIDE_MARGIN and best_score > 0:
+        return _strip_currency(best_val)
+    return learned_clean
+
+
+def _refine_date(learned: str, texts: list[str]) -> str:
+    """Keep learned pick if DATE_RE matches; otherwise first regex hit."""
+    m = _DATE_RE.search(learned)
+    if m is not None:
+        return m.group(0)
+    picked = extract_date(texts)
+    return picked[1] if picked is not None else learned
+
+
+def _refine_company(
+    learned: str, texts: list[str], bboxes: list[list[float]],
+) -> str:
+    """Validate-and-fallback: HEADER_JUNK / phone / too-short → topmost non-junk."""
+    t = learned.strip()
+    valid = (not _is_short_junk(t)
+             and _HEADER_JUNK.match(t) is None
+             and _ADDR_EXCLUDE.search(t) is None)
+    if valid:
+        return t
+    picked = _pick_company(texts, bboxes, used=set())
+    return picked[1] if picked is not None else learned
+
+
+def _y_of(value: str, texts: list[str], bboxes: list[list[float]]) -> float:
+    key = value.strip().lower()
+    if not key:
+        return 0.0
+    for i, t in enumerate(texts):
+        if key in t.lower():
+            return bboxes[i][1] if i < len(bboxes) else 0.0
+    return 0.0
+
+
+def _is_addr_boundary(t: str) -> bool:
+    """Address span terminator: money / date / phone-or-tax-id / header junk /
+    invoice-cashier transition / company header.
+
+    Postcode-bearing lines never count as boundary — a 5-digit run like
+    ``40000 SHAH ALAM`` is the canonical *end* of a Malaysian address and
+    must be included in the span, not used to stop it.
+
+    Two additional boundary classes were added after observing the
+    over-extension pattern in the live miss table (pred runs past the
+    postcode line into ``INV NO …`` / ``CASHIER …``, or backward-extends
+    through a ``MR D.I.Y M SDN BHD`` company header):
+
+    * :data:`_ADDR_TERMINATOR` — invoice/cashier/footer keywords.
+    * :data:`_COMPANY_TOKEN`   — hard company markers (``SDN BHD``,
+                                 ``BERHAD``, ``ENTERPRISE``, …).
+    """
+    if _POSTCODE_RE.search(t):
+        return False
+    return bool(_MONEY_RE.search(t) or _DATE_RE.search(t)
+                or _ADDR_EXCLUDE.search(t) or _HEADER_JUNK.match(t)
+                or _ADDR_TERMINATOR.search(t) or _COMPANY_TOKEN.search(t))
+
+
+def _line_height(bboxes: list[list[float]], i: int) -> float:
+    if i >= len(bboxes) or len(bboxes[i]) < 4:
+        return 0.0
+    return max(bboxes[i][3] - bboxes[i][1], 0.0)
+
+
+def _same_line(
+    bboxes: list[list[float]], a: int, b: int, frac: float = 0.5,
+) -> bool:
+    """True when two regions' y-intervals overlap by >= ``frac`` × min height.
+
+    SROIE receipts are frequently OCR'd into multi-column regions on a
+    single visual line (brand + address, or a long address split across
+    two bboxes at the same y).  Treating those as one line during span
+    assembly keeps natural reading order and avoids the ``"JLN JEJAKA,
+    TAMAN MALURI"`` / ``"3RD FLR, AEON..."`` split we see in the miss
+    table.
+    """
+    if (a >= len(bboxes) or b >= len(bboxes)
+            or len(bboxes[a]) < 4 or len(bboxes[b]) < 4):
+        return False
+    y1a, y2a = bboxes[a][1], bboxes[a][3]
+    y1b, y2b = bboxes[b][1], bboxes[b][3]
+    overlap = max(0.0, min(y2a, y2b) - max(y1a, y1b))
+    min_h = max(min(y2a - y1a, y2b - y1b), 1e-6)
+    return overlap / min_h >= frac
+
+
+def _address_span(
+    texts: list[str], bboxes: list[list[float]],
+) -> str:
+    """Greedy spatial span anchored on the topmost address-keyword region.
+
+    Fixes the dominant failure mode in the miss table: the assigner
+    picks only line 1-2 of a 4-5-line address (40+ of 63 misses are pure
+    prefix-of-GT).  Strategy:
+
+    1. **Forward anchor** — find the topmost y-ordered region matching
+       :data:`_ADDR_ANCHOR` that is not a boundary (money/date/phone/
+       header junk).  The anchor set now includes the Malaysian 5-digit
+       postcode so tail-only OCR (``43200 CHERAS, SELANGOR``) still
+       anchors correctly; the backward-extend below then recovers the
+       street/floor prefix.
+    2. **Backward extend** — walk up one line from the anchor and
+       include it if it is a plausible address prefix (all-alpha mall
+       name like ``PARADIGM MALL`` or ``DOMINO'S PIZZA``, floor marker,
+       or short upper-case token) and is not a boundary, date, or
+       phone line.
+    3. **Forward walk** — append every subsequent non-junk, non-boundary
+       line until hitting a boundary.  ``_is_addr_boundary`` treats
+       postcode-bearing lines as in-span, so the tail is never chopped.
+    4. **Same-line sibling merge** — regions whose y-intervals overlap
+       by ≥50% of the smaller line height get joined with a single
+       space so multi-column layouts read linearly.
+
+    Returns the concatenated text; empty string when no anchor is found
+    (caller falls back to the learned pick).
+    """
+    n = len(texts)
+    if n == 0:
+        return ""
+    y_order = sorted(range(n), key=lambda j: bboxes[j][1] if j < len(bboxes) else 0.0)
+    # Find topmost anchor in y-order that isn't a header/money/date/phone
+    # and isn't a company-registration/tax-ID line (``CO. NO. 37365-A``,
+    # ``GST NO. 123...``).  The shared ``_ADDR_EXCLUDE`` doesn't tolerate
+    # a period between ``CO`` and ``NO``, so we additionally reject any
+    # line that starts with :data:`_ADDR_LEADING_JUNK_RE` here.
+    anchor_pos: int | None = None
+    for pos, j in enumerate(y_order):
+        t = texts[j].strip()
+        if not t or _is_short_junk(t) or _is_addr_boundary(t):
+            continue
+        if _ADDR_LEADING_JUNK_RE.match(t):
+            continue
+        if _ADDR_ANCHOR.search(t):
+            anchor_pos = pos
+            break
+    if anchor_pos is None:
+        return ""
+    # Backward extend: include up to one preceding line if it is an
+    # unambiguous address prefix (floor/mall/brand-venue keyword) and is
+    # neither a company header nor a terminator.  The earlier catch-all
+    # that accepted any ``short upper-case`` label was too permissive —
+    # it dragged ``MR D.I.Y M SDN BHD`` and ``TANCHMAS BUKCENTRE P SDN
+    # BHD`` into the span.  A plain ``_COMPANY_TOKEN`` check plus a
+    # keyword requirement tightens precision without losing ``DOMINO'S
+    # PIZZA``, ``PARADIGM MALL``, ``GROUND FLOOR`` -style prefixes.
+    start_pos = anchor_pos
+    if anchor_pos > 0:
+        k = y_order[anchor_pos - 1]
+        prev = texts[k].strip()
+        if (prev
+                and not _is_short_junk(prev)
+                and not _is_addr_boundary(prev)
+                and not _ADDR_LEADING_JUNK_RE.match(prev)
+                and not _DATE_RE.search(prev)
+                and not _MONEY_RE.search(prev)
+                and not _COMPANY_TOKEN.search(prev)
+                and not _ADDR_TERMINATOR.search(prev)
+                # Plausible address prefix: carries an address anchor,
+                # a Malaysian state/city continuation token, or is a
+                # mall/floor/building keyword line.
+                and (_ADDR_ANCHOR.search(prev)
+                     or _ADDR_CONTINUATION.search(prev))):
+            start_pos = anchor_pos - 1
+    picked: list[int] = [y_order[start_pos]]
+    for j in y_order[start_pos + 1:]:
+        t = texts[j].strip()
+        if not t or _is_short_junk(t):
+            continue
+        if _is_addr_boundary(t):
+            break
+        picked.append(j)
+    # Same-line sibling merge: regions on the same visual line get a
+    # single space separator; line breaks also get a single space (the
+    # SROIE GT concatenates multi-line addresses without newlines).
+    out: list[str] = []
+    for idx, j in enumerate(picked):
+        tok = texts[j].strip()
+        if not tok:
+            continue
+        if idx > 0 and _same_line(bboxes, picked[idx - 1], j):
+            out[-1] = out[-1] + " " + tok
+        else:
+            out.append(tok)
+    return " ".join(out)
+
+
+# Leading company-registration / tax-ID junk stripping lives above
+# (``_ADDR_LEADING_JUNK_RE`` / :func:`_strip_leading_junk`) so both the
+# span builder and the refiner use the same definition.
+
+
+def _refine_address(
+    learned: str, texts: list[str], bboxes: list[list[float]],
+    field_values: dict[str, str],
+) -> str:
+    """Prefer postcode-bearing, junk-free, longest candidate.
+
+    The miss table shows ~60% of address losses are pure prefix-of-GT
+    (under-picked).  A complete Malaysian postal address always ends in
+    a 5-digit postcode + city/state, so *having a postcode* is the
+    cleanest single-bit signal of completeness and dominates the
+    selection.  Scoring key, higher-wins, evaluated per candidate:
+
+    1. ``has_postcode``      — 5-digit run present.
+    2. ``not addr_junk``     — no tax-ID / phone / reg-no tokens.
+    3. ``has_continuation``  — Malaysian state / city token present,
+                               a secondary completeness cue.
+    4. ``length``            — token-F1 tie-break.
+
+    Candidates considered: the learned pick (with ``CO. NO. ...`` /
+    ``GST NO. ...`` leading junk stripped), the rule-based
+    ``_pick_address``, and the greedy ``_address_span``.
+    """
+    learned_clean = _strip_leading_junk(learned)
+    span = _strip_leading_junk(_address_span(texts, bboxes))
+    total_pick = extract_total(texts, bboxes)
+    date_pick = extract_date(texts)
+    rule_addr = _strip_leading_junk(_pick_address(
+        texts, bboxes, used=set(),
+        company_y=_y_of(field_values.get("company", ""), texts, bboxes),
+        total_y=(bboxes[total_pick[0]][1]
+                 if total_pick and total_pick[0] < len(bboxes) else 0.0),
+        date_y=(bboxes[date_pick[0]][1]
+                if date_pick and date_pick[0] < len(bboxes) else 0.0),
+    ))
+
+    def _score(s: str) -> tuple[int, int, int, int]:
+        st = s.strip()
+        if not st:
+            return (0, 0, 0, 0)
+        has_postcode = 1 if _POSTCODE_RE.search(st) else 0
+        not_junk = 0 if _ADDR_EXCLUDE.search(st) else 1
+        has_cont = 1 if _ADDR_CONTINUATION.search(st) else 0
+        return (has_postcode, not_junk, has_cont, len(st))
+
+    return max((learned_clean, rule_addr, span), key=_score)
+
+
+def refine_assignments(
+    draft: dict[str, str], texts: list[str], bboxes: list[list[float]],
+    attn: list[list[float]] | None, fields: list[str],
+) -> dict[str, str]:
+    """Apply per-field refiner + output normaliser to the learned draft."""
+    out = dict(draft)
+    by_idx = {f.lower(): i for i, f in enumerate(fields)}
+    if "date" in out:
+        out["date"] = normalize_date(_refine_date(out["date"], texts))
+    if "total" in out:
+        row = attn[by_idx["total"]] if attn and "total" in by_idx else None
+        out["total"] = normalize_total_value(
+            _refine_total(out["total"], texts, bboxes, row),
+        )
+    if "company" in out:
+        out["company"] = normalize_company(
+            _refine_company(out["company"], texts, bboxes),
+        )
+    if "address" in out:
+        out["address"] = normalize_address(
+            _refine_address(out["address"], texts, bboxes, out),
+        )
+    return out

@@ -29,6 +29,32 @@ DATE_RE = re.compile(f"(?:{_NUM_DATE})|(?:{_WORD_DATE})", re.IGNORECASE)
 # Money — matches ``12.30``, ``$12.30``, ``RM12.30``, ``1,234.56``.
 MONEY_RE = re.compile(r"(?:RM|USD|SGD|MYR|\$)?\s*\d{1,3}(?:,\d{3})*\.\d{2}\b", re.IGNORECASE)
 
+# OCR-confused digit spans: a numeric-looking run where TrOCR may have
+# substituted ``O``/``o`` for ``0``, ``l``/``I`` for ``1``, or the European
+# ``,`` for the decimal ``.``.  The span must start and end with a digit or
+# an OCR-confused digit so we don't pick up pure-letter tokens like ``IO``.
+_MONEY_OCR_SPAN = re.compile(r"[\dOolI][\dOolI.,]*[\dOolI]")
+
+
+def repair_money_ocr(s: str) -> str:
+    """Fix common TrOCR money OCR errors inside digit-only spans.
+
+    Substitutes ``O``/``o``→``0`` and ``l``/``I``→``1`` inside spans that
+    already look numeric, and converts a lone ``,`` decimal separator to
+    ``.`` (European → US format) so ``MONEY_RE`` can match ``43,50`` or
+    ``43.5O`` the same way it matches ``43.50``.  Non-numeric tokens are
+    left untouched because the span anchors require a digit-like boundary.
+    """
+    def _fix(m: re.Match[str]) -> str:
+        t = m.group(0).translate(str.maketrans("Ool", "001")).replace("I", "1")
+        # The ``,``→``.`` swap handles the European-format case
+        # (single comma, no existing dot) so ``43,50`` parses as ``43.50``.
+        if t.count(",") == 1 and "." not in t:
+            t = t.replace(",", ".")
+        return t
+    return _MONEY_OCR_SPAN.sub(_fix, s)
+
+
 # Backwards-compatible aliases.
 _DATE_RE = DATE_RE
 _MONEY_RE = MONEY_RE
