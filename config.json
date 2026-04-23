@@ -28,8 +28,8 @@
   "dropout_assigner": 0.2,
   "label_smoothing": 0.1,
   "precision": "bf16",
-  "epochs_assigner": 25,
-  "assigner_patience": 7,
+  "epochs_assigner": 60,
+  "assigner_patience": 10,
   "assigner_min_delta": 0.005,
   "priors_v2": true,
   "patience": 10,
@@ -59,5 +59,8 @@
   "paper_output": "./report/paper_filled.tex",
   "yolo_conf": 0.25,
   "trocr_max_new_tokens": 64,
-  "max_regions_per_image": 96
+  "max_regions_per_image": 96,
+  "address_accept_fraction": 0.5,
+  "regex_router": true,
+  "text_pool_learned": false
 }

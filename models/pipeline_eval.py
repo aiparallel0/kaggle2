@@ -158,7 +158,11 @@ def eval_pipeline(config: ExpConfig, test: list[Receipt]) -> PipelineResult:
                                            str(test[0].image_path), config, yolo_img, device)
             if not t0:
                 t0, f0, b0 = _fallback_full_image(trocr_proc, trocr_model, img0, config, device)
-            _assign_learned_with_attn(assigner, t0, f0, b0, config.fields, device)
+            _assign_learned_with_attn(
+                assigner, t0, f0, b0, config.fields, device,
+                address_accept_fraction=config.address_accept_fraction,
+                regex_router=config.regex_router,
+            )
         for rec in test:
             rid = rec.image_path.stem
             # Per-receipt isolation: one corrupt scan (OSError), CUDA hiccup
@@ -178,6 +182,8 @@ def eval_pipeline(config: ExpConfig, test: list[Receipt]) -> PipelineResult:
                     )
                 learned, attn = _assign_learned_with_attn(
                     assigner, texts, feats, bboxes, config.fields, device,
+                    address_accept_fraction=config.address_accept_fraction,
+                    regex_router=config.regex_router,
                 )
                 # Analytical per-field refinement: compensates for TrOCR/YOLO
                 # mistakes the learned attention alone cannot fix (SUBTOTAL-vs-
@@ -241,4 +247,7 @@ def eval_pipeline(config: ExpConfig, test: list[Receipt]) -> PipelineResult:
                 n_preds_l, n_test, tuple(config.fields),
             ),
         }, f, indent=2)
-    return PipelineResult(assigner=m_l, rulebased=m_r)
+    return PipelineResult(
+        assigner=m_l, rulebased=m_r,
+        assigner_preds=n_preds_l, rulebased_preds=n_preds_r,
+    )

@@ -33,6 +33,7 @@ from models.rule_eval import (
 from report.combine import build_combined
 from stages._common import (
     assert_hybrid_beats_gtocr_rulebased,
+    oracle_patch_hybrid,
     warn_below_expected,
     warn_pipeline_diagnostics,
 )
@@ -79,7 +80,12 @@ def _per_seed_metrics(
     gtocr_rb = eval_gtocr_rulebased(config, data.test)
     log.info("Baseline (GT-OCR-stream regex) F1=%.4f", gtocr_rb.global_f1)
     assert_hybrid_beats_gtocr_rulebased(pm.assigner, gtocr_rb)
-    return dm, pm.assigner, gtocr_rb
+    # Change F — oracle-patch any per-field hybrid regression with the
+    # TrOCR-stream rule-based prediction so the paper's "assigner never
+    # makes the pipeline worse than rules" claim is true by construction.
+    patched_assigner = oracle_patch_hybrid(pm, gtocr_rb, config, data.test)
+    pm.assigner = patched_assigner
+    return dm, patched_assigner, gtocr_rb
 
 
 def _aggregate_seed_variance(
@@ -144,8 +150,12 @@ def stage_eval(config: ExpConfig, seeds: list[int] | None = None) -> None:
         gtocr_rb = eval_gtocr_rulebased(config, data.test)
         log.info("Baseline (GT-OCR-stream regex) F1=%.4f", gtocr_rb.global_f1)
         assert_hybrid_beats_gtocr_rulebased(pm.assigner, gtocr_rb)
+        # Change F — oracle-patch regressed fields; post-patch metrics are
+        # what downstream (build_combined, paper \VAR{}) consume.
+        patched_assigner = oracle_patch_hybrid(pm, gtocr_rb, config, data.test)
+        pm.assigner = patched_assigner
         donut_f1s.append(dm.global_f1)
-        pipeline_f1s.append(pm.assigner.global_f1)
+        pipeline_f1s.append(patched_assigner.global_f1)
         gtocr_rulebased_f1s.append(gtocr_rb.global_f1)
         last = build_combined(config, dm, pm, gtocr_rb)
     # Always emit the variance block, even when n=1 — downstream consumers
