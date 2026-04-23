@@ -6,8 +6,8 @@ Article: "End-to-End vs. Pipeline Receipt KIE: DONUT Against
 Role: locks in the PR #38 follow-up fixes — ``normalize_total`` collapses
     the currency/thousands-separator noise that otherwise makes the
     pipeline F1 incomparable to DONUT F1, and the regression gate
-    guarantees the learned pipeline is not silently worse than the
-    rule-based heuristic on gold OCR.
+    guarantees the hybrid pipeline is not silently worse than the
+    GT-OCR-stream rule-based baseline (same regex logic, perfect OCR input).
 """
 from __future__ import annotations
 
@@ -16,7 +16,7 @@ import pytest
 from core.errors import EvalError
 from core.types import Metrics
 from models.donut_eval import normalize_total
-from stages._common import assert_pipeline_beats_rulebased_gold
+from stages._common import assert_hybrid_beats_gtocr_rulebased
 
 
 def test_normalize_total_strips_currency_prefix() -> None:
@@ -50,13 +50,13 @@ def _m(f1: float) -> Metrics:
     )
 
 
-def test_regression_gate_passes_when_pipeline_beats_gold() -> None:
-    assert_pipeline_beats_rulebased_gold(_m(0.80), _m(0.74))
+def test_regression_gate_passes_when_hybrid_beats_gtocr() -> None:
+    assert_hybrid_beats_gtocr_rulebased(_m(0.80), _m(0.74))
 
 
 def test_regression_gate_passes_within_epsilon() -> None:
-    # pipeline 0.73 is only 0.01 below rb_gold 0.74 → allowed
-    assert_pipeline_beats_rulebased_gold(_m(0.73), _m(0.74), epsilon=0.02)
+    # hybrid 0.73 is only 0.01 below gtocr_rb 0.74 → allowed
+    assert_hybrid_beats_gtocr_rulebased(_m(0.73), _m(0.74), epsilon=0.02)
 
 
 def test_regression_gate_rejects_underperforming_pipeline() -> None:
@@ -64,7 +64,7 @@ def test_regression_gate_rejects_underperforming_pipeline() -> None:
     # epsilon was bumped to 0.03 to absorb ~2 receipts of per-image
     # noise on the 63-image SROIE test; pass it explicitly here to
     # continue exercising the hard-fail path.
-    with pytest.raises(EvalError, match="rulebased_gold_f1"):
-        assert_pipeline_beats_rulebased_gold(
+    with pytest.raises(EvalError, match="gtocr_rulebased_f1"):
+        assert_hybrid_beats_gtocr_rulebased(
             _m(0.7256), _m(0.7372), epsilon=0.01,
         )

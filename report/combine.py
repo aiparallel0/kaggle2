@@ -24,7 +24,7 @@ log = logging.getLogger("kaggle2")
 
 
 def build_combined(
-    config: ExpConfig, dm: Metrics, pm: PipelineResult, rb_gold: Metrics,
+    config: ExpConfig, dm: Metrics, pm: PipelineResult, gtocr_rb: Metrics,
 ) -> dict[str, object]:
     """Assemble the base ``combined_metrics.json`` dict for one eval run.
 
@@ -43,23 +43,23 @@ def build_combined(
         "pipeline_em": pm.assigner.global_em,
         "rulebased_f1": pm.rulebased.global_f1,
         "rulebased_ned": pm.rulebased.global_ned,
-        "rulebased_gold_f1": rb_gold.global_f1,
-        "rulebased_gold_ned": rb_gold.global_ned,
-        # Rule-based exact-match rate — surfaced so Table I's rule-based
+        "gtocr_rulebased_f1": gtocr_rb.global_f1,
+        "gtocr_rulebased_ned": gtocr_rb.global_ned,
+        # GT-OCR-stream exact-match rate — surfaced so Table I's baseline
         # EM cell resolves to a concrete number instead of the ``---``
-        # backstop (paper_corrections.md item 6; source of truth
-        # ``rulebased_gold_metrics.json`` → ``global_em``).
-        "rulebased_gold_em": rb_gold.global_em,
+        # backstop (source of truth ``gtocr_rulebased_metrics.json`` →
+        # ``global_em``).
+        "gtocr_rulebased_em": gtocr_rb.global_em,
         "f1_gap": round(dm.global_f1 - pm.assigner.global_f1, 4),
         "assigner_delta": round(pm.assigner.global_f1 - pm.rulebased.global_f1, 4),
         "donut_f1_company": dm.per_field_f1.get("company", 0.0),
         "donut_f1_date": dm.per_field_f1.get("date", 0.0),
         "donut_f1_address": dm.per_field_f1.get("address", 0.0),
         "donut_f1_total": dm.per_field_f1.get("total", 0.0),
-        "rulebased_f1_company": rb_gold.per_field_f1.get("company", 0.0),
-        "rulebased_f1_date": rb_gold.per_field_f1.get("date", 0.0),
-        "rulebased_f1_address": rb_gold.per_field_f1.get("address", 0.0),
-        "rulebased_f1_total": rb_gold.per_field_f1.get("total", 0.0),
+        "rulebased_f1_company": gtocr_rb.per_field_f1.get("company", 0.0),
+        "rulebased_f1_date": gtocr_rb.per_field_f1.get("date", 0.0),
+        "rulebased_f1_address": gtocr_rb.per_field_f1.get("address", 0.0),
+        "rulebased_f1_total": gtocr_rb.per_field_f1.get("total", 0.0),
         "epochs_donut": config.epochs_donut, "epochs_trocr": config.epochs_trocr,
         "epochs_yolo": config.epochs_yolo, "epochs_assigner": config.epochs_assigner,
         "batch_size": config.batch_size,
