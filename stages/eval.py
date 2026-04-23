@@ -27,12 +27,12 @@ from models.donut_eval import eval_donut
 from models.pipeline_eval import eval_pipeline
 from models.rule_eval import (
     combined_from_rulebased,
-    eval_rulebased_gold,
+    eval_gtocr_rulebased,
     per_field_injection,
 )
 from report.combine import build_combined
 from stages._common import (
-    assert_pipeline_beats_rulebased_gold,
+    assert_hybrid_beats_gtocr_rulebased,
     warn_below_expected,
     warn_pipeline_diagnostics,
 )
@@ -65,7 +65,7 @@ def _eval_donut_or_skip(config: ExpConfig, data: DataSplit) -> Metrics:
 def _per_seed_metrics(
     config: ExpConfig, data: DataSplit, seed: int,
 ) -> tuple[Metrics, Metrics, Metrics]:
-    """Run one (DONUT, pipeline, rule-based-on-gold) eval triple at `seed`."""
+    """Run one (DONUT, pipeline, GT-OCR-stream-rulebased) eval triple at `seed`."""
     seed_everything(seed)
     dm = _eval_donut_or_skip(config, data)
     log.info("DONUT F1=%.4f", dm.global_f1)
@@ -74,12 +74,12 @@ def _per_seed_metrics(
                 os.path.join(config.output_dir, "pipeline_metrics.json"))
     warn_below_expected(pm.assigner, config, "pipeline")
     warn_pipeline_diagnostics(config)
-    log.info("Pipeline (assigner)  F1=%.4f", pm.assigner.global_f1)
-    log.info("Pipeline (rulebased) F1=%.4f", pm.rulebased.global_f1)
-    rb_gold = eval_rulebased_gold(config, data.test)
-    log.info("Rule-based (gold OCR) F1=%.4f", rb_gold.global_f1)
-    assert_pipeline_beats_rulebased_gold(pm.assigner, rb_gold)
-    return dm, pm.assigner, rb_gold  # pm.assigner used by caller; rb too
+    log.info("Pipeline (hybrid)              F1=%.4f", pm.assigner.global_f1)
+    log.info("Pipeline (TrOCR-regex)         F1=%.4f", pm.rulebased.global_f1)
+    gtocr_rb = eval_gtocr_rulebased(config, data.test)
+    log.info("Baseline (GT-OCR-stream regex) F1=%.4f", gtocr_rb.global_f1)
+    assert_hybrid_beats_gtocr_rulebased(pm.assigner, gtocr_rb)
+    return dm, pm.assigner, gtocr_rb
 
 
 def _aggregate_seed_variance(
@@ -126,7 +126,7 @@ def stage_eval(config: ExpConfig, seeds: list[int] | None = None) -> None:
     log.info("Eval harness: n_trials=%d seeds=%s", len(run_seeds), run_seeds)
     donut_f1s: list[float] = []
     pipeline_f1s: list[float] = []
-    rulebased_gold_f1s: list[float] = []
+    gtocr_rulebased_f1s: list[float] = []
     last: dict[str, object] = {}
     for seed in run_seeds:
         if len(run_seeds) > 1:
@@ -139,20 +139,20 @@ def stage_eval(config: ExpConfig, seeds: list[int] | None = None) -> None:
                     os.path.join(config.output_dir, "pipeline_metrics.json"))
         warn_below_expected(pm.assigner, config, "pipeline")
         warn_pipeline_diagnostics(config)
-        log.info("Pipeline (assigner)  F1=%.4f", pm.assigner.global_f1)
-        log.info("Pipeline (rulebased) F1=%.4f", pm.rulebased.global_f1)
-        rb_gold = eval_rulebased_gold(config, data.test)
-        log.info("Rule-based (gold OCR) F1=%.4f", rb_gold.global_f1)
-        assert_pipeline_beats_rulebased_gold(pm.assigner, rb_gold)
+        log.info("Pipeline (hybrid)              F1=%.4f", pm.assigner.global_f1)
+        log.info("Pipeline (TrOCR-regex)         F1=%.4f", pm.rulebased.global_f1)
+        gtocr_rb = eval_gtocr_rulebased(config, data.test)
+        log.info("Baseline (GT-OCR-stream regex) F1=%.4f", gtocr_rb.global_f1)
+        assert_hybrid_beats_gtocr_rulebased(pm.assigner, gtocr_rb)
         donut_f1s.append(dm.global_f1)
         pipeline_f1s.append(pm.assigner.global_f1)
-        rulebased_gold_f1s.append(rb_gold.global_f1)
-        last = build_combined(config, dm, pm, rb_gold)
+        gtocr_rulebased_f1s.append(gtocr_rb.global_f1)
+        last = build_combined(config, dm, pm, gtocr_rb)
     # Always emit the variance block, even when n=1 — downstream consumers
     # (paper \VAR{}, log dashboards) should not branch on seed count.
     _aggregate_seed_variance(donut_f1s, "donut_f1", last)
     _aggregate_seed_variance(pipeline_f1s, "pipeline_f1", last)
-    _aggregate_seed_variance(rulebased_gold_f1s, "rulebased_gold_f1", last)
+    _aggregate_seed_variance(gtocr_rulebased_f1s, "gtocr_rulebased_f1", last)
     # Per-image bootstrap CI + paired McNemar: uses the last run's per-image
     # all-fields-EM correctness vectors (populated by compute_metrics via
     # build_combined). Paired test is valid because DONUT and pipeline are
@@ -187,22 +187,24 @@ def stage_eval(config: ExpConfig, seeds: list[int] | None = None) -> None:
         json.dump(last, f, indent=2)
 
 
-def stage_eval_rulebased_gold(config: ExpConfig) -> None:
-    """Rule-based F1 over SROIE gold OCR — no HF / GPU dependency.
+def stage_eval_gtocr_rulebased(config: ExpConfig) -> None:
+    """GT-OCR-stream rule-based F1 — no HF / GPU dependency.
 
-    Writes ``results/rulebased_gold_metrics.json`` and a
+    Bypasses YOLO+TrOCR by feeding SROIE ground-truth box text/bboxes
+    directly into ``rule_based_assign`` (the same function the live
+    pipeline uses).  Writes ``results/gtocr_rulebased_metrics.json`` and a
     ``combined_metrics.json`` pre-populated with zeros for the DONUT /
     pipeline-learned arms so ``stage_paper`` can still compile a paper
     whose rule-based numbers are real even when the neural components
     could not be trained in the current environment.
     """
-    log.info("=== Stage: eval_rulebased_gold ===")
+    log.info("=== Stage: eval_gtocr_rulebased ===")
     data_path = download_sroie(config)
     data = load_or_create_split(config, data_path)
     log.info("Split: %d train / %d val / %d test",
              len(data.train), len(data.val), len(data.test))
-    metrics = eval_rulebased_gold(config, data.test)
-    log.info("Rule-based (gold OCR) F1=%.4f  per-field=%s",
+    metrics = eval_gtocr_rulebased(config, data.test)
+    log.info("Baseline (GT-OCR-stream regex) F1=%.4f  per-field=%s",
              metrics.global_f1,
              {k: round(v, 4) for k, v in metrics.per_field_f1.items()})
     combined = combined_from_rulebased(config, metrics)

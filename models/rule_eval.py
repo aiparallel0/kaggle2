@@ -1,11 +1,13 @@
-"""Rule-based eval over SROIE gold-OCR text (no HF/GPU dependency).
+"""Rule-based eval over SROIE GT-OCR text stream (no HF/GPU dependency).
 
 Project: kaggle2 — End-to-End vs. Pipeline Receipt KIE on SROIE.
 Article: "End-to-End vs. Pipeline Receipt KIE: DONUT Against
     YOLO+TrOCR+Attention on SROIE" (IEEE/ICDAR submission).
-Role: evaluates rule_based_assign on SROIE box/ annotations as a genuine
-    lower bound on what the pipeline's rule-based arm can achieve when OCR
-    is perfect — any degradation is attributable solely to YOLO/TrOCR error.
+Role: evaluates rule_based_assign on SROIE box/ annotations using the same
+    rule_based_assign pathway as the live pipeline, but bypassing YOLO+TrOCR
+    by feeding ground-truth (GT) OCR text/boxes directly as the OCR stream.
+    This GT-OCR-stream baseline isolates the contribution of YOLO/TrOCR OCR
+    quality — any gap vs. the full pipeline is attributable to OCR noise.
 """
 from __future__ import annotations
 
@@ -38,8 +40,16 @@ def _receipt_to_regions(
     return texts, bboxes
 
 
-def eval_rulebased_gold(config: ExpConfig, test: list[Receipt]) -> Metrics:
-    """Run rule_based_assign on gold-OCR text; write metrics JSON."""
+def eval_gtocr_rulebased(config: ExpConfig, test: list[Receipt]) -> Metrics:
+    """Run rule_based_assign on GT-OCR text stream; write metrics JSON.
+
+    Mirrors the YOLO+TrOCR+Regex pipeline interface but bypasses YOLO and
+    TrOCR by feeding SROIE ground-truth box text/bboxes directly as the OCR
+    stream.  The bboxes are normalised [x1,y1,x2,y2] — the same coordinate
+    convention produced by ``models/pipeline_detect._detect_and_read``.
+    This GT-OCR-stream baseline lets us compare the hybrid pipeline output
+    against the same rule_based_assign logic running on perfect OCR input.
+    """
     predictions: list[Prediction] = []
     for rec in test:
         texts, bboxes = _receipt_to_regions(rec, config.fields)
@@ -49,7 +59,7 @@ def eval_rulebased_gold(config: ExpConfig, test: list[Receipt]) -> Metrics:
             fields=[Field(name=k, value=v) for k, v in assigned.items()],
         ))
     # Symmetric per-field normalization — matches ``eval_donut`` /
-    # ``eval_pipeline`` so rulebased_gold_f1 is comparable across systems
+    # ``eval_pipeline`` so gtocr_rulebased_f1 is comparable across systems
     # (same ``RM 43.50`` == ``43.50`` semantics; same ``SDN BHD.`` ==
     # ``SDN BHD`` semantics for company/address).
     _norms: dict[str, Callable[[str], str]] = {
@@ -72,7 +82,7 @@ def eval_rulebased_gold(config: ExpConfig, test: list[Receipt]) -> Metrics:
     ))
     out_dir = Path(config.output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
-    with open(out_dir / "rulebased_gold_metrics.json", "w") as f:
+    with open(out_dir / "gtocr_rulebased_metrics.json", "w") as f:
         json.dump({
             "global_f1": metrics.global_f1,
             "global_ned": metrics.global_ned,
@@ -82,10 +92,10 @@ def eval_rulebased_gold(config: ExpConfig, test: list[Receipt]) -> Metrics:
             "per_field_em": metrics.per_field_em,
             "n_test": len(test),
             "note": (
-                "Rule-based assignment over SROIE gold-OCR box text "
-                "(no YOLO/TrOCR inference). Serves as a lower bound on "
-                "pipeline.rulebased and an upper bound on what heuristics "
-                "alone achieve when OCR is perfect."
+                "Rule-based assignment over SROIE GT-OCR text stream "
+                "(ground-truth box/text fed directly; no YOLO/TrOCR inference). "
+                "Serves as a fair baseline: same rule_based_assign logic as the "
+                "live pipeline, but with perfect OCR input."
             ),
         }, f, indent=2)
     return metrics
@@ -97,16 +107,18 @@ def _empty_field_map(fields: list[str]) -> dict[str, float]:
 
 
 def combined_from_rulebased(
-    config: ExpConfig, rulebased_gold: Metrics,
+    config: ExpConfig, gtocr_rulebased: Metrics,
 ) -> dict[str, object]:
     """Build paper-injection dict when DONUT/pipeline unavailable (CPU-only)."""
     zero_fields = _empty_field_map(config.fields)
     return {
         "donut_f1": 0.0, "donut_ned": 0.0, "donut_em": 0.0,
         "pipeline_f1": 0.0, "pipeline_ned": 0.0, "pipeline_em": 0.0,
-        "rulebased_f1": rulebased_gold.global_f1,
-        "rulebased_ned": rulebased_gold.global_ned,
-        "rulebased_gold_f1": rulebased_gold.global_f1,
+        "rulebased_f1": gtocr_rulebased.global_f1,
+        "rulebased_ned": gtocr_rulebased.global_ned,
+        "gtocr_rulebased_f1": gtocr_rulebased.global_f1,
+        "gtocr_rulebased_ned": gtocr_rulebased.global_ned,
+        "gtocr_rulebased_em": gtocr_rulebased.global_em,
         "f1_gap": 0.0,
         "assigner_delta": 0.0,
         "donut_f1_company": zero_fields["company"],
@@ -141,7 +153,7 @@ def combined_from_rulebased(
         "assigner_best_epoch": 0,
         "assigner_stopped_at": 0,
         "assigner_best_val_loss": 0.0,
-        "artifact_mode": "rulebased_gold_only",
+        "artifact_mode": "gtocr_rulebased_only",
     }
 
 

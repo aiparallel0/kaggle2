@@ -10,13 +10,13 @@ Role: public package surface re-exporting the four top-level stage
 """
 from __future__ import annotations
 
-from stages.eval import stage_eval, stage_eval_rulebased_gold
+from stages.eval import stage_eval, stage_eval_gtocr_rulebased
 from stages.paper import stage_paper
 from stages.train import stage_train
 
 __all__ = [
     "stage_eval",
-    "stage_eval_rulebased_gold",
+    "stage_eval_gtocr_rulebased",
     "stage_paper",
     "stage_train",
 ]

@@ -1,6 +1,6 @@
 # Paper Corrections Log
 **File:** `paper_filled__3_.tex`  
-**Source of truth:** `assigner_metrics.json`, `combined_metrics.json`, `cost_trocr.json`, `rulebased_gold_metrics.json`, `telemetry_trocr.jsonl`
+**Source of truth:** `assigner_metrics.json`, `combined_metrics.json`, `cost_trocr.json`, `gtocr_rulebased_metrics.json`, `telemetry_trocr.jsonl`
 
 ---
 
@@ -56,7 +56,7 @@
 ## 6. Unfilled `---` placeholder — Rule-based EM in Table I
 **Severity:** Medium  
 **Location:** Results §Table I, rule-based row  
-**Source of truth:** `rulebased_gold_metrics.json` → `"global_em": 0.5119`  
+**Source of truth:** `gtocr_rulebased_metrics.json` → `"global_em": 0.5119`  
 **Fix:** `& ---` → `& 0.5119`.
 
 ---

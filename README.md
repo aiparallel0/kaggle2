@@ -164,19 +164,23 @@ make check         # ruff + mypy --strict + import smoke
 make test          # pytest (no GPU needed)
 python main.py --stage train
 python main.py --stage eval
-python main.py --stage eval_rulebased_gold  # real F1 on gold OCR, no HF needed
+python main.py --stage eval_gtocr_rulebased  # real F1 on GT-OCR stream, no HF needed
 python main.py --stage paper
 ```
 
 ### Offline / no-HF eval path
 
-`--stage eval_rulebased_gold` runs the rule-based assignment head over
-SROIE's gold-OCR box-file text and writes real F1 / NED / EM into
-`results/rulebased_gold_metrics.json` plus a paper-ready
+`--stage eval_gtocr_rulebased` runs the rule-based assignment head over
+SROIE's GT-OCR box-file text (bypassing YOLO+TrOCR by feeding ground-truth
+bboxes/text directly) and writes real F1 / NED / EM into
+`results/gtocr_rulebased_metrics.json` plus a paper-ready
 `results/combined_metrics.json` (DONUT and pipeline rows are zero-padded
-and tagged `artifact_mode: rulebased_gold_only`; the paper's results
+and tagged `artifact_mode: gtocr_rulebased_only`; the paper's results
 table honestly reflects that). This path needs only SROIE (GitHub) —
 no Hugging Face Hub access, no GPU, ~1 second on CPU.
+
+The old `--stage eval_rulebased_gold` name is kept as a backward-compatible
+alias and invokes the same stage.
 
 The split (500 / 63 / 63) is persisted to `results/split.json` on the
 first train run, so a later `--stage eval` in a separate shell sees the

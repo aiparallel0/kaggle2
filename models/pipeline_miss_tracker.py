@@ -86,7 +86,7 @@ def log_field_breakdown(
 
     Fields are reported in ascending F1 order so the biggest loss source
     is at the top — mirrors the per-field delta table in
-    ``assert_pipeline_beats_rulebased_gold``.
+    ``assert_hybrid_beats_gtocr_rulebased``.
     """
     diags: dict[str, _FieldDiag] = {
         f: _field_diagnostics(preds, gts, f, metrics.per_field_f1.get(f, 0.0))

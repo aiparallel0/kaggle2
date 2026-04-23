@@ -38,8 +38,9 @@ class CombinedMetrics(TypedDict, total=False):
     pipeline_em: float
     rulebased_f1: float
     rulebased_ned: float
-    rulebased_gold_f1: float
-    rulebased_gold_ned: float
+    gtocr_rulebased_f1: float
+    gtocr_rulebased_ned: float
+    gtocr_rulebased_em: float
     f1_gap: float
     assigner_delta: float
     # --- Per-field F1 for each system (drives the grouped-bar figure) ---
@@ -74,10 +75,10 @@ class CombinedMetrics(TypedDict, total=False):
     pipeline_f1_std: float
     pipeline_f1_ci_lo: float
     pipeline_f1_ci_hi: float
-    rulebased_gold_f1_mean: float
-    rulebased_gold_f1_std: float
-    rulebased_gold_f1_ci_lo: float
-    rulebased_gold_f1_ci_hi: float
+    gtocr_rulebased_f1_mean: float
+    gtocr_rulebased_f1_std: float
+    gtocr_rulebased_f1_ci_lo: float
+    gtocr_rulebased_f1_ci_hi: float
     seeds_used: list[int]
     seeds_configured: list[int]
     n_trials: int
