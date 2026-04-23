@@ -4,8 +4,11 @@ Project: kaggle2 — End-to-End vs. Pipeline Receipt KIE on SROIE.
 Article: "End-to-End vs. Pipeline Receipt KIE: DONUT Against
     YOLO+TrOCR+Attention on SROIE" (IEEE/ICDAR submission).
 Role: encodes TrOCR hidden states for every region in a receipt and bundles
-    them with enriched 8-d bboxes and 6-d text priors into training groups.
-    The 90/10 train/val split is seeded deterministically.
+    them with enriched 8-d bboxes, text priors (v1/v2/v3), and the raw
+    region texts so the trainer can derive hard-negative region sets
+    (strategy B) and rule-based teacher distributions (strategy C) on
+    every augmented batch.  The 90/10 train/val split is seeded
+    deterministically.
 """
 from __future__ import annotations
 
@@ -15,7 +18,14 @@ from PIL import Image
 
 from core.errors import TrainError
 from core.types import AssignerData, Crop
-from models.attention_assign import text_priors, text_priors_v2
+from models.attention_assign import (
+    N_TEXT_PRIORS,
+    N_TEXT_PRIORS_V2,
+    N_TEXT_PRIORS_V3,
+    text_priors,
+    text_priors_v2,
+    text_priors_v3,
+)
 from models.attention_priors import _MONEY_RE
 
 # Fraction of prepared receipts reserved for validation. 10 % is standard and
@@ -31,7 +41,10 @@ except ImportError:  # lightweight CI — torch not installed
 if TYPE_CHECKING:
     from torch import Tensor
 
-Group = tuple["Tensor", "Tensor", "Tensor", dict[int, list[int]]]
+# Group now carries the per-region text strings as a fifth element so the
+# trainer can rebuild hard-negatives / teacher distributions after each
+# region-order shuffle without re-decoding TrOCR embeddings.
+Group = tuple["Tensor", "Tensor", "Tensor", dict[int, list[int]], list[str]]
 
 
 def _encode_regions(
@@ -51,11 +64,40 @@ def _encode_regions(
     return torch.cat(feats, dim=0) if feats else torch.zeros(0, feat_dim)
 
 
+def _build_prior_vectors(
+    regions: list[Crop], n_priors: int,
+) -> list[list[float]]:
+    """Dispatch to v1/v2/v3 prior builders — mirrors ``_build_priors``."""
+    if n_priors == N_TEXT_PRIORS:
+        return [text_priors(r.text) for r in regions]
+    money_mask = [bool(_MONEY_RE.search(r.text)) for r in regions]
+    money_idxs = [i for i, m in enumerate(money_mask) if m]
+    last_money = max(money_idxs) if money_idxs else -1
+    y_vals = [r.bbox[3] for r in regions]
+    max_y = max(y_vals) if y_vals else 1.0
+    denom = max(max_y, 1e-6)
+    if n_priors == N_TEXT_PRIORS_V2:
+        return [
+            text_priors_v2(r.text, r.bbox[3] / denom, i == last_money)
+            for i, r in enumerate(regions)
+        ]
+    if n_priors == N_TEXT_PRIORS_V3:
+        return [
+            text_priors_v3(r.text, r.bbox[3] / denom, i == last_money)
+            for i, r in enumerate(regions)
+        ]
+    raise ValueError(f"Unsupported n_text_priors={n_priors}")
+
+
 def _prepare_groups(
     data: AssignerData, field_to_idx: dict[str, int], device: str,
-    priors_v2: bool = True,
+    priors_v2: bool = True, priors_v3: bool = False,
 ) -> tuple[list[Group], int]:
-    """Encode per-receipt regions via TrOCR encoder → training groups."""
+    """Encode per-receipt regions via TrOCR encoder → training groups.
+
+    ``priors_v3=True`` overrides ``priors_v2`` and produces 14-d priors
+    with the five distractor-aware bits from :mod:`attention_priors`.
+    """
     if not data.regions:
         raise TrainError("AssignerData.regions is empty — cannot train assigner.")
     from transformers import TrOCRProcessor, VisionEncoderDecoderModel
@@ -63,6 +105,12 @@ def _prepare_groups(
     trocr = VisionEncoderDecoderModel.from_pretrained(data.trocr_path).to(device)
     trocr.eval()
     feat_dim: int = trocr.config.encoder.hidden_size
+    if priors_v3:
+        n_priors = N_TEXT_PRIORS_V3
+    elif priors_v2:
+        n_priors = N_TEXT_PRIORS_V2
+    else:
+        n_priors = N_TEXT_PRIORS
     prepared: list[Group] = []
     with torch.no_grad():
         for regions in data.regions:
@@ -72,28 +120,16 @@ def _prepare_groups(
             if feats.shape[0] == 0:
                 continue
             bboxes = torch.tensor([list(r.bbox) for r in regions], dtype=torch.float32)
-            if priors_v2:
-                money_mask = [bool(_MONEY_RE.search(r.text)) for r in regions]
-                money_idxs = [i for i, m in enumerate(money_mask) if m]
-                last_money = max(money_idxs) if money_idxs else -1
-                y_vals = [r.bbox[3] for r in regions]
-                max_y = max(y_vals) if y_vals else 1.0
-                prior_list = [
-                    text_priors_v2(
-                        r.text, r.bbox[3] / max(max_y, 1e-6), i == last_money,
-                    )
-                    for i, r in enumerate(regions)
-                ]
-            else:
-                prior_list = [text_priors(r.text) for r in regions]
+            prior_list = _build_prior_vectors(regions, n_priors)
             priors = torch.tensor(prior_list, dtype=torch.float32)
+            texts = [r.text for r in regions]
             targets: dict[int, list[int]] = {}
             for i, r in enumerate(regions):
                 fi = field_to_idx.get(r.field_label)
                 if fi is not None:
                     targets.setdefault(fi, []).append(i)
             if targets:
-                prepared.append((feats, bboxes, priors, targets))
+                prepared.append((feats, bboxes, priors, targets, texts))
     if not prepared:
         raise TrainError("No valid labeled receipts for assigner training.")
     return prepared, feat_dim

@@ -218,6 +218,25 @@ All hyperparameters live in `config.json`. F1-affecting knobs:
 | `epochs_trocr` | 12 | Floor of 5 enforced in config.py (Bug 6). |
 | `expected_f1_warn` | 0.75 | Soft WARN threshold (non-fatal). |
 
+### Assigner-fix knobs (strategies B / C / E / F / G / I from `docs/assigner_fix_plan.md`)
+
+Added under `extra` in `config.json`. All default to `0.0` (disabled) so existing
+training runs reproduce bit-exact; set non-zero to opt into the fresh-train regime.
+
+| Parameter | Default | Strategy | Effect |
+|---|---|---|---|
+| `assigner_hardneg_weight` | 0.0 | B | λ for the listwise hinge over SUBTOTAL/CASH/CHANGE/TAX/header distractors. 0.5 is a reasonable starting point. |
+| `assigner_kd_weight` | 0.0 | C | λ for KL-divergence KD from the rule-based teacher (`_score_money` softmax). 0.1 is a reasonable starting point. |
+| `priors_v3` | false | E | Upgrade priors from 9-d to 14-d (adds `is_subtotal / cash / change / tax / rounding` bits). Requires a fresh train; v2 checkpoints still load. |
+| `assigner_synth_subtotal` | 0.0 | I | Per-receipt probability of injecting a synthetic `SUBTOTAL: RM xx.yy` line before the true TOTAL. 0.3–0.5 suggested. |
+| `assigner_ocr_noise` | 0.0 | F | Per-receipt probability of re-deriving priors from OCR-noised text (digit split, O↔0, trailing-zero drop). 0.2 suggested. |
+| `assigner_hidden` | 384 | G | Backbone width. Plan recommends 192 for fresh trains with B/C/E enabled (~1.4M params, better match for 500 receipts). |
+| `assigner_n_layers_level2` | 6 | G | Backbone depth. Plan recommends 3 for fresh trains. |
+
+Inference-side strategies L (additive attn×rule ensemble) and H (confidence-gated
+delegation to rule-based) are always on — they need no retrain and no checkpoint
+change; see `models/pipeline_consensus.py`.
+
 ## F1-destroying bugs (all thirteen guarded in code)
 
  1. lm_head weight deduplication (safetensors drops tied weights)
