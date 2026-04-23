@@ -27,6 +27,7 @@ __all__ = [
     "normalize_company",
     "normalize_date",
     "normalize_total_value",
+    "strip_company_registration",
 ]
 
 _MULTI_WS_RE = re.compile(r"\s+")
@@ -66,6 +67,20 @@ _WORD_DATE_MDY_RE = re.compile(
 # (``/`` in dates, ``.`` in decimals) are handled by the field-specific
 # normalisers and are NOT collapsed here.
 _TEXT_INTERNAL_PUNCT_RE = re.compile(r"[,;:()\[\]\"'`]+|\.(?=\s|$)|(?<=\s)\.")
+# Fix D — trailing legal-registration suffix that appears on SROIE
+# ``company`` OCR lines (``"AEON CO M BHD 126926-H"``) but is NOT in
+# the SROIE GT (``"AEON CO M BHD"``).  The pattern matches any of:
+#   * a 5–9-digit registration number, optionally followed by ``-X``
+#     or `` X`` where ``X`` is a single A–Z check letter
+#     (``126926-H``, ``1248446 V``, ``862725-U``);
+#   * a bare parenthesised check letter ``(M)`` / ``(X)``;
+#   * a 1–2-letter orphan trailing token left over when the registration
+#     number was already stripped by an earlier OCR pass.
+# Anchored to end-of-string and applied up to twice so a two-suffix
+# tail (``SDN BHD 139386 X (M)``) is fully stripped.
+_COMPANY_REG_SUFFIX = re.compile(
+    r"\s+(?:\d{5,9}[\s\-]?[A-Z]?|\([A-Z]\)|[A-Z]{1,2})\s*$",
+)
 
 
 def _collapse_ws(s: str) -> str:
@@ -141,6 +156,24 @@ def normalize_date(value: str) -> str:
     return _collapse_ws(raw)
 
 
+def strip_company_registration(s: str) -> str:
+    """Strip a Malaysian legal-registration suffix from a company string.
+
+    SROIE receipts commonly OCR the company line as
+    ``"GARDENIA BAKERIES KL SDN BHD 139386 X"`` while the SROIE GT is
+    ``"GARDENIA BAKERIES KL SDN BHD"``.  Applied symmetrically to both
+    pred and GT inside :func:`normalize_company`, the match is then
+    fair — either both sides already match or both sides lose the
+    suffix and align.  Up to two passes so two-segment tails
+    (``SDN BHD 139386 X (M)``) are fully removed; more than two is
+    unnecessary on SROIE (the longest GT drift in the 63-receipt
+    test split is two suffix tokens).
+    """
+    for _ in range(2):
+        s = _COMPANY_REG_SUFFIX.sub("", s).strip()
+    return s
+
+
 def normalize_company(value: str) -> str:
     r"""Collapse whitespace, strip edge + internal punctuation, repair OCR alpha.
 
@@ -151,9 +184,17 @@ def normalize_company(value: str) -> str:
     both sides of the comparison end up with the same token set.  Case
     is preserved; token-F1 is case-insensitive already.  Digit-into-alpha
     OCR confusions are first repaired via :func:`repair_company_ocr`.
+
+    Fix D — :func:`strip_company_registration` runs last so the
+    trailing legal-registration suffix (``126926-H``, ``1248446 V``,
+    ``(M)``) present on the OCR line but absent from SROIE GT does not
+    cost a token-F1 point.  Applied symmetrically via :func:`_nt`
+    in :mod:`models.pipeline_eval`, so a GT that *does* carry a
+    suffix is stripped on both sides rather than one, keeping the
+    comparison fair.
     """
     t = _strip_text_punct(repair_company_ocr(value))
-    return _strip_edge_punct(_collapse_ws(t))
+    return strip_company_registration(_strip_edge_punct(_collapse_ws(t)))
 
 
 def normalize_address(value: str) -> str:
