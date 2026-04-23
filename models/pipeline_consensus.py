@@ -133,7 +133,14 @@ def _attn_entropy(row: list[float]) -> float:
 
 
 def _attn_margin(row: list[float]) -> float:
-    """Top-1 − top-2 gap after normalisation — 0 = tie, 1 = one-hot."""
+    """Top-1 − top-2 gap after normalisation — 0 = tie, 1 = one-hot.
+
+    A single-region row has no second element, so we return 1.0 to
+    represent "maximum confidence" (there is nothing to confuse it
+    with).  This keeps ``_is_attn_diffuse`` returning False on the
+    degenerate 1-region case — the caller will simply accept whatever
+    the scorer produces, which is the same as the pre-H behaviour.
+    """
     if not row or len(row) < 2:
         return 1.0 if row else 0.0
     total = sum(max(p, 0.0) for p in row) or 1.0

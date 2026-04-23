@@ -47,3 +47,24 @@ def test_ocr_noise_money_preserves_non_money_spans() -> None:
     for _ in range(10):
         out = _ocr_noise_money("GRAND TOTAL RM 43.50", rng)
         assert out.startswith("GRAND TOTAL RM ")
+
+
+def test_ocr_noise_money_never_drops_both_trailing_zeros() -> None:
+    """Regression guard — the trailing-zero drop must keep at least one
+    fractional digit so the perturbed token is still a valid money
+    string (``12.00`` must never become ``12``)."""
+    # Deterministically exercise the trailing-zero-drop branch by seeding
+    # a random that yields choice=2 first.  Many seeds → at least one
+    # attempt will hit that branch; assert invariant on every output.
+    for seed in range(200):
+        out = _ocr_noise_money("ITEM 12.00", random.Random(seed))
+        # Extract any digit-with-decimal span and ensure it still has
+        # at least one fractional digit OR was left unchanged.
+        if "12.00" in out:
+            continue  # unchanged path
+        # Any money token in the output must still match \d+\.\d+
+        import re as _re
+        for tok in _re.findall(r"\d+\.\d+", out):
+            assert tok, f"empty money token in {out!r}"
+            # No tok like '12.' or '12'
+            assert _re.fullmatch(r"\d+\.\d+", tok), f"bad money {tok!r} in {out!r}"

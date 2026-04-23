@@ -129,16 +129,17 @@ def _evaluate(assigner: AttentionAssigner, groups: list[Group], device: str) -> 
     return total / len(groups)
 
 
-_OCR_NOISE_MONEY = re.compile(r"\b\d{1,3}(?:,\d{3})*\.\d{2}\b")
+_MONEY_TOKEN_RE = re.compile(r"\b\d{1,3}(?:,\d{3})*\.\d{2}\b")
 
 
 def _ocr_noise_money(text: str, rng: random.Random) -> str:
     """Strategy F-lite — perturb money tokens to match TrOCR's error
     distribution: split decimal (``12.50`` → ``12 50``), O↔0 swap
-    (``12.30`` → ``I2.30`` / ``12.3O``), or trailing-zero drop
-    (``12.50`` → ``12.5``).  Returns the original text unchanged when
-    no money token is present or when the random draw abstains."""
-    if not _OCR_NOISE_MONEY.search(text):
+    (``12.30`` → ``I2.30`` / ``12.3O``), or trailing-zero drop that
+    preserves a well-formed one-decimal-place suffix (``12.50`` →
+    ``12.5``).  Returns the original text unchanged when no money
+    token is present."""
+    if not _MONEY_TOKEN_RE.search(text):
         return text
 
     def _jitter(m: re.Match[str]) -> str:
@@ -148,10 +149,18 @@ def _ocr_noise_money(text: str, rng: random.Random) -> str:
             return tok.replace(".", " ")
         if choice == 1:
             # Swap the first '0' for 'O' or insert 'I' in place of '1'.
-            tok2 = tok.replace("0", "O", 1) if "0" in tok else tok.replace("1", "I", 1)
-            return tok2
-        return tok.rstrip("0").rstrip(".")
-    return _OCR_NOISE_MONEY.sub(_jitter, text)
+            return tok.replace("0", "O", 1) if "0" in tok else tok.replace("1", "I", 1)
+        # Trailing-zero drop that keeps at least one fractional digit
+        # (``12.50`` → ``12.5`` but never ``12.00`` → ``12``, which
+        # would produce an un-parseable money token).  Fallback: the
+        # unmodified original.
+        if "." in tok:
+            head, frac = tok.rsplit(".", 1)
+            stripped = frac.rstrip("0")
+            if stripped:
+                return f"{head}.{stripped}"
+        return tok
+    return _MONEY_TOKEN_RE.sub(_jitter, text)
 
 
 def _maybe_ocr_noise_priors(
