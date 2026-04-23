@@ -1,4 +1,5 @@
-.PHONY: all train eval paper check test clean serve
+.PHONY: all train eval paper check test clean serve \
+        train-pipeline eval-pipeline pipeline
 
 .DELETE_ON_ERROR:
 
@@ -25,6 +26,16 @@ paper:
 		echo "       Install a LaTeX engine (tectonic or pdflatex) via"; \
 		echo "       scripts/vastai_bootstrap.sh and rerun."; \
 		exit 1; }
+
+# Pipeline-only targets — skip DONUT training/eval entirely (Phase 1 / GPU-constrained runs).
+# Equivalent to setting skip_donut=true in config.json, but without editing the file.
+train-pipeline:
+	python main.py --stage train --skip-donut
+
+eval-pipeline:
+	python main.py --stage eval --skip-donut
+
+pipeline: train-pipeline eval-pipeline paper
 
 clean:
 	rm -rf results/ data/sroie_cache/ $(shell find . -name '__pycache__' -type d)
