@@ -356,16 +356,81 @@ def _refine_date(learned: str, texts: list[str]) -> str:
 
 def _refine_company(
     learned: str, texts: list[str], bboxes: list[list[float]],
+    attn_row: list[float] | None = None,
 ) -> str:
-    """Validate-and-fallback: HEADER_JUNK / phone / too-short → topmost non-junk."""
-    t = learned.strip()
-    valid = (not _is_short_junk(t)
-             and _HEADER_JUNK.match(t) is None
-             and _ADDR_EXCLUDE.search(t) is None)
-    if valid:
-        return t
+    """Score-and-pick the best of {learned, rule-topmost-non-junk}.
+
+    Previously this was a one-way validate-and-fallback: the learned
+    pick was returned whenever it wasn't outright junk, which kept
+    taglines / slogans / brand lines that :func:`_pick_company` would
+    have skipped.  On the live miss table the rule-based arm reaches
+    company F1 ≈ 0.77 while the learned arm stalls at ≈ 0.68 — so when
+    both candidates are *valid*, we now rank them on a stable tuple
+    key that rewards hard company markers and conventional upper-case
+    formatting.
+
+    Scoring dimensions (listed from most to least important):
+      1. ``not_junk`` — not ``HEADER_JUNK`` / ``_ADDR_EXCLUDE`` / short
+      2. ``has_company_token`` — ``SDN BHD`` / ``ENTERPRISE`` / etc.
+      3. ``is_mostly_upper`` — companies on SROIE receipts are UPPERCASE
+      4. ``-y`` — topmost wins on ties (negated so smaller y = higher)
+
+    Strategy (H) — **confidence-gated delegation**: when the learned
+    attention row for the ``company`` field query is diffuse, we zero
+    the ``has_company_token`` bit on the learned candidate so the rule
+    pick wins ties.  This mirrors the treatment applied to address and
+    total, and gives the pipeline a free F1 floor on precisely the
+    receipts where the learned arm has no conviction.
+    """
+    learned_clean = learned.strip()
     picked = _pick_company(texts, bboxes, used=set())
-    return picked[1] if picked is not None else learned
+    rule_pick = picked[1] if picked is not None else ""
+    candidates: list[str] = []
+    seen: set[str] = set()
+    for c in (learned_clean, rule_pick):
+        k = c.lower()
+        if c and k not in seen:
+            seen.add(k)
+            candidates.append(c)
+    if not candidates:
+        return learned
+
+    def _y(v: str) -> float:
+        return _y_of(v, texts, bboxes)
+
+    def _is_mostly_upper(s: str) -> bool:
+        letters = [c for c in s if c.isalpha()]
+        if len(letters) < 3:
+            return False
+        upper = sum(1 for c in letters if c.isupper())
+        return upper / len(letters) >= 0.70
+
+    def _score(v: str) -> tuple[int, int, int, float]:
+        not_junk = (
+            not _is_short_junk(v)
+            and _HEADER_JUNK.match(v) is None
+            and _ADDR_EXCLUDE.search(v) is None
+            and _DATE_RE.search(v) is None
+            and _MONEY_RE.search(v) is None
+        )
+        has_token = 1 if _COMPANY_TOKEN.search(v) else 0
+        upper = 1 if _is_mostly_upper(v) else 0
+        # Topmost wins ties (smaller y → higher score via negation).
+        return (int(not_junk), has_token, upper, -_y(v))
+
+    scores = [_score(c) for c in candidates]
+    if (_is_attn_diffuse(attn_row)
+            and candidates[0] == learned_clean
+            and not _COMPANY_TOKEN.search(learned_clean)):
+        # Demote learned candidate by zeroing its ``is_mostly_upper`` bit;
+        # rule pick wins ties.  Mirrors :func:`_refine_address` handling.
+        # A company token on the learned pick (``SDN BHD`` etc.) is such
+        # strong positive evidence that we refuse to demote it even when
+        # the attention row is flat — the H gate is only a tie-breaker,
+        # not an eraser of legitimate signal.
+        s = scores[0]
+        scores[0] = (s[0], s[1], 0, s[3])
+    return max(zip(candidates, scores, strict=True), key=lambda cs: cs[1])[0]
 
 
 def _y_of(value: str, texts: list[str], bboxes: list[list[float]]) -> float:
@@ -609,8 +674,9 @@ def refine_assignments(
             _refine_total(out["total"], texts, bboxes, row),
         )
     if "company" in out:
+        row = attn[by_idx["company"]] if attn and "company" in by_idx else None
         out["company"] = normalize_company(
-            _refine_company(out["company"], texts, bboxes),
+            _refine_company(out["company"], texts, bboxes, attn_row=row),
         )
     if "address" in out:
         row = attn[by_idx["address"]] if attn and "address" in by_idx else None
