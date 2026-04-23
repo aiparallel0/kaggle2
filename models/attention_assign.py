@@ -23,7 +23,14 @@ from models.attention_model import (
     DEFAULT_N_LAYERS,
     AttentionAssigner,
 )
-from models.attention_priors import N_TEXT_PRIORS, N_TEXT_PRIORS_V2, text_priors, text_priors_v2
+from models.attention_priors import (
+    N_TEXT_PRIORS,
+    N_TEXT_PRIORS_V2,
+    N_TEXT_PRIORS_V3,
+    text_priors,
+    text_priors_v2,
+    text_priors_v3,
+)
 
 __all__ = [
     "DEFAULT_HIDDEN_DIM",
@@ -31,11 +38,13 @@ __all__ = [
     "DEFAULT_N_LAYERS",
     "N_TEXT_PRIORS",
     "N_TEXT_PRIORS_V2",
+    "N_TEXT_PRIORS_V3",
     "AttentionAssigner",
     "_load_assigner",
     "save_assigner",
     "text_priors",
     "text_priors_v2",
+    "text_priors_v3",
 ]
 
 _log = logging.getLogger("kaggle2")
@@ -95,10 +104,10 @@ def _load_assigner(
         text_feat_dim=cfg.get("text_feat_dim", 768),
     )
     m.load_state_dict(sd)
-    if m.n_text_priors not in (N_TEXT_PRIORS, N_TEXT_PRIORS_V2):
+    if m.n_text_priors not in (N_TEXT_PRIORS, N_TEXT_PRIORS_V2, N_TEXT_PRIORS_V3):
         raise ValueError(
             f"Loaded assigner has unsupported n_text_priors={m.n_text_priors}; "
-            f"expected {N_TEXT_PRIORS} or {N_TEXT_PRIORS_V2}. "
+            f"expected {N_TEXT_PRIORS}, {N_TEXT_PRIORS_V2}, or {N_TEXT_PRIORS_V3}. "
             f"Inference priors builder cannot match this checkpoint.",
         )
     _log.info(

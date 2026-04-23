@@ -33,17 +33,27 @@ if TYPE_CHECKING:
     from torch import Tensor
 
 # Architecture defaults.  Exposed as constants so save/load stay consistent.
-# Defaults target ~7–8M parameters so the assigner has enough capacity to
-# compensate for TrOCR/YOLO mistakes (character confusions, SUBTOTAL-vs-TOTAL
-# disambiguation, multi-line address stitching) and push pipeline F1 past
-# the 0.97·0.97·0.97=0.91 naive-chain ceiling.  The 128/2-layer ``legacy``
-# size is still loadable via the checkpoint-header config mechanism in
-# ``_load_assigner`` — changing these defaults only affects *fresh* trains.
+# 384-d / 6-layer yields ~7–8M parameters — the "capacity compensates for
+# TrOCR/YOLO mistakes" hypothesis.  The live miss table (total F1≈0.62,
+# rule-based F1≈0.73) falsified that hypothesis: on O(500) SROIE receipts
+# the big backbone overfits label noise and is beaten by the regex arm.
+# The assigner plan therefore recommends a shrunk fresh-train config
+# (``assigner_hidden=192``, ``assigner_n_layers_level2=3`` → ~1.4M params)
+# when strategies B/C/E are enabled, to be re-grown only if they plateau.
+# Defaults below are kept at the legacy 384/6 so existing checkpoints
+# load bit-exact; fresh trains should override via ``ExpConfig``.
 DEFAULT_HIDDEN_DIM = 384
 DEFAULT_N_HEADS = 12
 DEFAULT_N_LAYERS = 6
 DEFAULT_DROPOUT = 0.1
 DEFAULT_FF_MULT = 2  # FFN hidden = hidden_dim * DEFAULT_FF_MULT
+
+# Recommended shrunk config for fresh trains with strategies B + C + E
+# enabled (see :mod:`models.assigner_train`).  Not used directly by this
+# module — callers (``ExpConfig``) opt in by setting the corresponding
+# ``assigner_hidden`` / ``assigner_n_layers_level2`` fields.
+MINI_HIDDEN_DIM = 192
+MINI_N_LAYERS = 3
 
 
 def _pick_n_heads(hidden_dim: int, requested: int) -> int:

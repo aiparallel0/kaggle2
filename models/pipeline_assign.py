@@ -15,9 +15,11 @@ from typing import TYPE_CHECKING
 from models.attention_assign import (
     N_TEXT_PRIORS,
     N_TEXT_PRIORS_V2,
+    N_TEXT_PRIORS_V3,
     AttentionAssigner,
     text_priors,
     text_priors_v2,
+    text_priors_v3,
 )
 from models.attention_priors import _MONEY_RE as _PRIORS_MONEY_RE
 from models.rule_based import DATE_RE, MONEY_RE
@@ -50,26 +52,33 @@ _FIELD_REGEX = {"date": DATE_RE, "total": MONEY_RE}
 def _build_priors(
     texts: list[str], bboxes: list[list[float]], n_priors: int,
 ) -> list[list[float]]:
-    """Per-region text priors matching the assigner's expected dim (6 or 9).
+    """Per-region text priors matching the assigner's expected dim (6/9/14).
 
     v2 mirrors :mod:`models.assigner_data`: ``y_norm = bbox[3] / max_y`` and
     ``is_last_money_line = (i == argmax_i(_MONEY_RE.search(texts[i])))``.
+    v3 extends v2 with five distractor-aware bits (SUBTOTAL / CASH /
+    CHANGE / TAX / ROUNDING) — strategy E of the assigner plan.
     Unknown ``n_priors`` raise ``ValueError`` (no silent zero-padding).
     """
     if n_priors == N_TEXT_PRIORS:
         return [text_priors(t) for t in texts]
-    if n_priors == N_TEXT_PRIORS_V2:
+    if n_priors in (N_TEXT_PRIORS_V2, N_TEXT_PRIORS_V3):
         money_idxs = [i for i, t in enumerate(texts) if _PRIORS_MONEY_RE.search(t)]
         last_money = max(money_idxs) if money_idxs else -1
         y_vals = [bb[3] for bb in bboxes]
         denom = max(max(y_vals) if y_vals else 1.0, 1e-6)
+        if n_priors == N_TEXT_PRIORS_V2:
+            return [
+                text_priors_v2(texts[i], bboxes[i][3] / denom, i == last_money)
+                for i in range(len(texts))
+            ]
         return [
-            text_priors_v2(texts[i], bboxes[i][3] / denom, i == last_money)
+            text_priors_v3(texts[i], bboxes[i][3] / denom, i == last_money)
             for i in range(len(texts))
         ]
     raise ValueError(
         f"Unsupported n_text_priors={n_priors}; "
-        f"expected {N_TEXT_PRIORS} or {N_TEXT_PRIORS_V2}.",
+        f"expected {N_TEXT_PRIORS}, {N_TEXT_PRIORS_V2}, or {N_TEXT_PRIORS_V3}.",
     )
 
 
