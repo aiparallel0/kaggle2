@@ -473,6 +473,51 @@ def _line_height(bboxes: list[list[float]], i: int) -> float:
     return max(bboxes[i][3] - bboxes[i][1], 0.0)
 
 
+def _median_line_height(bboxes: list[list[float]]) -> float:
+    """Median (y2-y1) of non-zero-height regions; 0 when no valid boxes."""
+    hs = [bboxes[i][3] - bboxes[i][1]
+          for i in range(len(bboxes))
+          if len(bboxes[i]) >= 4 and bboxes[i][3] > bboxes[i][1]]
+    if not hs:
+        return 0.0
+    hs.sort()
+    return hs[len(hs) // 2]
+
+
+def enforce_address_contiguity(
+    picks: list[int], bboxes: list[list[float]], gap_mult: float = 2.0,
+) -> list[int]:
+    """Prune picks whose top-edge gap exceeds ``gap_mult`` × median line height.
+
+    Fixes the dominant ``_MULTI_LINE_FRACTION`` failure mode: a mildly
+    diffuse attention head drags tax/phone/GST lines (separated from the
+    last address line by several receipt rows) into the ``address``
+    field.  Picks must already be sorted top→bottom by ``y1``.  The
+    first pick is always kept; subsequent picks are kept only when
+    ``y1_curr - y2_prev <= gap_mult * median_line_height``.  Degenerate
+    inputs (empty picks, no valid boxes, zero median height) return the
+    input unchanged so this helper never *removes* an otherwise-kept
+    region just because we couldn't estimate geometry.
+    """
+    if len(picks) < 2:
+        return list(picks)
+    mh = _median_line_height(bboxes)
+    if mh <= 0.0:
+        return list(picks)
+    kept = [picks[0]]
+    for i in picks[1:]:
+        if i >= len(bboxes) or len(bboxes[i]) < 4:
+            continue
+        prev = kept[-1]
+        if prev >= len(bboxes) or len(bboxes[prev]) < 4:
+            kept.append(i)
+            continue
+        gap = bboxes[i][1] - bboxes[prev][3]
+        if gap <= gap_mult * mh:
+            kept.append(i)
+    return kept
+
+
 def _same_line(
     bboxes: list[list[float]], a: int, b: int, frac: float = 0.5,
 ) -> bool:

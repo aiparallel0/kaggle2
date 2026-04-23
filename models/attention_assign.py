@@ -50,7 +50,7 @@ __all__ = [
 _log = logging.getLogger("kaggle2")
 
 
-def _architecture_config(model: AttentionAssigner) -> dict[str, int]:
+def _architecture_config(model: AttentionAssigner) -> dict[str, int | bool]:
     """Persist architecture params so mismatched checkpoints fail loudly."""
     return {
         "hidden_dim": model.hidden_dim,
@@ -59,6 +59,7 @@ def _architecture_config(model: AttentionAssigner) -> dict[str, int]:
         "n_layers": model.n_layers,
         "n_text_priors": model.n_text_priors,
         "text_feat_dim": model.text_feat_dim,
+        "text_pool_learned": bool(model.text_pool_learned),
     }
 
 
@@ -76,7 +77,7 @@ def _load_assigner(
 ) -> AttentionAssigner:
     """Load AttentionAssigner (bundle or legacy format); internal use."""
     blob = torch.load(path, map_location="cpu", weights_only=True)
-    cfg: dict[str, int]
+    cfg: dict[str, int | bool]
     if isinstance(blob, dict) and "state_dict" in blob and "config" in blob:
         cfg = dict(blob["config"])
         sd = blob["state_dict"]
@@ -97,11 +98,12 @@ def _load_assigner(
     if text_feat_dim is not None:
         cfg["text_feat_dim"] = text_feat_dim
     m = AttentionAssigner(
-        hidden_dim=cfg["hidden_dim"], n_fields=cfg["n_fields"],
-        n_heads=cfg.get("n_heads", DEFAULT_N_HEADS),
-        n_layers=cfg.get("n_layers", DEFAULT_N_LAYERS),
-        n_text_priors=cfg.get("n_text_priors", N_TEXT_PRIORS),
-        text_feat_dim=cfg.get("text_feat_dim", 768),
+        hidden_dim=int(cfg["hidden_dim"]), n_fields=int(cfg["n_fields"]),
+        n_heads=int(cfg.get("n_heads", DEFAULT_N_HEADS)),
+        n_layers=int(cfg.get("n_layers", DEFAULT_N_LAYERS)),
+        n_text_priors=int(cfg.get("n_text_priors", N_TEXT_PRIORS)),
+        text_feat_dim=int(cfg.get("text_feat_dim", 768)),
+        text_pool_learned=bool(cfg.get("text_pool_learned", False)),
     )
     m.load_state_dict(sd)
     if m.n_text_priors not in (N_TEXT_PRIORS, N_TEXT_PRIORS_V2, N_TEXT_PRIORS_V3):

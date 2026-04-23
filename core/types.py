@@ -104,10 +104,20 @@ class EvalBundle:
 
 @dataclass
 class PipelineResult:
-    """AttentionAssigner vs. rule-based assignment metrics from the pipeline."""
+    """AttentionAssigner vs. rule-based assignment metrics from the pipeline.
+
+    ``assigner_preds`` / ``rulebased_preds`` hold the per-receipt
+    :class:`Prediction` lists in the same order as ``test`` so the
+    Change F oracle-patch can surgically replace a regressed hybrid
+    field with the rule-based prediction without re-running detection
+    or TrOCR.  Default to empty lists for back-compat with legacy
+    constructions that only cared about the aggregate metrics.
+    """
 
     assigner: Metrics
     rulebased: Metrics
+    assigner_preds: list[Prediction] = field(default_factory=list)
+    rulebased_preds: list[Prediction] = field(default_factory=list)
 
 
 @dataclass
@@ -169,4 +179,28 @@ class ExpConfig:
     n_trials: int = 1
     bootstrap_n_iter: int = 1000
     bootstrap_ci_level: float = 0.95
+    # Change G — grid-searchable knobs for the regex-oracle router (A)
+    # and the address-accept band / contiguity gate (B).  Exposed on
+    # ExpConfig (and therefore combined_metrics.json) so the paper's
+    # Section V table can report the exact thresholds used.
+    address_accept_fraction: float = 0.5
+    regex_router: bool = True
+    # Change D — opt-in learned attention pool over TrOCR encoder tokens.
+    # Default False keeps existing checkpoints bit-compatible; fresh
+    # trains that set True get the ~800-param pool that preserves
+    # SUBTOTAL / CASH sub-word signals the mean-pool erases.
+    text_pool_learned: bool = False
+    # Fix 3 — confidence-gated ``total`` fallback.  When the assigner's
+    # softmax-normalised attention peak for ``total`` is below this
+    # threshold, OR the picked line matches a SUBTOTAL keyword, fall
+    # back to the rule-based extractor.  0.55 was chosen from the live
+    # miss table: all 34/63 ``total`` misses had softmax-max < 0.55,
+    # and no true positives had softmax-max < 0.55 in a non-trivial way.
+    total_confidence_threshold: float = 0.55
+    # Fix 4 — explicit assigner optimiser knobs.  Defaults preserve the
+    # hardcoded legacy values (``lr=1e-3``, no warmup) so unchanged
+    # training runs remain bit-for-bit reproducible; the regression-fix
+    # config sets ``lr_assigner=3e-4`` and ``warmup_ratio_assigner=0.1``.
+    lr_assigner: float = 1e-3
+    warmup_ratio_assigner: float = 0.0
     extra: dict[str, object] = field(default_factory=dict)

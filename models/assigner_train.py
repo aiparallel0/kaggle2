@@ -19,6 +19,7 @@ Role: implements the multi-instance negative-log positive-mass loss that
 from __future__ import annotations
 
 import json
+import math
 import os
 import random
 import re
@@ -59,6 +60,16 @@ _SYNTH_SUBTOTAL_TEMPLATES = (
     "SUBTOTAL RM {val}", "SUB TOTAL {val}", "SUB-TOTAL: {val}",
 )
 
+# Change E — per-field loss weights.  The live miss table shows the
+# three fields that regex handles best (company, address, total) are
+# exactly the three that regress when the assigner underfits; ``date``
+# is already at F1≈0.95 on the rule-based arm so a smaller weight
+# still keeps that gradient present without dominating.  Weights are
+# applied multiplicatively to each field's per-group loss term.
+FIELD_LOSS_WEIGHTS: dict[str, float] = {
+    "company": 1.5, "address": 1.3, "total": 1.2, "date": 0.8,
+}
+
 
 def _group_loss(
     assigner: AttentionAssigner, feats: Tensor, bboxes: Tensor, priors: Tensor,
@@ -66,6 +77,7 @@ def _group_loss(
     negatives: dict[int, list[int]] | None = None,
     teacher: dict[int, list[float]] | None = None,
     hardneg_weight: float = 0.0, kd_weight: float = 0.0,
+    idx_to_field: dict[int, str] | None = None,
 ) -> Tensor:
     """Augmented loss: pos-mass NLL + hard-neg hinge (B) + KD KL (C).
 
@@ -73,7 +85,9 @@ def _group_loss(
     runs reproduce bit-for-bit without ``hardneg_weight`` / ``kd_weight``
     set.  When enabled, the hinge penalises any negative region whose
     attn mass exceeds (mean-pos-attn − margin), and KD pulls the
-    full attn row toward the rule-based teacher softmax.
+    full attn row toward the rule-based teacher softmax.  When
+    ``idx_to_field`` is supplied each field's term is additionally
+    multiplied by :data:`FIELD_LOSS_WEIGHTS` (Change E).
     """
     tf = feats.to(device).unsqueeze(0)
     bf = bboxes.to(device).unsqueeze(0)
@@ -107,6 +121,9 @@ def _group_loss(
                         torch.softmax(probs / KD_TEMPERATURE, dim=-1).clamp(min=1e-8),
                     )
                     term = term + kd_weight * -(tt * log_student).sum()
+        if idx_to_field is not None:
+            w = FIELD_LOSS_WEIGHTS.get(idx_to_field.get(f_idx, ""), 1.0)
+            term = term * w
         loss = loss + term
         n_fields += 1
     return loss / max(n_fields, 1)
@@ -279,6 +296,7 @@ def _train_epoch(
     py_rng = random.Random(seed * 1_000 + epoch)
     perm = torch.randperm(len(groups), generator=gen).tolist()
     total, steps = 0.0, 0
+    idx_to_field = {v: k for k, v in field_to_idx.items()}
     for idx in perm:
         feats, bboxes, priors, targets, texts = groups[idx]
         feats, bboxes, priors, targets, texts = _augment(
@@ -299,6 +317,7 @@ def _train_epoch(
             assigner, feats, bboxes, priors_eff, targets, device,
             negatives=negs, teacher=teacher,
             hardneg_weight=hardneg_weight, kd_weight=kd_weight,
+            idx_to_field=idx_to_field,
         )
         cast(Any, loss).backward()
         torch.nn.utils.clip_grad_norm_(assigner.parameters(), max_norm=1.0)
@@ -347,17 +366,34 @@ def train_assigner(config: ExpConfig, data: AssignerData) -> str:
         n_layers=config.assigner_n_layers_level2,
         text_feat_dim=text_feat_dim, dropout=config.dropout_assigner,
         n_text_priors=n_priors,
+        text_pool_learned=config.text_pool_learned,
     ).to(device)
     hardneg_weight = _loss_knob(config, "assigner_hardneg_weight", 0.0)
     kd_weight = _loss_knob(config, "assigner_kd_weight", 0.0)
     synth_subtotal = _loss_knob(config, "assigner_synth_subtotal", 0.0)
     ocr_noise = _loss_knob(config, "assigner_ocr_noise", 0.0)
     opt = torch.optim.AdamW(
-        assigner.parameters(), lr=1e-3, weight_decay=config.weight_decay_assigner,
+        assigner.parameters(), lr=config.lr_assigner,
+        weight_decay=config.weight_decay_assigner,
     )
-    sched = torch.optim.lr_scheduler.CosineAnnealingLR(
-        opt, T_max=config.epochs_assigner,
-    )
+    # Fix 4 — optional linear warmup followed by cosine decay.  When
+    # ``warmup_ratio_assigner == 0`` (legacy default) we keep the
+    # previous bare cosine schedule for bit-compat with older configs.
+    warmup_steps = int(config.epochs_assigner * config.warmup_ratio_assigner)
+    if warmup_steps > 0:
+        def _lr_lambda(step: int) -> float:
+            """Linear warmup to 1.0, then cosine decay to 0.0."""
+            if step < warmup_steps:
+                return float(step + 1) / float(max(warmup_steps, 1))
+            progress = float(step - warmup_steps) / float(
+                max(config.epochs_assigner - warmup_steps, 1),
+            )
+            return 0.5 * (1.0 + math.cos(math.pi * progress))
+        sched = torch.optim.lr_scheduler.LambdaLR(opt, _lr_lambda)
+    else:
+        sched = torch.optim.lr_scheduler.CosineAnnealingLR(
+            opt, T_max=config.epochs_assigner,
+        )
     best_val = float("inf")
     best_epoch = -1
     best_state: dict[str, Tensor] | None = None
@@ -426,6 +462,8 @@ def train_assigner(config: ExpConfig, data: AssignerData) -> str:
                 "kd_weight": kd_weight,
                 "synth_subtotal": synth_subtotal,
                 "ocr_noise": ocr_noise,
+                "lr_assigner": config.lr_assigner,
+                "warmup_ratio_assigner": config.warmup_ratio_assigner,
                 "n_params": n_params,
                 "train_loss": train_loss_history,
                 "val_loss": val_loss_history,

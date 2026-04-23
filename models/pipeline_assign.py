@@ -9,7 +9,6 @@ Role: performs inference-time field assignment by picking regions whose
 """
 from __future__ import annotations
 
-import re
 from typing import TYPE_CHECKING
 
 from models.attention_assign import (
@@ -22,8 +21,16 @@ from models.attention_assign import (
     text_priors_v3,
 )
 from models.attention_priors import _MONEY_RE as _PRIORS_MONEY_RE
+from models.pipeline_consensus import enforce_address_contiguity
 from models.rule_based import DATE_RE, MONEY_RE
+from models.rule_fields import (
+    _SUBTOTAL_KW_RE,
+    _TOTAL_KW_RE,
+    extract_date,
+    extract_total,
+)
 from models.rule_regex import repair_money_ocr
+from models.total_postprocess import extract_total_value
 
 try:
     import torch
@@ -44,7 +51,15 @@ if TYPE_CHECKING:
 # post-hoc via ``_is_addr_boundary`` so the lower threshold never
 # pulls in phone/tax-id/header lines.
 _MULTI_LINE_FIELDS = frozenset({"address"})
-_MULTI_LINE_FRACTION = 0.25
+# Change B — default restored from 0.25 to 0.5.  The 0.25 band pulled
+# phone/tax/GST lines into the address whenever the attention head was
+# mildly diffuse (the common failure mode of a 2-layer encoder trained
+# on 500 SROIE receipts); the new ``enforce_address_contiguity`` gate
+# below now excises such lines spatially, so we no longer need the
+# wider band to compensate for missed prefix-of-GT lines.  Callers that
+# want a different band pass ``address_accept_fraction`` via
+# :class:`ExpConfig` (Change G).
+_MULTI_LINE_FRACTION = 0.5
 
 _FIELD_REGEX = {"date": DATE_RE, "total": MONEY_RE}
 
@@ -83,19 +98,23 @@ def _build_priors(
 
 
 def postprocess_value(name: str, value: str) -> str:
-    """Strip region text to SROIE GT format; for ``total`` retry after OCR-repair."""
+    """Strip region text to SROIE GT format; for ``total`` retry after OCR-repair.
+
+    Fix 5 — ``total`` routes through :func:`extract_total_value` which
+    strictly anchors to the rightmost ``\\d{1,3}(,\\d{3})*\\.\\d{2}`` on
+    the line and only falls back to a lenient ``\\d+\\.\\d{2}`` match
+    when TrOCR has dropped the thousands separator (``"RM I15.00"``).
+    Other fields use the legacy ``_FIELD_REGEX`` strip.
+    """
+    if name == "total":
+        return extract_total_value(value)
     pattern = _FIELD_REGEX.get(name)
     if pattern is None:
         return value
-    m = pattern.search(value) or (
-        pattern.search(repair_money_ocr(value)) if name == "total" else None
-    )
+    m = pattern.search(value)
     if not m:
         return value
-    out = m.group(0).strip()
-    if name == "total":
-        out = re.sub(r"^(RM|USD|SGD|MYR|\$)\s*", "", out, flags=re.IGNORECASE)
-    return out
+    return m.group(0).strip()
 
 
 def _has_regex_value(name: str, text: str) -> bool:
@@ -105,6 +124,91 @@ def _has_regex_value(name: str, text: str) -> bool:
         return True
     return bool(pattern.search(text) or (
         name == "total" and pattern.search(repair_money_ocr(text))))
+
+
+def _route_regex_field(
+    name: str, texts: list[str], bboxes: list[list[float]], used: set[int],
+) -> tuple[int, str] | None:
+    """Change A — regex-oracle router for deterministic fields (date/total).
+
+    Invert the legacy "attention picks region, regex filters the string"
+    pipeline: ask the rule-based extractor first.  Only return a pick
+    when it is *unambiguous* — otherwise fall through so the attention
+    argmax handles the genuinely hard case.
+
+    * ``date``  — first DATE_RE match in reading order (already unique
+                  on well-formed SROIE receipts).
+    * ``total`` — confident iff the rule extractor's pick has a TOTAL
+                  keyword in its ±1-line neighbourhood; ambiguous
+                  (multiple money lines with *no* TOTAL keyword anywhere)
+                  falls through to attention.
+
+    Returns ``None`` on ambiguity or when the pick was already consumed
+    by another field.
+    """
+    if name == "date":
+        pick = extract_date(texts)
+    elif name == "total":
+        pick = extract_total(texts, bboxes)
+    else:
+        return None
+    if pick is None or pick[0] in used:
+        return None
+    if name == "total" and not _is_confident_total(texts, pick[0]):
+        return None
+    return pick
+
+
+def _is_confident_total(texts: list[str], idx: int) -> bool:
+    """A ``total`` pick is confident iff its ±1-line window contains a
+    TOTAL keyword and the picked line itself is not a SUBTOTAL line.
+
+    Returns ``False`` for out-of-range ``idx`` as a defensive guard.
+    Co-occurrence of SUBTOTAL in a *neighbour* line (the canonical
+    SROIE layout is ``SUBTOTAL … / TOTAL …`` on consecutive rows) is
+    NOT a disqualifier; we only disqualify when the picked line itself
+    is labelled SUBTOTAL or when no TOTAL keyword appears at all in
+    the neighbourhood (the "multiple money lines, no TOTAL keyword"
+    ambiguity case from the Change A spec).
+    """
+    if idx >= len(texts):
+        return False
+    if _SUBTOTAL_KW_RE.search(texts[idx]):
+        return False
+    lo, hi = max(0, idx - 1), min(len(texts), idx + 2)
+    window = " ".join(texts[lo:hi])
+    return bool(_TOTAL_KW_RE.search(window))
+
+
+def _confidence_gate_total(
+    w: torch.Tensor, best: int, texts: list[str],
+    bboxes: list[list[float]], used: set[int], threshold: float,
+) -> tuple[int, str] | None:
+    """Fix 3 — return a rule-based ``total`` pick when the assigner is
+    unconfident.
+
+    Triggers when either:
+      * ``softmax(w).max() < threshold`` — the head is spread across
+        multiple money lines with no clear winner (the 34-miss
+        subtotal/rounding/change confusion mode), or
+      * the attention's argmax line itself matches the SUBTOTAL /
+        SERVICE / TENDER keyword regex — the assigner chose a known
+        distractor.
+
+    Returns ``None`` when the gate should NOT fire (assigner is
+    confident and its pick is not a distractor), leaving the caller's
+    attention-argmax path intact.
+    """
+    if best < 0 or best >= len(texts):
+        return None
+    picked_is_distractor = bool(_SUBTOTAL_KW_RE.search(texts[best]))
+    softmax_max = float(torch.softmax(w, dim=-1).max().item())
+    if softmax_max >= threshold and not picked_is_distractor:
+        return None
+    pick = extract_total(texts, bboxes)
+    if pick is None or pick[0] in used:
+        return None
+    return pick
 
 
 def _assign_learned(
@@ -123,12 +227,23 @@ def _assign_learned_with_attn(
     assigner: AttentionAssigner, texts: list[str],
     feats: list[torch.Tensor], bboxes: list[list[float]],
     fields: list[str], device: str,
+    address_accept_fraction: float | None = None,
+    regex_router: bool = True,
+    total_confidence_threshold: float = 0.0,
 ) -> tuple[dict[str, str], torch.Tensor | None]:
     """Field-assign and return (F, N) cross-attention for fig_attn_heatmap.
 
-    Multi-line fields (address) pick all regions with attn ≥ 0.5 × max
-    because the pos-mass loss spreads attention across positive regions
-    at train time.  Returns (values, None) on empty text.
+    Multi-line fields (address) pick all regions with attn ≥
+    ``address_accept_fraction`` × max (Change B, default 0.5 via
+    ``_MULTI_LINE_FRACTION``) then run through ``enforce_address_contiguity``
+    so diffuse-head picks cannot glue phone/GST/tax lines to the
+    address.  Regex-deterministic fields (date/total) are resolved via
+    :func:`_route_regex_field` first when ``regex_router`` is True
+    (Change A); attention is the fallback.  When
+    ``total_confidence_threshold > 0`` the attention fallback for
+    ``total`` additionally goes through :func:`_confidence_gate_total`
+    (Fix 3): a low-confidence or SUBTOTAL-flagged pick is replaced by
+    the rule-based extractor.  Returns ``(values, None)`` on empty text.
     """
     if not texts:
         return {}, None
@@ -142,9 +257,21 @@ def _assign_learned_with_attn(
     attn_sample = attn_w[0].detach().cpu()  # (F, N), kept for the sampler
     used: set[int] = set()
     out: dict[str, str] = {}
+    addr_frac = (
+        address_accept_fraction if address_accept_fraction is not None
+        else _MULTI_LINE_FRACTION
+    )
     for f_idx, name in enumerate(fields):
         if len(used) >= len(texts):
             break
+        # Change A — regex-oracle router for date/total.
+        if regex_router and name in _FIELD_REGEX:
+            routed = _route_regex_field(name, texts, bboxes, used)
+            if routed is not None:
+                best_idx, value = routed
+                used.add(best_idx)
+                out[name] = postprocess_value(name, value)
+                continue
         w = attn_w[0, f_idx].clone()
         for u in used:
             w[u] = -1e9
@@ -154,11 +281,15 @@ def _assign_learned_with_attn(
                 continue
             picks = [
                 i for i in range(w.shape[0])
-                if i not in used and float(w[i].item()) >= _MULTI_LINE_FRACTION * max_w
+                if i not in used and float(w[i].item()) >= addr_frac * max_w
             ]
             if not picks:
                 continue
             picks.sort(key=lambda i: bboxes[i][1])  # spatial top→bottom
+            # Change B — spatial-contiguity gate excises tax/phone/GST
+            # lines that the diffuse head sometimes drags in when its
+            # attention mass is > addr_frac of max.
+            picks = enforce_address_contiguity(picks, bboxes)
             for i in picks:
                 used.add(i)
             value = " ".join(texts[i].strip() for i in picks if texts[i].strip())
@@ -172,6 +303,19 @@ def _assign_learned_with_attn(
                      if i not in used and _has_regex_value(name, texts[i])),
                     order[0],
                 )
+                # Fix 3 — confidence gate for ``total``: low softmax max
+                # or a SUBTOTAL-keyword pick delegates to the rule-based
+                # extractor.  ``total_confidence_threshold <= 0`` disables
+                # the gate, keeping bit-compat with legacy callers.
+                if name == "total" and total_confidence_threshold > 0:
+                    gated = _confidence_gate_total(
+                        w, best, texts, bboxes, used, total_confidence_threshold,
+                    )
+                    if gated is not None:
+                        best, value = gated
+                        used.add(best)
+                        out[name] = postprocess_value(name, value)
+                        continue
             else:
                 best = int(w.argmax().item())
             used.add(best)

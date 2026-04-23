@@ -32,8 +32,20 @@ _DATE_RE = re.compile(
     r"[\w/\-\.\s]*\d{2,4}\b",
     re.IGNORECASE,
 )
-_TOTAL_KW = re.compile(r"\b(total|amount|grand|due|payable)\b", re.IGNORECASE)
-_SUBTOTAL_KW = re.compile(r"\bsub[\s\-]?total\b|\bsubtotal\b", re.IGNORECASE)
+_TOTAL_KW = re.compile(
+    r"\b(grand\s*total|total|jumlah|amount(?:\s+due)?|nett?|due|payable)\b",
+    re.IGNORECASE,
+)
+# Fix 2 — the SUBTOTAL bit is widened to ``service`` (which is an
+# itemised line-item, never the grand total) but intentionally NOT to
+# ``tender`` / ``change`` / ``rounding``: the v3 prior vector already
+# has dedicated :data:`_CASH_KW` / :data:`_CHANGE_KW` / :data:`_ROUNDING_KW`
+# bits for those, and re-adding them here would double-count a region's
+# distractor evidence inside the assigner's prior projection.
+_SUBTOTAL_KW = re.compile(
+    r"\bsub[\s\-]?total\b|\bsubtotal\b|\bservice\s+charge\b|\bservice\s+tax\b",
+    re.IGNORECASE,
+)
 
 # Distractor keywords for the v3 priors (strategy E).  Kept narrow so a
 # single bit is an unambiguous "this line is NOT the grand-total".
