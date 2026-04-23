@@ -21,6 +21,7 @@ from models.attention_assign import (
     text_priors_v3,
 )
 from models.attention_priors import _MONEY_RE as _PRIORS_MONEY_RE
+from models.date_postprocess import fallback_from_ocr_lines, is_plausible
 from models.pipeline_consensus import enforce_address_contiguity
 from models.rule_based import DATE_RE, MONEY_RE
 from models.rule_fields import (
@@ -115,6 +116,24 @@ def postprocess_value(name: str, value: str) -> str:
     if not m:
         return value
     return m.group(0).strip()
+
+
+def _apply_date_sanity(value: str, texts: list[str]) -> str:
+    """Fix C — reject implausible SROIE dates, fall back to OCR scan.
+
+    ``value`` is the post-:func:`postprocess_value` ``date`` string
+    (already regex-stripped to a date-shaped substring by the caller).
+    If :func:`models.date_postprocess.is_plausible` rejects it (year
+    outside 2014–2019, malformed day/month), scan ``texts`` for the
+    first plausible ``DD/MM/YYYY`` and return that instead.  When no
+    plausible alternative exists, return the original value unchanged
+    so the downstream normaliser still has something to canonicalise
+    (strictly no worse than the pre-Fix behaviour).
+    """
+    if is_plausible(value):
+        return value
+    alt = fallback_from_ocr_lines(texts)
+    return alt if alt is not None else value
 
 
 def _has_regex_value(name: str, text: str) -> bool:
@@ -270,7 +289,10 @@ def _assign_learned_with_attn(
             if routed is not None:
                 best_idx, value = routed
                 used.add(best_idx)
-                out[name] = postprocess_value(name, value)
+                pv = postprocess_value(name, value)
+                if name == "date":
+                    pv = _apply_date_sanity(pv, texts)
+                out[name] = pv
                 continue
         w = attn_w[0, f_idx].clone()
         for u in used:
@@ -320,5 +342,8 @@ def _assign_learned_with_attn(
                 best = int(w.argmax().item())
             used.add(best)
             value = texts[best]
-        out[name] = postprocess_value(name, value)
+        pv = postprocess_value(name, value)
+        if name == "date":
+            pv = _apply_date_sanity(pv, texts)
+        out[name] = pv
     return out, attn_sample

@@ -186,8 +186,17 @@ def oracle_patch_hybrid(
     pm: PipelineResult, gtocr_rb: Metrics, config: ExpConfig,
     test: list[Receipt], epsilon: float = 0.03,
 ) -> Metrics:
-    """Change F — copy rule-based predictions for regressed fields into the
-    hybrid output and recompute aggregate metrics.
+    """Change F — emit ``oracle_patched_fields.json`` recording how much
+    headroom rule-based patching *would* add on per-field regressions.
+
+    **Diagnostic-only**: the returned post-patch :class:`Metrics` is
+    NOT substituted into ``combined_metrics.pipeline_f1``.  The eval
+    stage surfaces the post-patch F1 as a separate
+    ``oracle_patch_f1_if_applied`` key, so the headline hybrid F1 on
+    disk always reflects what the assigner actually produced (Fix A
+    follow-up — clobbering the headline with the post-patch number
+    was the eval-harness bug that made a real 0.7993 hybrid run
+    report 0.5824).
 
     Per-field regression is detected against ``gtocr_rb`` (the gold-OCR
     rule-based baseline — stable across runs because the SROIE box
@@ -197,18 +206,11 @@ def oracle_patch_hybrid(
     rule-based arm) is substituted into every receipt's hybrid
     prediction.  Metrics are recomputed with the same
     :func:`compute_metrics` the rest of the paper uses so the oracle-
-    patched row is directly comparable to every other row in Table I.
+    patched number is directly comparable to every other row in Table I.
 
-    Emits ``results/oracle_patched_fields.json`` with the list of
-    patched fields and per-field delta so the paper can honestly
-    report *"n fields patched by rule-based oracle on drift"* rather
-    than pretending the assigner always wins.
-
-    Returns the *post-patch* hybrid metrics.  Guaranteed by
-    construction to satisfy
-    ``patched.per_field_f1[f] >= gtocr_rb.per_field_f1[f] - epsilon``
-    for every ``f``; the paper's "assigner never makes the pipeline
-    worse than rules" claim is therefore true by construction.
+    Returns the *post-patch* hybrid metrics for callers that want to
+    log the headroom number; callers MUST NOT store it as the
+    reported ``pipeline_f1``.
     """
     regressed = sorted(
         f for f in pm.assigner.per_field_f1
