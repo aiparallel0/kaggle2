@@ -380,6 +380,7 @@ def train_assigner(config: ExpConfig, data: AssignerData) -> str:
     # ``warmup_ratio_assigner == 0`` (legacy default) we keep the
     # previous bare cosine schedule for bit-compat with older configs.
     warmup_steps = int(config.epochs_assigner * config.warmup_ratio_assigner)
+    sched: torch.optim.lr_scheduler.LRScheduler
     if warmup_steps > 0:
         def _lr_lambda(step: int) -> float:
             """Linear warmup to 1.0, then cosine decay to 0.0."""
