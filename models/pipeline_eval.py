@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -35,6 +36,11 @@ from models.pipeline_attn import DEFAULT_SAMPLE_K, AttentionSampler
 from models.pipeline_consensus import refine_assignments
 from models.pipeline_detect import _detect_and_read, _fallback_full_image
 from models.pipeline_miss_tracker import log_field_breakdown
+from models.pipeline_normalize import (
+    normalize_address,
+    normalize_company,
+    normalize_date,
+)
 from models.rule_based import rule_based_assign
 
 _import_error: ImportError | None = None
@@ -47,10 +53,32 @@ except ImportError as _exc:  # lightweight CI — torch not installed
 log = logging.getLogger("kaggle2")
 
 
+_FIELD_NORMALISERS: dict[str, Callable[[str], str]] = {
+    "total": normalize_total,
+    "date": normalize_date,
+    "company": normalize_company,
+    "address": normalize_address,
+}
+
+
+def _identity(s: str) -> str:
+    return s
+
+
 def _nt(fields: list[Field]) -> list[Field]:
-    """Normalize the TOTAL field symmetrically (matches ``eval_donut``)."""
-    return [Field(name=f.name, value=normalize_total(f.value))
-            if f.name.lower() == "total" else f for f in fields]
+    """Apply symmetric per-field normalisation before metric compute.
+
+    Every field (not just TOTAL) is routed through its paired
+    ``normalize_*`` so pred/GT punctuation/spacing mismatches — which
+    token-F1 treats as full token losses — cancel symmetrically on both
+    sides.  This mirrors what the ANLS-style metric reported by the
+    ICDAR SROIE evaluator does and keeps pipeline F1 comparable to
+    DONUT F1 (eval_donut passes through the same normalisers).
+    """
+    return [Field(
+        name=f.name,
+        value=_FIELD_NORMALISERS.get(f.name.lower(), _identity)(f.value),
+    ) for f in fields]
 
 
 def _predictions_by_field(

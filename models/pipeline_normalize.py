@@ -33,6 +33,12 @@ _MULTI_WS_RE = re.compile(r"\s+")
 _TRAILING_PUNCT_RE = re.compile(r"[\s,;:.\-_]+$")
 _LEADING_PUNCT_RE = re.compile(r"^[\s,;:.\-_]+")
 _NUM_DATE_RE = re.compile(r"^(\d{1,4})[/\-\.](\d{1,2})[/\-\.](\d{1,4})$")
+# Internal punctuation to collapse to a single space inside company/address
+# strings before token-F1 so pred ``"ACME SDN. BHD."`` and GT ``"ACME SDN
+# BHD"`` reduce to the same whitespace-token set.  Numeric separators
+# (``/`` in dates, ``.`` in decimals) are handled by the field-specific
+# normalisers and are NOT collapsed here.
+_TEXT_INTERNAL_PUNCT_RE = re.compile(r"[,;:()\[\]\"'`]+|\.(?=\s|$)|(?<=\s)\.")
 
 
 def _collapse_ws(s: str) -> str:
@@ -41,6 +47,11 @@ def _collapse_ws(s: str) -> str:
 
 def _strip_edge_punct(s: str) -> str:
     return _LEADING_PUNCT_RE.sub("", _TRAILING_PUNCT_RE.sub("", s)).strip()
+
+
+def _strip_text_punct(s: str) -> str:
+    """Collapse SROIE-GT-inconsistent punctuation inside company/address."""
+    return _TEXT_INTERNAL_PUNCT_RE.sub(" ", s)
 
 
 def normalize_date(value: str) -> str:
@@ -66,26 +77,33 @@ def normalize_date(value: str) -> str:
 
 
 def normalize_company(value: str) -> str:
-    """Collapse whitespace, strip edge punctuation, and repair OCR alpha→digit.
+    r"""Collapse whitespace, strip edge + internal punctuation, repair OCR alpha.
 
-    The SROIE GT company values are upper-case single-line strings, so we
-    do not case-fold here — the metric already lower-cases both sides
-    before token F1.  :func:`repair_company_ocr` fixes pure-alpha tokens
-    (``"SDN 8HD"`` → ``"SDN BHD"``) while leaving address numerals
-    (``"BLOCK 3"``, ``"LOT 8A"``) untouched.
+    The SROIE GT company values are upper-case single-line strings that
+    carry inconsistent trailing ``"SDN BHD."`` vs ``"SDN BHD"`` — each
+    such mismatch costs a full token-F1 point.  :func:`_strip_text_punct`
+    collapses ``,;:()[]."'\``` and orphan periods inside the value so
+    both sides of the comparison end up with the same token set.  Case
+    is preserved; token-F1 is case-insensitive already.  Digit-into-alpha
+    OCR confusions are first repaired via :func:`repair_company_ocr`.
     """
-    return _strip_edge_punct(_collapse_ws(repair_company_ocr(value)))
+    t = _strip_text_punct(repair_company_ocr(value))
+    return _strip_edge_punct(_collapse_ws(t))
 
 
 def normalize_address(value: str) -> str:
-    """Collapse whitespace, strip edge punctuation, repair OCR 5-digit postcodes.
+    """Collapse whitespace, strip edge + internal punctuation, repair postcodes.
 
-    :func:`repair_postcode_ocr` corrects digit confusions (``O``→``0``,
-    ``l``→``1``) inside 5-digit postcode-shaped runs only — Malaysian
-    SROIE addresses are postcode-majority — so token F1 is not
+    Address GT on SROIE mixes comma and no-comma conventions
+    (``"NO 12, BLOCK 3, 50100 KL"`` vs ``"NO 12 BLOCK 3 50100 KL"``);
+    stripping these symmetrically via :func:`_strip_text_punct` avoids
+    the per-comma F1 penalty.  :func:`repair_postcode_ocr` fixes digit
+    confusions inside 5-digit postcode-shaped runs only — Malaysian
+    SROIE addresses are postcode-majority — so token-F1 is not
     penalised for a single OCR letter/digit swap in the postcode.
     """
-    return _strip_edge_punct(_collapse_ws(repair_postcode_ocr(value)))
+    t = _strip_text_punct(repair_postcode_ocr(value))
+    return _strip_edge_punct(_collapse_ws(t))
 
 
 def normalize_total_value(value: str) -> str:
