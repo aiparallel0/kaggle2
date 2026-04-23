@@ -34,9 +34,15 @@ if TYPE_CHECKING:
 
 # Fields whose GT value spans multiple OCR regions (address = street/city/
 # postcode).  Pick every region with ``attn >= _MULTI_LINE_FRACTION * max``
-# and concatenate top→bottom; pos-mass loss trains for this.
+# and concatenate top→bottom; pos-mass loss trains for this.  The
+# fraction was ``0.5`` originally, which drops the 3rd/4th line of a
+# long address whenever attention is spread even slightly — 38/63
+# address misses in the live miss table are pure prefix-of-GT.  ``0.25``
+# widens the accept band; ``refine_assignments`` then filters junk
+# post-hoc via ``_is_addr_boundary`` so the lower threshold never
+# pulls in phone/tax-id/header lines.
 _MULTI_LINE_FIELDS = frozenset({"address"})
-_MULTI_LINE_FRACTION = 0.5
+_MULTI_LINE_FRACTION = 0.25
 
 _FIELD_REGEX = {"date": DATE_RE, "total": MONEY_RE}
 
