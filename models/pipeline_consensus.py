@@ -15,6 +15,7 @@ Role: refines the learned AttentionAssigner's draft field→value dict
 """
 from __future__ import annotations
 
+import math
 import re
 
 from models.pipeline_normalize import (
@@ -91,6 +92,62 @@ _CURRENCY_CUE_RE = re.compile(r"\b(?:RM|MYR|\$)\b", re.IGNORECASE)
 # line scores ~4 (``_TOTAL_STRONG`` match) — a 2-point margin preserves
 # that correction while leaving weak-evidence cases to the assigner.
 _TOTAL_OVERRIDE_MARGIN = 2.0
+
+# --- Strategy (L) — calibrated additive scoring -----------------------------
+# Weight that multiplies ``log(attn+ε)`` when the rule-based money scorer
+# ranks candidates.  The rule score is already well-calibrated in the 0–5
+# range (see :func:`_score_money`); α=0.5 keeps attention as a tie-break
+# without letting a confident-but-wrong attention peak overwhelm a clean
+# ``_TOTAL_STRONG`` keyword match.  Tuned qualitatively on the live miss
+# table; re-tune on val if the attention distribution shifts.
+_ATTN_BLEND_ALPHA = 0.5
+# ε floor — log(0) = -inf otherwise kills the signal for all non-argmax
+# candidates.  Matches the ``clamp(min=1e-8)`` used in the training loss.
+_ATTN_LOG_EPS = 1e-4
+
+# --- Strategy (H) — confidence-gated delegation -----------------------------
+# Per-field attention is considered "diffuse" (low-confidence) when either:
+#   * normalised Shannon entropy H/H_max ≥ _ATTN_DIFFUSE_ENTROPY, **or**
+#   * top-1 − top-2 margin ≤ _ATTN_DIFFUSE_MARGIN.
+# Under diffuse attention the override margin for ``_refine_total`` drops
+# to :data:`_TOTAL_OVERRIDE_MARGIN_DIFFUSE` so the rule-based scorer can
+# correct the learned pick more aggressively — a free F1 floor since the
+# rule-based arm has higher per-field F1 than the learned arm on the
+# SROIE miss table.
+_ATTN_DIFFUSE_ENTROPY = 0.80
+_ATTN_DIFFUSE_MARGIN = 0.05
+_TOTAL_OVERRIDE_MARGIN_DIFFUSE = 0.5
+
+
+def _attn_entropy(row: list[float]) -> float:
+    """Normalised Shannon entropy of an attention row — 0 = peaked, 1 = uniform."""
+    if not row:
+        return 1.0
+    total = sum(max(p, 0.0) for p in row)
+    if total <= 0:
+        return 1.0
+    probs = [max(p, 0.0) / total for p in row]
+    h = -sum(p * math.log(p) for p in probs if p > 0)
+    h_max = math.log(len(probs)) if len(probs) > 1 else 1.0
+    return h / h_max if h_max > 0 else 1.0
+
+
+def _attn_margin(row: list[float]) -> float:
+    """Top-1 − top-2 gap after normalisation — 0 = tie, 1 = one-hot."""
+    if not row or len(row) < 2:
+        return 1.0 if row else 0.0
+    total = sum(max(p, 0.0) for p in row) or 1.0
+    probs = sorted((max(p, 0.0) / total for p in row), reverse=True)
+    return probs[0] - probs[1]
+
+
+def _is_attn_diffuse(row: list[float] | None) -> bool:
+    """True when the attention row is flat enough that the rule-based
+    scorer should be trusted over the learned argmax."""
+    if row is None or not row:
+        return True
+    return (_attn_entropy(row) >= _ATTN_DIFFUSE_ENTROPY
+            or _attn_margin(row) <= _ATTN_DIFFUSE_MARGIN)
 
 
 # Keywords that mark a transition OUT of the address block into invoice
@@ -169,6 +226,7 @@ def _attn_rank(row: list[float]) -> dict[int, int]:
 
 def _score_money(
     i: int, texts: list[str], rank: dict[int, int], money_idxs: list[int],
+    attn_row: list[float] | None = None,
 ) -> float:
     """Higher = more likely the real TOTAL line.
 
@@ -184,6 +242,11 @@ def _score_money(
     - Positional: the **last** money line gets +1.5, the 2nd-to-last
       gets +0.5 (this is the strongest single signal on SROIE).
     - Attention rank tie-break: argmax +1.0, top-3 +0.3.
+    - **Strategy (L)** — when ``attn_row`` is provided, add
+      ``_ATTN_BLEND_ALPHA · log(attn + ε)`` so a confident assigner peak
+      tilts ties without swamping a clean ``_TOTAL_STRONG`` match.  This
+      is the additive-ensemble scorer recommended by the plan, replacing
+      the coarse "argmax +1.0" tie-breaker with a continuous signal.
 
     Note the previous version multiplied ``bboxes[i][1]`` (raw pixel y)
     by 0.5 which produced dominating 500+ scores on tall receipts; the
@@ -213,6 +276,9 @@ def _score_money(
         s += 1.0
     elif r <= 2:
         s += 0.3
+    if attn_row is not None and 0 <= i < len(attn_row):
+        a = max(float(attn_row[i]), 0.0)
+        s += _ATTN_BLEND_ALPHA * math.log(a + _ATTN_LOG_EPS)
     return s
 
 
@@ -231,9 +297,10 @@ def _refine_total(
     conservative rule below only overrides the learned pick when:
 
     * the learned value is **not** a well-formed money string, **or**
-    * the best-scoring candidate beats the learned one by a margin of
-      at least :data:`_TOTAL_OVERRIDE_MARGIN` — i.e. there is positive
-      keyword evidence for the new pick that the learned line lacks.
+    * the best-scoring candidate beats the learned one by at least the
+      override margin — which drops from :data:`_TOTAL_OVERRIDE_MARGIN`
+      to :data:`_TOTAL_OVERRIDE_MARGIN_DIFFUSE` when the assigner's
+      attention is diffuse (strategy H — confidence-gated delegation).
 
     The margin-based rule naturally keeps the learned pick on receipts
     where the scorer finds no decisive signal, while still correcting
@@ -246,7 +313,7 @@ def _refine_total(
         return learned
     rank = _attn_rank(attn_row) if attn_row else {}
     scored: list[tuple[float, int, str]] = sorted(
-        ((_score_money(i, repaired, rank, money_idxs), i,
+        ((_score_money(i, repaired, rank, money_idxs, attn_row), i,
           _MONEY_RE.search(repaired[i]).group(0))  # type: ignore[union-attr]
          for i in money_idxs),
         reverse=True,
@@ -259,11 +326,14 @@ def _refine_total(
         # evidence either).
         return _strip_currency(best_val) if best_score > 0 else learned_clean
     # Learned value is a well-formed money string — protect it unless a
-    # competing candidate is decisively better.
+    # competing candidate is decisively better.  The required margin is
+    # relaxed when the assigner is unsure of itself (flat attention row).
     learned_score = next(
         (sc for sc, _, v in scored if v.strip() == learned_clean), float("-inf"),
     )
-    if best_score - learned_score >= _TOTAL_OVERRIDE_MARGIN and best_score > 0:
+    margin = (_TOTAL_OVERRIDE_MARGIN_DIFFUSE if _is_attn_diffuse(attn_row)
+              else _TOTAL_OVERRIDE_MARGIN)
+    if best_score - learned_score >= margin and best_score > 0:
         return _strip_currency(best_val)
     return learned_clean
 
@@ -460,7 +530,7 @@ def _address_span(
 
 def _refine_address(
     learned: str, texts: list[str], bboxes: list[list[float]],
-    field_values: dict[str, str],
+    field_values: dict[str, str], attn_row: list[float] | None = None,
 ) -> str:
     """Prefer postcode-bearing, junk-free, longest candidate.
 
@@ -479,6 +549,11 @@ def _refine_address(
     Candidates considered: the learned pick (with ``CO. NO. ...`` /
     ``GST NO. ...`` leading junk stripped), the rule-based
     ``_pick_address``, and the greedy ``_address_span``.
+
+    Strategy (H) — when the learned attention is diffuse, downweight the
+    learned candidate by one tier in the tuple key so the rule-based
+    span wins ties.  This delegates to the higher-F1 rule arm on
+    precisely the receipts where the learned arm has no conviction.
     """
     learned_clean = _strip_leading_junk(learned)
     span = _strip_leading_junk(_address_span(texts, bboxes))
@@ -502,7 +577,14 @@ def _refine_address(
         has_cont = 1 if _ADDR_CONTINUATION.search(st) else 0
         return (has_postcode, not_junk, has_cont, len(st))
 
-    return max((learned_clean, rule_addr, span), key=_score)
+    candidates = [learned_clean, rule_addr, span]
+    scores = [_score(c) for c in candidates]
+    if _is_attn_diffuse(attn_row):
+        # Demote the learned candidate by zeroing its ``not_junk`` bit;
+        # equivalent to "when the assigner is unsure, trust the rule span".
+        s_learned = scores[0]
+        scores[0] = (s_learned[0], 0, s_learned[2], s_learned[3])
+    return max(zip(candidates, scores, strict=True), key=lambda cs: cs[1])[0]
 
 
 def refine_assignments(
@@ -524,7 +606,8 @@ def refine_assignments(
             _refine_company(out["company"], texts, bboxes),
         )
     if "address" in out:
+        row = attn[by_idx["address"]] if attn and "address" in by_idx else None
         out["address"] = normalize_address(
-            _refine_address(out["address"], texts, bboxes, out),
+            _refine_address(out["address"], texts, bboxes, out, attn_row=row),
         )
     return out
