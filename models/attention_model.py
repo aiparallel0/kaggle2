@@ -32,11 +32,18 @@ except ImportError:  # lightweight CI — torch not installed
 if TYPE_CHECKING:
     from torch import Tensor
 
-# Architecture defaults. Exposed as constants so save/load stay consistent.
-DEFAULT_HIDDEN_DIM = 128
-DEFAULT_N_HEADS = 8
-DEFAULT_N_LAYERS = 2
+# Architecture defaults.  Exposed as constants so save/load stay consistent.
+# Defaults target ~7–8M parameters so the assigner has enough capacity to
+# compensate for TrOCR/YOLO mistakes (character confusions, SUBTOTAL-vs-TOTAL
+# disambiguation, multi-line address stitching) and push pipeline F1 past
+# the 0.97·0.97·0.97=0.91 naive-chain ceiling.  The 128/2-layer ``legacy``
+# size is still loadable via the checkpoint-header config mechanism in
+# ``_load_assigner`` — changing these defaults only affects *fresh* trains.
+DEFAULT_HIDDEN_DIM = 384
+DEFAULT_N_HEADS = 12
+DEFAULT_N_LAYERS = 6
 DEFAULT_DROPOUT = 0.1
+DEFAULT_FF_MULT = 2  # FFN hidden = hidden_dim * DEFAULT_FF_MULT
 
 
 def _pick_n_heads(hidden_dim: int, requested: int) -> int:
@@ -82,7 +89,8 @@ class AttentionAssigner(_NN_BASE):  # type: ignore[misc]
         self.input_norm = nn.LayerNorm(hidden_dim)
 
         encoder_layer = nn.TransformerEncoderLayer(
-            d_model=hidden_dim, nhead=heads, dim_feedforward=hidden_dim * 2,
+            d_model=hidden_dim, nhead=heads,
+            dim_feedforward=hidden_dim * DEFAULT_FF_MULT,
             dropout=dropout, batch_first=True, activation="gelu", norm_first=True,
         )
         self.encoder = nn.TransformerEncoder(

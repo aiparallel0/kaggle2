@@ -32,7 +32,9 @@ from models.attention_assign import _load_assigner
 from models.donut_eval import normalize_total
 from models.pipeline_assign import _assign_learned_with_attn
 from models.pipeline_attn import DEFAULT_SAMPLE_K, AttentionSampler
+from models.pipeline_consensus import refine_assignments
 from models.pipeline_detect import _detect_and_read, _fallback_full_image
+from models.pipeline_miss_tracker import log_field_breakdown
 from models.rule_based import rule_based_assign
 
 _import_error: ImportError | None = None
@@ -149,6 +151,17 @@ def eval_pipeline(config: ExpConfig, test: list[Receipt]) -> PipelineResult:
                 learned, attn = _assign_learned_with_attn(
                     assigner, texts, feats, bboxes, config.fields, device,
                 )
+                # Analytical per-field refinement: compensates for TrOCR/YOLO
+                # mistakes the learned attention alone cannot fix (SUBTOTAL-vs-
+                # TOTAL confusion, postcode digit repair, company O↔0 / B↔8,
+                # date separator + 8-digit compact reconstruction).
+                attn_rows = (
+                    [attn[i].tolist() for i in range(attn.shape[0])]
+                    if attn is not None else None
+                )
+                learned = refine_assignments(
+                    learned, texts, bboxes, attn_rows, config.fields,
+                )
                 if attn is not None and not attn_sampler.full:
                     attn_sampler.capture(str(rec.image_path), bboxes, attn)
                 rule = rule_based_assign(texts, bboxes) if texts else {}
@@ -175,6 +188,7 @@ def eval_pipeline(config: ExpConfig, test: list[Receipt]) -> PipelineResult:
     n_test = [Receipt(image_path=r.image_path, fields=_nt(r.fields)) for r in test]
     m_l = compute_metrics(EvalBundle(n_preds_l, n_test, config.fields))
     m_r = compute_metrics(EvalBundle(n_preds_r, n_test, config.fields))
+    field_diag = log_field_breakdown(m_l, n_preds_l, n_test, config.fields)
     # Flat top-level pipeline_metrics.json so stages/_common,
     # report/combine, and core/validate all read the same file; the attn
     # sampler still writes into results/yolo/ for fig_attn_heatmap.
@@ -194,8 +208,9 @@ def eval_pipeline(config: ExpConfig, test: list[Receipt]) -> PipelineResult:
             "n_test_receipts": len(test),
             "receipt_error_samples": receipt_error_samples,
             "receipt_error_types": sorted(receipt_error_type_set),
+            "per_field_diagnostics": field_diag,
             "predictions_by_field": _predictions_by_field(
-                n_preds_l, n_test, ("total", "address"),
+                n_preds_l, n_test, tuple(config.fields),
             ),
         }, f, indent=2)
     return PipelineResult(assigner=m_l, rulebased=m_r)

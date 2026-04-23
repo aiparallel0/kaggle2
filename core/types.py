@@ -152,8 +152,8 @@ class ExpConfig:
     num_beams: int = 4
     expected_f1_warn: float = 0.75
     skip_donut: bool = False
-    assigner_hidden: int = 192
-    assigner_n_layers_level2: int = 3
+    assigner_hidden: int = 384
+    assigner_n_layers_level2: int = 6
     emit_hidden: int = 128
     emit_vocab_size: int = 259
     emit_max_len: int = 96
