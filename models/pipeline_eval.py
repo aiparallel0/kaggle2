@@ -162,6 +162,7 @@ def eval_pipeline(config: ExpConfig, test: list[Receipt]) -> PipelineResult:
                 assigner, t0, f0, b0, config.fields, device,
                 address_accept_fraction=config.address_accept_fraction,
                 regex_router=config.regex_router,
+                total_confidence_threshold=config.total_confidence_threshold,
             )
         for rec in test:
             rid = rec.image_path.stem
@@ -184,6 +185,7 @@ def eval_pipeline(config: ExpConfig, test: list[Receipt]) -> PipelineResult:
                     assigner, texts, feats, bboxes, config.fields, device,
                     address_accept_fraction=config.address_accept_fraction,
                     regex_router=config.regex_router,
+                    total_confidence_threshold=config.total_confidence_threshold,
                 )
                 # Analytical per-field refinement: compensates for TrOCR/YOLO
                 # mistakes the learned attention alone cannot fix (SUBTOTAL-vs-

@@ -19,6 +19,7 @@ Role: implements the multi-instance negative-log positive-mass loss that
 from __future__ import annotations
 
 import json
+import math
 import os
 import random
 import re
@@ -372,11 +373,27 @@ def train_assigner(config: ExpConfig, data: AssignerData) -> str:
     synth_subtotal = _loss_knob(config, "assigner_synth_subtotal", 0.0)
     ocr_noise = _loss_knob(config, "assigner_ocr_noise", 0.0)
     opt = torch.optim.AdamW(
-        assigner.parameters(), lr=1e-3, weight_decay=config.weight_decay_assigner,
+        assigner.parameters(), lr=config.lr_assigner,
+        weight_decay=config.weight_decay_assigner,
     )
-    sched = torch.optim.lr_scheduler.CosineAnnealingLR(
-        opt, T_max=config.epochs_assigner,
-    )
+    # Fix 4 — optional linear warmup followed by cosine decay.  When
+    # ``warmup_ratio_assigner == 0`` (legacy default) we keep the
+    # previous bare cosine schedule for bit-compat with older configs.
+    warmup_steps = int(config.epochs_assigner * config.warmup_ratio_assigner)
+    if warmup_steps > 0:
+        def _lr_lambda(step: int) -> float:
+            """Linear warmup to 1.0, then cosine decay to 0.0."""
+            if step < warmup_steps:
+                return float(step + 1) / float(max(warmup_steps, 1))
+            progress = float(step - warmup_steps) / float(
+                max(config.epochs_assigner - warmup_steps, 1),
+            )
+            return 0.5 * (1.0 + math.cos(math.pi * progress))
+        sched = torch.optim.lr_scheduler.LambdaLR(opt, _lr_lambda)
+    else:
+        sched = torch.optim.lr_scheduler.CosineAnnealingLR(
+            opt, T_max=config.epochs_assigner,
+        )
     best_val = float("inf")
     best_epoch = -1
     best_state: dict[str, Tensor] | None = None
@@ -445,6 +462,8 @@ def train_assigner(config: ExpConfig, data: AssignerData) -> str:
                 "kd_weight": kd_weight,
                 "synth_subtotal": synth_subtotal,
                 "ocr_noise": ocr_noise,
+                "lr_assigner": config.lr_assigner,
+                "warmup_ratio_assigner": config.warmup_ratio_assigner,
                 "n_params": n_params,
                 "train_loss": train_loss_history,
                 "val_loss": val_loss_history,

@@ -9,7 +9,6 @@ Role: performs inference-time field assignment by picking regions whose
 """
 from __future__ import annotations
 
-import re
 from typing import TYPE_CHECKING
 
 from models.attention_assign import (
@@ -31,6 +30,7 @@ from models.rule_fields import (
     extract_total,
 )
 from models.rule_regex import repair_money_ocr
+from models.total_postprocess import extract_total_value
 
 try:
     import torch
@@ -98,19 +98,23 @@ def _build_priors(
 
 
 def postprocess_value(name: str, value: str) -> str:
-    """Strip region text to SROIE GT format; for ``total`` retry after OCR-repair."""
+    """Strip region text to SROIE GT format; for ``total`` retry after OCR-repair.
+
+    Fix 5 — ``total`` routes through :func:`extract_total_value` which
+    strictly anchors to the rightmost ``\\d{1,3}(,\\d{3})*\\.\\d{2}`` on
+    the line and only falls back to a lenient ``\\d+\\.\\d{2}`` match
+    when TrOCR has dropped the thousands separator (``"RM I15.00"``).
+    Other fields use the legacy ``_FIELD_REGEX`` strip.
+    """
+    if name == "total":
+        return extract_total_value(value)
     pattern = _FIELD_REGEX.get(name)
     if pattern is None:
         return value
-    m = pattern.search(value) or (
-        pattern.search(repair_money_ocr(value)) if name == "total" else None
-    )
+    m = pattern.search(value)
     if not m:
         return value
-    out = m.group(0).strip()
-    if name == "total":
-        out = re.sub(r"^(RM|USD|SGD|MYR|\$)\s*", "", out, flags=re.IGNORECASE)
-    return out
+    return m.group(0).strip()
 
 
 def _has_regex_value(name: str, text: str) -> bool:
@@ -176,6 +180,37 @@ def _is_confident_total(texts: list[str], idx: int) -> bool:
     return bool(_TOTAL_KW_RE.search(window))
 
 
+def _confidence_gate_total(
+    w: torch.Tensor, best: int, texts: list[str],
+    bboxes: list[list[float]], used: set[int], threshold: float,
+) -> tuple[int, str] | None:
+    """Fix 3 — return a rule-based ``total`` pick when the assigner is
+    unconfident.
+
+    Triggers when either:
+      * ``softmax(w).max() < threshold`` — the head is spread across
+        multiple money lines with no clear winner (the 34-miss
+        subtotal/rounding/change confusion mode), or
+      * the attention's argmax line itself matches the SUBTOTAL /
+        SERVICE / TENDER keyword regex — the assigner chose a known
+        distractor.
+
+    Returns ``None`` when the gate should NOT fire (assigner is
+    confident and its pick is not a distractor), leaving the caller's
+    attention-argmax path intact.
+    """
+    if best < 0 or best >= len(texts):
+        return None
+    picked_is_distractor = bool(_SUBTOTAL_KW_RE.search(texts[best]))
+    softmax_max = float(torch.softmax(w, dim=-1).max().item())
+    if softmax_max >= threshold and not picked_is_distractor:
+        return None
+    pick = extract_total(texts, bboxes)
+    if pick is None or pick[0] in used:
+        return None
+    return pick
+
+
 def _assign_learned(
     assigner: AttentionAssigner, texts: list[str],
     feats: list[torch.Tensor], bboxes: list[list[float]],
@@ -194,6 +229,7 @@ def _assign_learned_with_attn(
     fields: list[str], device: str,
     address_accept_fraction: float | None = None,
     regex_router: bool = True,
+    total_confidence_threshold: float = 0.0,
 ) -> tuple[dict[str, str], torch.Tensor | None]:
     """Field-assign and return (F, N) cross-attention for fig_attn_heatmap.
 
@@ -203,8 +239,11 @@ def _assign_learned_with_attn(
     so diffuse-head picks cannot glue phone/GST/tax lines to the
     address.  Regex-deterministic fields (date/total) are resolved via
     :func:`_route_regex_field` first when ``regex_router`` is True
-    (Change A); attention is the fallback.  Returns ``(values, None)``
-    on empty text.
+    (Change A); attention is the fallback.  When
+    ``total_confidence_threshold > 0`` the attention fallback for
+    ``total`` additionally goes through :func:`_confidence_gate_total`
+    (Fix 3): a low-confidence or SUBTOTAL-flagged pick is replaced by
+    the rule-based extractor.  Returns ``(values, None)`` on empty text.
     """
     if not texts:
         return {}, None
@@ -264,6 +303,19 @@ def _assign_learned_with_attn(
                      if i not in used and _has_regex_value(name, texts[i])),
                     order[0],
                 )
+                # Fix 3 — confidence gate for ``total``: low softmax max
+                # or a SUBTOTAL-keyword pick delegates to the rule-based
+                # extractor.  ``total_confidence_threshold <= 0`` disables
+                # the gate, keeping bit-compat with legacy callers.
+                if name == "total" and total_confidence_threshold > 0:
+                    gated = _confidence_gate_total(
+                        w, best, texts, bboxes, used, total_confidence_threshold,
+                    )
+                    if gated is not None:
+                        best, value = gated
+                        used.add(best)
+                        out[name] = postprocess_value(name, value)
+                        continue
             else:
                 best = int(w.argmax().item())
             used.add(best)

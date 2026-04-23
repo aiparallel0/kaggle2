@@ -67,6 +67,8 @@ def load_config(path: str, defaults: dict[str, Any] | None = None) -> ExpConfig:
         "weight_decay_assigner", "dropout_assigner", "priors_v2",
         "seeds", "n_trials", "bootstrap_n_iter", "bootstrap_ci_level",
         "address_accept_fraction", "regex_router", "text_pool_learned",
+        "total_confidence_threshold",
+        "lr_assigner", "warmup_ratio_assigner",
     }
     known = set(_REQUIRED) | _optional
     extra = {k: v for k, v in raw.items() if k not in known}
@@ -148,5 +150,10 @@ def load_config(path: str, defaults: dict[str, Any] | None = None) -> ExpConfig:
         address_accept_fraction=float(raw.get("address_accept_fraction", 0.5)),
         regex_router=bool(raw.get("regex_router", True)),
         text_pool_learned=bool(raw.get("text_pool_learned", False)),
+        total_confidence_threshold=float(
+            raw.get("total_confidence_threshold", 0.55),
+        ),
+        lr_assigner=float(raw.get("lr_assigner", 1e-3)),
+        warmup_ratio_assigner=float(raw.get("warmup_ratio_assigner", 0.0)),
         extra=extra,
     )

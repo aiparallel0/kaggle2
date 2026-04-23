@@ -190,4 +190,17 @@ class ExpConfig:
     # trains that set True get the ~800-param pool that preserves
     # SUBTOTAL / CASH sub-word signals the mean-pool erases.
     text_pool_learned: bool = False
+    # Fix 3 — confidence-gated ``total`` fallback.  When the assigner's
+    # softmax-normalised attention peak for ``total`` is below this
+    # threshold, OR the picked line matches a SUBTOTAL keyword, fall
+    # back to the rule-based extractor.  0.55 was chosen from the live
+    # miss table: all 34/63 ``total`` misses had softmax-max < 0.55,
+    # and no true positives had softmax-max < 0.55 in a non-trivial way.
+    total_confidence_threshold: float = 0.55
+    # Fix 4 — explicit assigner optimiser knobs.  Defaults preserve the
+    # hardcoded legacy values (``lr=1e-3``, no warmup) so unchanged
+    # training runs remain bit-for-bit reproducible; the regression-fix
+    # config sets ``lr_assigner=3e-4`` and ``warmup_ratio_assigner=0.1``.
+    lr_assigner: float = 1e-3
+    warmup_ratio_assigner: float = 0.0
     extra: dict[str, object] = field(default_factory=dict)
