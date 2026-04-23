@@ -51,6 +51,19 @@ def _nt(fields: list[Field]) -> list[Field]:
             if f.name.lower() == "total" else f for f in fields]
 
 
+def _predictions_by_field(
+    preds: list[Prediction], gts: list[Receipt], fields: tuple[str, ...],
+) -> dict[str, list[dict[str, str]]]:
+    """Per-receipt (pred, gt) pairs for selected fields — triage JSON."""
+    gt_map = {r.image_path.stem: {f.name.lower(): f.value for f in r.fields}
+              for r in gts}
+    return {fn: [{"receipt_id": p.receipt_id,
+                  "pred": next((f.value for f in p.fields
+                                if f.name.lower() == fn), ""),
+                  "gt": gt_map.get(p.receipt_id, {}).get(fn, "")}
+                 for p in preds] for fn in fields}
+
+
 def _paths_from_config(config: ExpConfig) -> PipelinePaths:
     """Derive pipeline checkpoint paths from ``config.output_dir``."""
     return PipelinePaths(
@@ -162,9 +175,14 @@ def eval_pipeline(config: ExpConfig, test: list[Receipt]) -> PipelineResult:
     n_test = [Receipt(image_path=r.image_path, fields=_nt(r.fields)) for r in test]
     m_l = compute_metrics(EvalBundle(n_preds_l, n_test, config.fields))
     m_r = compute_metrics(EvalBundle(n_preds_r, n_test, config.fields))
-    out_dir = Path(paths.yolo).parent.parent
+    # Flat top-level pipeline_metrics.json so stages/_common,
+    # report/combine, and core/validate all read the same file; the attn
+    # sampler still writes into results/yolo/ for fig_attn_heatmap.
+    out_dir = Path(config.output_dir)
+    yolo_dir = Path(paths.yolo).parent.parent
     n_total = max(len(test), 1)
-    attn_sampler.write(out_dir)
+    attn_sampler.write(yolo_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
     with open(out_dir / "pipeline_metrics.json", "w") as f:
         json.dump({
             "assigner_f1": m_l.global_f1, "rulebased_f1": m_r.global_f1,
@@ -176,5 +194,8 @@ def eval_pipeline(config: ExpConfig, test: list[Receipt]) -> PipelineResult:
             "n_test_receipts": len(test),
             "receipt_error_samples": receipt_error_samples,
             "receipt_error_types": sorted(receipt_error_type_set),
+            "predictions_by_field": _predictions_by_field(
+                n_preds_l, n_test, ("total", "address"),
+            ),
         }, f, indent=2)
     return PipelineResult(assigner=m_l, rulebased=m_r)
