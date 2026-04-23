@@ -43,6 +43,13 @@ def test_rejects_out_of_range_day_or_month() -> None:
     assert not is_plausible("00/05/2018")
 
 
+def test_rejects_impossible_calendar_dates() -> None:
+    """Datetime-backed validation rejects Feb 30 / Apr 31 style glitches."""
+    assert not is_plausible("31/04/2018")  # April has 30 days
+    assert not is_plausible("29/02/2019")  # 2019 not a leap year
+    assert is_plausible("29/02/2016")      # 2016 is a leap year
+
+
 def test_fallback_returns_first_plausible() -> None:
     lines = [
         "RECEIPT #1851/03/3",            # implausible, skipped

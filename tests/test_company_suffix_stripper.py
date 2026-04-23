@@ -56,5 +56,7 @@ def test_normalize_company_integrates_stripper() -> None:
 
 
 def test_preserves_company_without_suffix() -> None:
-    assert normalize_company("GARDENIA BAKERIES KL SDN BHD") == \
-           "GARDENIA BAKERIES KL SDN BHD"
+    assert (
+        normalize_company("GARDENIA BAKERIES KL SDN BHD")
+        == "GARDENIA BAKERIES KL SDN BHD"
+    )

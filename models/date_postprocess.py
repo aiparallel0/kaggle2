@@ -18,6 +18,7 @@ Role: Fix C of the post-eval regression plan.  The assigner + regex
 from __future__ import annotations
 
 import re
+from datetime import date
 
 # SROIE task-3 receipts were captured 2014–2019 inclusive; every
 # out-of-range year in the current 63-receipt test set is a pure OCR
@@ -39,12 +40,21 @@ __all__ = ["is_plausible", "fallback_from_ocr_lines"]
 
 
 def _in_range(day: int, month: int, year: int) -> bool:
-    """True iff (d, m, y) is a plausible SROIE receipt date."""
-    return (
-        _SROIE_YEAR_MIN <= year <= _SROIE_YEAR_MAX
-        and 1 <= month <= 12
-        and 1 <= day <= 31
-    )
+    """True iff (d, m, y) is a real calendar date in the SROIE window.
+
+    Uses :class:`datetime.date` so month-specific day limits (Feb 28/29,
+    30-day months) are enforced — rejects ``31/04/2018`` and ``29/02/2019``
+    on top of the simple range check.  Years outside the SROIE capture
+    window (2014–2019) are rejected before the calendar check so a
+    pre-1900 OCR (``0022/05/18``) does not reach ``date()`` at all.
+    """
+    if not _SROIE_YEAR_MIN <= year <= _SROIE_YEAR_MAX:
+        return False
+    try:
+        date(year, month, day)
+    except ValueError:
+        return False
+    return True
 
 
 def is_plausible(value: str) -> bool:
