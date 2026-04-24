@@ -7,7 +7,7 @@
 #   after the run_id so a directory of archives stays sorted by run.
 #
 # Modes:
-#   --light (default)  Exclude any file > LIGHT_MAX_BYTES (1\,MiB) and
+#   --light (default)  Exclude any file > LIGHT_MAX_BYTES (1 MiB) and
 #                      heavy checkpoint subdirs (donut/, trocr/,
 #                      yolo/run/, yolo_data/).  Kept: JSON sidecars,
 #                      figure PDFs, paper LaTeX/PDF, logs, manifest —

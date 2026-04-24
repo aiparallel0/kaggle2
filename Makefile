@@ -50,10 +50,10 @@ latest:
 pack:
 	bash scripts/pack_run.sh --light
 
-# ``pack-full`` includes the heavy model checkpoints (DONUT ~770\,MiB,
-# TrOCR ~300\,MiB, YOLO weights + data mirror).  Use only when the
+# ``pack-full`` includes the heavy model checkpoints (DONUT ~770 MiB,
+# TrOCR ~300 MiB, YOLO weights + data mirror).  Use only when the
 # checkpoints themselves need to ship; otherwise prefer ``make pack``
-# (the default, which drops files >1\,MiB and writes EXCLUDED.txt).
+# (the default, which drops files > 1 MiB and writes EXCLUDED.txt).
 pack-full:
 	bash scripts/pack_run.sh --full
 
