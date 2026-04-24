@@ -11,16 +11,50 @@
 \usepackage{url}
 \usepackage{algorithm}
 \usepackage{algpseudocode}
+% Typographic polish — ``microtype`` enables protrusion / font expansion
+% which meaningfully improves justification in the IEEE two-column layout;
+% ``hyperref[hidelinks]`` makes every \ref / \cite clickable without
+% drawing coloured boxes that would spoil print-style submissions.
+\usepackage{microtype}
+\usepackage[hidelinks]{hyperref}
 \usetikzlibrary{arrows.meta,positioning,fit,backgrounds}
 
+% Graphics-path search list.  Figure emitters write PDFs to two
+% locations across our two historical run layouts:
+%   * legacy flat layout  → ``./results/fig_*.pdf``
+%   * runs_root layout    → ``runs/<run_id>/fig_*.pdf`` (older "flat"
+%                          emitters) and ``runs/<run_id>/figures/fig_*.pdf``
+%                          (the Section-C emitters in
+%                          ``report.figures_section_c``).
+% We add every candidate relative to the filled-tex location so
+% ``\includegraphics{fig_foo.pdf}`` resolves regardless of which mode
+% produced the artefact.  The current directory ``{}`` is included
+% first so an explicit path in the caller still wins.
+\graphicspath{{}{./}{./figures/}{./results/}{../}{../figures/}{../results/}}
+
 % Conditional figure inclusion.  ``\iffigurefile{path}{body}`` expands
-% to ``body`` when ``path`` is found by graphicx's search, otherwise
-% expands to an empty string.  Used by every Section-C figure caption
-% so missing PDFs (e.g. blocked metrics on this run) degrade gracefully
-% — no empty floats, no LaTeX errors.
+% to ``body`` when ``path`` is found by ANY of the graphics-search
+% candidates above (not just the working directory), otherwise expands
+% to an empty string.  ``\IfFileExists`` itself only consults
+% kpathsea, so we repeat the candidate list explicitly — keeping this
+% macro in sync with ``\graphicspath`` above is important.  Used by
+% every figure caption so missing PDFs degrade gracefully: no empty
+% floats, no LaTeX errors.
 \makeatletter
 \newcommand{\iffigurefile}[2]{%
-  \IfFileExists{#1}{#2}{}%
+  \IfFileExists{#1}{#2}{%
+    \IfFileExists{./#1}{#2}{%
+      \IfFileExists{./figures/#1}{#2}{%
+        \IfFileExists{./results/#1}{#2}{%
+          \IfFileExists{../#1}{#2}{%
+            \IfFileExists{../figures/#1}{#2}{%
+              \IfFileExists{../results/#1}{#2}{}%
+            }%
+          }%
+        }%
+      }%
+    }%
+  }%
 }
 \makeatother
 
