@@ -35,7 +35,7 @@ from report.combine_ext import (
     merge_trocr_diagnostics,
     merge_yolo_diagnostics,
 )
-from report.inject import expand_inputs, inject_results
+from report.inject import collect_unresolved, expand_inputs, inject_results
 from report.pdflatex import compile_paper_pdf
 
 log = logging.getLogger("kaggle2")
@@ -61,13 +61,12 @@ def _warn_missing_artifacts(config: ExpConfig) -> None:
 
 
 def _render_figures(config: ExpConfig) -> None:
-    """Drive every figure emitter across the four ``report.figures_*`` modules.
+    """Drive every figure emitter across the ``report.figures_*`` modules.
 
     Never propagates exceptions: a missing matplotlib, missing source
     JSON, or corrupt telemetry log must not abort the paper stage.
-    The four-module split is purely a consequence of the 166-LOC cap
-    per file — each module stays under the ceiling and is independently
-    unit-testable.
+    Section-C emitters are orchestrated from ``figures_section_c`` to
+    keep this function under the 166-LOC cap.
     """
     try:
         from report.figures import render_all as _render_all
@@ -80,6 +79,8 @@ def _render_figures(config: ExpConfig) -> None:
         render_all_bugs_telemetry(config.output_dir, config.output_dir)
     except Exception as exc:  # noqa: BLE001
         log.warning("figure rendering failed (%s) — continuing.", exc)
+    from report.figures_section_c import render_section_c
+    render_section_c(Path(config.output_dir))
 
 
 def _seed_bug_timeline_fixture(config: ExpConfig) -> None:
@@ -128,6 +129,20 @@ def stage_paper(config: ExpConfig) -> None:
     # 166-LOC cap applies per section file while tectonic still sees
     # a single flat paper_filled.tex at compile time.
     template = expand_inputs(template, Path(config.paper_template).parent)
+    # Audit: enumerate every unresolved \VAR{} BEFORE inject_results
+    # collapses them to "---", and write the audit side-channel so the
+    # "no placeholders after a successful run" contract is verifiable.
+    unresolved = collect_unresolved(template, metrics)
+    metrics_dir = Path(config.output_dir) / "metrics"
+    metrics_dir.mkdir(parents=True, exist_ok=True)
+    with (metrics_dir / "unresolved_vars.json").open("w") as f:
+        json.dump({"unresolved": unresolved, "count": len(unresolved)}, f, indent=2)
+    if unresolved:
+        log.warning(
+            "stage_paper: %d unresolved \\VAR{} keys render as --- in the PDF. "
+            "See metrics/unresolved_vars.json for the full list.",
+            len(unresolved),
+        )
     filled = inject_results(template, metrics)
     tex_out = Path(config.paper_output)
     tex_out.parent.mkdir(parents=True, exist_ok=True)

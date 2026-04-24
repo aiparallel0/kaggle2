@@ -17,10 +17,11 @@ import os
 import statistics
 from pathlib import Path
 
+from core.env_snapshot import write_env_snapshot
 from core.errors import EvalError
 from core.seed import seed_everything
 from core.statistics import bootstrap_ci, mcnemar, paired_bootstrap_delta_ci
-from core.types import DataSplit, ExpConfig, Metrics
+from core.types import DataSplit, ExpConfig, Metrics, Prediction
 from core.validate import validate_f1
 from data.sroie import download_sroie, load_or_create_split
 from models.donut_eval import eval_donut
@@ -37,30 +38,34 @@ from stages._common import (
     warn_below_expected,
     warn_pipeline_diagnostics,
 )
+from stages.eval_producers import emit_all
 
 log = logging.getLogger("kaggle2")
 
 
-def _eval_donut_or_skip(config: ExpConfig, data: DataSplit) -> Metrics:
+def _eval_donut_or_skip(
+    config: ExpConfig, data: DataSplit,
+) -> tuple[Metrics, list[Prediction]]:
     """Eval DONUT iff ``skip_donut`` is False AND a checkpoint exists."""
     donut_model = os.path.join(config.output_dir, "donut")
     if config.skip_donut:
         log.info("skip_donut=True — skipping DONUT eval; reporting zeros.")
-        return Metrics(
+        zeros = Metrics(
             global_f1=0.0, global_ned=0.0, global_em=0.0,
             per_field_f1={f: 0.0 for f in config.fields},
             per_field_ned={f: 0.0 for f in config.fields},
             per_field_em={f: 0.0 for f in config.fields},
         )
+        return zeros, []
     if not Path(donut_model).exists():
         raise EvalError(
             f"DONUT checkpoint not found at {donut_model}. Either run train "
             "stage first, or set skip_donut=true for a Phase-1 pipeline-only run.",
         )
-    dm = eval_donut(config, data.test)
+    dm, dp = eval_donut(config, data.test)
     validate_f1(dm, "donut")
     warn_below_expected(dm, config, "donut")
-    return dm
+    return dm, dp
 
 
 def _per_seed_metrics(
@@ -68,7 +73,7 @@ def _per_seed_metrics(
 ) -> tuple[Metrics, Metrics, Metrics]:
     """Run one (DONUT, pipeline, GT-OCR-stream-rulebased) eval triple at `seed`."""
     seed_everything(seed)
-    dm = _eval_donut_or_skip(config, data)
+    dm, _ = _eval_donut_or_skip(config, data)
     log.info("DONUT F1=%.4f", dm.global_f1)
     pm = eval_pipeline(config, data.test)
     validate_f1(pm.assigner, "pipeline",
@@ -129,6 +134,17 @@ def stage_eval(config: ExpConfig, seeds: list[int] | None = None) -> None:
     :func:`core.statistics.bootstrap_ci`.
     """
     log.info("=== Stage: eval ===")
+    # Best-effort env snapshot; never block eval on a missing config.json.
+    try:
+        env_dir = Path(config.output_dir) / "env"
+        cfg_path = Path(os.environ.get("KAGGLE2_CONFIG_PATH", "config.json"))
+        write_env_snapshot(
+            env_dir, cfg_path,
+            run_id=Path(config.output_dir).name,
+            seed=int(config.seeds[0]) if config.seeds else 0,
+        )
+    except OSError as exc:  # pragma: no cover — env snapshot is best-effort
+        log.warning("env_snapshot failed: %s", exc)
     data_path = download_sroie(config)
     data = load_or_create_split(config, data_path)
     run_seeds = list(seeds) if seeds else list(config.seeds[: config.n_trials])
@@ -137,10 +153,14 @@ def stage_eval(config: ExpConfig, seeds: list[int] | None = None) -> None:
     pipeline_f1s: list[float] = []
     gtocr_rulebased_f1s: list[float] = []
     last: dict[str, object] = {}
+    last_donut_preds: list[Prediction] = []
+    last_pipeline_preds: list[Prediction] = []
+    last_donut_metrics: Metrics | None = None
+    last_pipeline_metrics: Metrics | None = None
     for seed in run_seeds:
         if len(run_seeds) > 1:
             log.info("--- Eval seed=%d ---", seed)
-        dm = _eval_donut_or_skip(config, data)
+        dm, dp = _eval_donut_or_skip(config, data)
         log.info("DONUT F1=%.4f", dm.global_f1)
         seed_everything(seed)
         pm = eval_pipeline(config, data.test)
@@ -163,6 +183,10 @@ def stage_eval(config: ExpConfig, seeds: list[int] | None = None) -> None:
         gtocr_rulebased_f1s.append(gtocr_rb.global_f1)
         last = build_combined(config, dm, pm, gtocr_rb)
         last["oracle_patch_f1_if_applied"] = round(patched_assigner.global_f1, 4)
+        last_donut_preds = dp
+        last_pipeline_preds = pm.assigner_preds
+        last_donut_metrics = dm
+        last_pipeline_metrics = pm.assigner
     # Always emit the variance block, even when n=1 — downstream consumers
     # (paper \VAR{}, log dashboards) should not branch on seed count.
     _aggregate_seed_variance(donut_f1s, "donut_f1", last)
@@ -200,6 +224,19 @@ def stage_eval(config: ExpConfig, seeds: list[int] | None = None) -> None:
     Path(config.output_dir).mkdir(parents=True, exist_ok=True)
     with open(os.path.join(config.output_dir, "combined_metrics.json"), "w") as f:
         json.dump(last, f, indent=2)
+    # Producer: write per-sample predictions, per_field_errors.jsonl, and
+    # extended_metrics.json from the real eval data of the last seed so
+    # every new \VAR{} resolves to a measured value in the PDF.
+    emit_all(
+        config.output_dir, tuple(config.fields),
+        donut_preds=last_donut_preds or None,
+        pipeline_preds=last_pipeline_preds or None,
+        receipts=data.test,
+        donut_metrics=last_donut_metrics,
+        pipeline_metrics=last_pipeline_metrics,
+        n_iter=config.bootstrap_n_iter,
+        level=config.bootstrap_ci_level,
+    )
 
 
 def stage_eval_gtocr_rulebased(config: ExpConfig) -> None:

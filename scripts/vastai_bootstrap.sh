@@ -115,4 +115,12 @@ else
 fi
 
 log "Ready. Launch training with: make all"
-log "Intermediate outputs land in ./results/, final paper in report/paper_filled.pdf"
+log ""
+log "Output contract (NO cherry-picking required):"
+log "  After 'make all' completes, everything worth downloading lives under"
+log "  ./runs/<run_id>/ — metrics, curves, predictions, attention samples,"
+log "  figures, filled paper (.tex + .pdf), env snapshot, and MANIFEST.json."
+log "  Either 'open that folder, select all, download' OR run 'make pack' to"
+log "  get a single ./<run_id>.tar.zst archive ready for scp."
+log ""
+log "Nothing lands in ./results/ (fixtures-only) or ./report/ (template-only)."

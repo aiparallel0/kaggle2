@@ -86,6 +86,31 @@ def inject_results(template: str, metrics: dict[str, Any]) -> str:
     # Backstop: any \VAR{...} that was NOT in the metrics dict becomes ---.
     # Prevents half-rendered \VAR{rulebased_f1_company} tokens leaking into
     # the PDF when a newer results.tex adds placeholders the orchestrator
-    # hasn't learned to emit yet.
+    # hasn't learned to emit yet.  Every unresolved key is logged at WARNING
+    # so the "no placeholders after a successful run" contract is auditable
+    # — see :func:`collect_unresolved` for the JSON side-channel that the
+    # paper stage writes to ``metrics/unresolved_vars.json``.
+    unresolved = re.findall(r"\\VAR\{([^}]+)\}", result)
+    if unresolved:
+        import logging
+        logging.getLogger("kaggle2").warning(
+            "inject_results: %d unresolved \\VAR{} keys (first 5: %s). "
+            "These render as --- in the PDF; run the full eval stage to "
+            "populate every metric sidecar.",
+            len(unresolved), unresolved[:5],
+        )
     result = re.sub(r"\\VAR\{[^}]+\}", "---", result)
     return result
+
+
+def collect_unresolved(template: str, metrics: dict[str, Any]) -> list[str]:
+    """Enumerate every ``\\VAR{key}`` in ``template`` not in ``metrics``.
+
+    Called from :mod:`stages.paper` just before writing the filled
+    ``.tex``; the returned list is serialised to
+    ``metrics/unresolved_vars.json`` so reviewers can audit which
+    placeholders did NOT resolve to a real value.  Empty list on a
+    fully-populated run is the "no placeholders" guarantee.
+    """
+    used = set(re.findall(r"\\VAR\{([^}]+)\}", template))
+    return sorted(used - set(metrics.keys()))
