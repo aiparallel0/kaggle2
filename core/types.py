@@ -121,6 +121,35 @@ class PipelineResult:
 
 
 @dataclass
+class AblationRun:
+    """One cell of the 13-bug ablation grid."""
+
+    run_id: str
+    bug_id: str  # e.g. "bug_1" or "all_on" or "all_off"
+    seed: int
+    f1: float
+    ned: float
+    em: float
+
+
+@dataclass
+class AblationReport:
+    """Full 15-cell × N-seed ablation result, written to the run dir."""
+
+    baseline_f1: float  # mean F1 with all bug fixes ON
+    runs: list[AblationRun] = field(default_factory=list)
+    # Per-bug ΔF1 against the all-on baseline (mean across seeds).
+    per_bug_delta: dict[str, float] = field(default_factory=dict)
+    # 95% bootstrap CIs on the delta (paired across seeds).
+    per_bug_ci_low: dict[str, float] = field(default_factory=dict)
+    per_bug_ci_high: dict[str, float] = field(default_factory=dict)
+    # 13×13 interaction matrix — cell (i,j) = ΔF1 with BOTH bug_i AND bug_j off.
+    # Sparse: populated only for the diagonal by default; off-diagonal cells
+    # are filled when ``ablate_bugs(..., include_pairs=True)`` is used.
+    interaction: dict[str, dict[str, float]] = field(default_factory=dict)
+
+
+@dataclass
 class ExpConfig:
     """Full hyperparameter surface (Section IV of the paper)."""
 
@@ -215,6 +244,9 @@ class ExpConfig:
     # prepended to the decoder input.
     rag_enabled: bool = False
     rag_k: int = 3
+    # P3 — Graph-attention field assigner (opt-in alternative to the
+    # MLP+cross-attn learned assigner in :mod:`models.pipeline_assign`).
+    gat_enabled: bool = False
     # P4 — Foundation-model ceiling arm.  Claude/GPT-4V zero-shot
     # inference; cached to ``foundation_cache_path`` (keyed by content
     # hash) for determinism.  Lazy-imported so anthropic/openai are

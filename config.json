@@ -78,6 +78,7 @@
   },
   "rag_enabled": false,
   "rag_k": 3,
+  "gat_enabled": false,
   "foundation_enabled": false,
   "foundation_api": "anthropic",
   "foundation_cache_path": "./runs/foundation_cache.json"

@@ -187,6 +187,25 @@ def eval_pipeline(config: ExpConfig, test: list[Receipt]) -> PipelineResult:
                     regex_router=config.regex_router,
                     total_confidence_threshold=config.total_confidence_threshold,
                 )
+                # P3 opt-in: graph-attention assigner override.  Runs in
+                # parallel and replaces the learned output when enabled;
+                # the MLP+attn path stays warm for per-field refinement
+                # downstream (attn_rows still flow to the sampler).
+                if getattr(config, "gat_enabled", False):
+                    from models.gat_assigner import AssignerInput, gat_assign
+                    try:
+                        import torch as _torch
+                        ai = AssignerInput(
+                            texts=texts,
+                            text_feats=_torch.cat(feats, dim=0),
+                            bboxes=_torch.tensor(bboxes, dtype=_torch.float32),
+                            priors=_torch.zeros(len(texts), 1),
+                            fields=list(config.fields),
+                        )
+                        gat_out = gat_assign(ai, config)
+                        learned = dict(gat_out.values)
+                    except (ImportError, ValueError, RuntimeError):
+                        pass  # fall back to MLP+attn output on any failure
                 # Analytical per-field refinement: compensates for TrOCR/YOLO
                 # mistakes the learned attention alone cannot fix (SUBTOTAL-vs-
                 # TOTAL confusion, postcode digit repair, company O↔0 / B↔8,

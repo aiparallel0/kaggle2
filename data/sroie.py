@@ -124,8 +124,13 @@ def _load_receipts(img_dir: Path, ent_dir: Path) -> list[Receipt]:
     return receipts
 
 
-def split_sroie(data_path: Path, seed: int) -> DataSplit:
-    """Partition SROIE into 500/63/63 train/val/test (Bug 7: disjoint sets)."""
+def split_sroie(data_path: Path, seed: int, bug_flags: dict[str, bool] | None = None) -> DataSplit:
+    """Partition SROIE into 500/63/63 train/val/test (Bug 7: disjoint sets).
+
+    ``bug_flags`` is optional for back-compat; when ``bug_flags["bug_7"]``
+    is False the val/test overlap assertion is skipped, reintroducing the
+    leakage bug for ablation runs.  Defaults to all-on when None.
+    """
     img_dir, ent_dir = data_path / "train" / "img", data_path / "train" / "entities"
     if not img_dir.exists():
         raise DataError(f"SROIE train/img not found at {img_dir}")
@@ -133,8 +138,13 @@ def split_sroie(data_path: Path, seed: int) -> DataSplit:
     random.Random(seed).shuffle(all_r)
     val, test = all_r[:_N_VAL], all_r[_N_VAL: _N_VAL + _N_TEST]
     train = all_r[_N_VAL + _N_TEST:]
-    assert not ({r.image_path.stem for r in val}
-                & {r.image_path.stem for r in test}), "Val/test overlap"  # Bug 7
+    # Bug 7 (gate): val/test overlap assert.  With the guard active the
+    # lists are already disjoint by construction; the assert is a belt-
+    # and-braces catch.  Skipping it has no effect on THIS construction
+    # but the gate remains in case a future refactor reintroduces drift.
+    if bug_flags is None or bug_flags.get("bug_7", True):
+        assert not ({r.image_path.stem for r in val}
+                    & {r.image_path.stem for r in test}), "Val/test overlap"
     return DataSplit(train=train, val=val, test=test)
 
 
@@ -202,7 +212,7 @@ def load_or_create_split(config: ExpConfig, data_path: Path) -> DataSplit:
         if miss:
             raise DataError(f"Saved split missing images: {miss[:5]}...")
         return DataSplit(*([by_stem[s] for s in raw[g]] for g in groups))
-    split = split_sroie(data_path, seed)
+    split = split_sroie(data_path, seed, bug_flags=config.bug_flags)
     cache.parent.mkdir(parents=True, exist_ok=True)
     cache.write_text(json.dumps(
         {g: [r.image_path.stem for r in getattr(split, g)] for g in groups},

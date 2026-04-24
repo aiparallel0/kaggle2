@@ -18,6 +18,7 @@ from typing import Any
 from core.errors import EvalError
 from core.metrics import compute_metrics
 from core.types import EvalBundle, ExpConfig, Field, Metrics, Prediction, Receipt
+from models.donut_parse import _flatten_token2json
 from models.donut_parse import token2json_safe as _token2json_safe
 
 _import_error: ImportError | None = None
@@ -157,7 +158,24 @@ def eval_donut(
                 max_length=max_len, num_beams=num_beams, early_stopping=True,
             )
             tokens = processor.batch_decode(out, skip_special_tokens=False)[0]
-            parsed = _token2json_safe(processor, tokens)
+            # Bug 3 (gate): token2json list→dict merge via _flatten_token2json.
+            # Bug 12 (gate): outer <s_sroie> wrapper flattening, also handled
+            # by _flatten_token2json (recursively merges nested dicts).
+            # Guards off → call processor.token2json directly and best-effort
+            # coerce; silently degrades to {} when the output is a list (Bug 3)
+            # or an {"sroie": {...}} wrapper (Bug 12).
+            if (
+                config.bug_flags.get("bug_3", True)
+                and config.bug_flags.get("bug_12", True)
+            ):
+                parsed = _token2json_safe(processor, tokens)
+            elif config.bug_flags.get("bug_3", True):
+                # Only Bug 3 fix active — flatten but keep outer wrapper.
+                raw = processor.token2json(tokens)
+                parsed = _flatten_token2json(raw if isinstance(raw, list) else [raw])
+            else:
+                raw = processor.token2json(tokens)
+                parsed = raw if isinstance(raw, dict) else {}
             fields = [Field(name=k, value=v) for k, v in parsed.items()]
             predictions.append(Prediction(receipt_id=rec.image_path.stem, fields=fields))
     # Symmetric numeric normalization for the TOTAL field (DONUT only):

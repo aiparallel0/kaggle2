@@ -41,7 +41,8 @@ def load_config(path: str, defaults: dict[str, Any] | None = None) -> ExpConfig:
     if missing:
         raise ValueError(f"config.json missing required keys: {missing}")
 
-    if raw["epochs_trocr"] < 5:  # Bug 6 prevention
+    bug_flags = _parse_bug_flags(raw.get("bug_flags"))
+    if bug_flags.get("bug_6", True) and raw["epochs_trocr"] < 5:  # Bug 6 prevention
         raise TrainError(
             f"epochs_trocr={raw['epochs_trocr']} < 5 — "
             "TrOCR will underfit (Bug 6). Set epochs_trocr >= 5.",
@@ -50,7 +51,11 @@ def load_config(path: str, defaults: dict[str, Any] | None = None) -> ExpConfig:
     # Bug 4: fp16 without gradient clipping overflows → NaN loss. bf16 is safe
     # because its dynamic range matches fp32. Enforce the invariant at load
     # time so a stale config surfaces the error before any GPU work starts.
-    if raw["precision"] == "fp16" and float(raw["max_grad_norm"]) <= 0.0:
+    if (
+        bug_flags.get("bug_4", True)
+        and raw["precision"] == "fp16"
+        and float(raw["max_grad_norm"]) <= 0.0
+    ):
         raise TrainError(
             "precision='fp16' requires max_grad_norm > 0 to prevent "
             "loss=NaN from gradient overflow (Bug 4). Set max_grad_norm=1.0 "
@@ -72,6 +77,7 @@ def load_config(path: str, defaults: dict[str, Any] | None = None) -> ExpConfig:
         "lr_assigner", "warmup_ratio_assigner",
         "bug_flags",  # P1 — 13-bug ablation gating dict
         "rag_enabled", "rag_k",  # P2 — retrieval-augmented DONUT
+        "gat_enabled",  # P3 — graph-attention assigner opt-in
         "foundation_enabled", "foundation_api", "foundation_cache_path",  # P4
         "runs_root", "run_id",  # runlayout keys (optional; back-compat).
     }
@@ -152,9 +158,10 @@ def load_config(path: str, defaults: dict[str, Any] | None = None) -> ExpConfig:
         total_confidence_threshold=float(raw.get("total_confidence_threshold", 0.55)),
         lr_assigner=float(raw.get("lr_assigner", 1e-3)),
         warmup_ratio_assigner=float(raw.get("warmup_ratio_assigner", 0.0)),
-        bug_flags=_parse_bug_flags(raw.get("bug_flags")),
+        bug_flags=bug_flags,
         rag_enabled=bool(raw.get("rag_enabled", False)),
         rag_k=int(raw.get("rag_k", 3)),
+        gat_enabled=bool(raw.get("gat_enabled", False)),
         foundation_enabled=bool(raw.get("foundation_enabled", False)),
         foundation_api=str(raw.get("foundation_api", "anthropic")),
         foundation_cache_path=str(
