@@ -65,7 +65,15 @@ static void rl_key_for(char *buf, size_t bufsz,
      */
     const char *ip = (req->fwd_for[0] != '\0') ? req->fwd_for
                                                 : req->peer_addr;
-    snprintf(buf, bufsz, "%s:%s", tag, ip);
+    int n = snprintf(buf, bufsz, "%s:%s", tag, ip);
+    /*
+     * If the formatted key would overflow buf, use a safe sentinel that
+     * still carries the endpoint tag so different endpoints keep separate
+     * buckets even in this degenerate case.
+     */
+    if (n < 0 || (size_t)n >= bufsz) {
+        snprintf(buf, bufsz, "%s:overflow", tag);
+    }
 }
 
 /*

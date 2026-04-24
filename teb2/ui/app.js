@@ -127,11 +127,8 @@
      * @param {string} email — pre-populated into the reset link
      */
     function showPostRegisterFailBanner(email) {
-        var encodedEmail = encodeURIComponent(email || "");
-        var resetHref    = "/auth/forgot?email=" + encodedEmail;
+        var resetHref = "/auth/forgot?email=" + encodeURIComponent(email || "");
 
-        /* Reuse whatever notification container the app already has.
-         * Fall back to a simple alert if the container is absent. */
         var container = document.getElementById("auth-message");
         if (!container) {
             window.alert(
@@ -141,13 +138,32 @@
             return;
         }
 
+        /*
+         * Build the banner using DOM methods instead of innerHTML so that
+         * the email address (user-supplied) is never interpolated into raw
+         * HTML — which would allow a crafted email value containing HTML
+         * special characters to inject markup.
+         */
         container.className = "auth-message error";
-        container.innerHTML =
+
+        /* Clear any previous content. */
+        while (container.firstChild) {
+            container.removeChild(container.firstChild);
+        }
+
+        var msgNode = document.createTextNode(
             "Your account was created, but the server could not sign you in " +
-            "automatically. " +
-            "Please <strong>try logging in below</strong>, or " +
-            "<a href=\"" + resetHref + "\">reset your password</a> " +
-            "if that doesn\u2019t work.";
+            "automatically. Please try logging in below, or "
+        );
+        container.appendChild(msgNode);
+
+        var resetLink = document.createElement("a");
+        /* setAttribute keeps the href value separate from HTML parsing. */
+        resetLink.setAttribute("href", resetHref);
+        resetLink.textContent = "reset your password";
+        container.appendChild(resetLink);
+
+        container.appendChild(document.createTextNode(" if that doesn\u2019t work."));
         container.style.display = "block";
     }
 

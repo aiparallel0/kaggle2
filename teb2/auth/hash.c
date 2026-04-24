@@ -8,11 +8,12 @@
  * reproduced the *full-length* hash → strcmp mismatch → 401 on every login.
  */
 
+/* _GNU_SOURCE must precede all standard headers to unlock crypt(3). */
+#define _GNU_SOURCE
+
 #include <string.h>
 #include <stdio.h>
-#include <unistd.h>      /* crypt(3) on Linux with _GNU_SOURCE / -lcrypt */
-
-#define _GNU_SOURCE
+#include <unistd.h>
 #include <crypt.h>
 
 #include "../core/types.h"
@@ -103,6 +104,8 @@ HashResult hash_password(const char *password, HashConfig cfg)
 /*
  * verify_password — compare a plaintext password against a stored hash.
  *
+ * stored is passed as a const pointer to avoid copying the 256-byte struct.
+ *
  * Returns HashResult with:
  *   .err   = ERR_OK if the comparison completed (even if passwords differ).
  *            ERR_CRYPTO if crypt fails or the result would overflow.
@@ -112,17 +115,17 @@ HashResult hash_password(const char *password, HashConfig cfg)
  * crypt extracts the algorithm, rounds, and salt automatically from the
  * "$6$rounds=N$salt$…" prefix.
  */
-HashResult verify_password(const char *password, HashResult stored)
+HashResult verify_password(const char *password, const HashResult *stored)
 {
     HashResult r;
     memset(&r, 0, sizeof(r));
 
-    if (stored.err != ERR_OK || stored.hash[0] == '\0') {
+    if (stored->err != ERR_OK || stored->hash[0] == '\0') {
         r.err = ERR_CRYPTO;
         return r;
     }
 
-    const char *h = crypt(password, stored.hash);
+    const char *h = crypt(password, stored->hash);
     if (!h) {
         r.err = ERR_CRYPTO;
         return r;
@@ -142,6 +145,6 @@ HashResult verify_password(const char *password, HashResult stored)
     }
 
     r.err   = ERR_OK;
-    r.match = (strcmp(h, stored.hash) == 0) ? 1 : 0;
+    r.match = (strcmp(h, stored->hash) == 0) ? 1 : 0;
     return r;
 }
