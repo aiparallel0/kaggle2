@@ -9,7 +9,9 @@ Role: entry point for training DONUT (~200M) and the YOLOv8n+TrOCR+Attention
 from __future__ import annotations
 
 import argparse
+import json
 import logging
+import os
 
 from core.config import load_config
 from core.seed import seed_everything
@@ -59,12 +61,49 @@ def main() -> None:
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
     # Flags apply before load_config so derive_paths sees them.
-    import os
     if args.runs_root is not None:
         os.environ["KAGGLE2_RUNS_ROOT"] = args.runs_root
     if args.run_id is not None:
         os.environ["KAGGLE2_RUN_ID"] = args.run_id
     os.environ["KAGGLE2_CONFIG_PATH"] = args.config
+    # Pre-read raw config once so auto-resume and load_config share the same
+    # I/O.  load_config re-parses it below; this peek only extracts runs_root.
+    raw_cfg: dict[str, object] = {}
+    try:
+        with open(args.config) as _cfg_fh:
+            raw_cfg = json.load(_cfg_fh)
+    except (OSError, json.JSONDecodeError) as _exc:
+        logging.getLogger("kaggle2").warning(
+            "Could not pre-read %s for auto-resume: %s", args.config, _exc,
+        )
+    # Auto-resume: when running eval or paper without an explicit --run-id,
+    # automatically target the latest existing run directory so that
+    # ``python main.py --stage eval`` continues from where training left off.
+    # The user may always override with --run-id or KAGGLE2_RUN_ID.
+    if (
+        args.stage in ("eval", "paper")
+        and args.run_id is None
+        and "KAGGLE2_RUN_ID" not in os.environ
+    ):
+        _runs_root = (
+            os.environ.get("KAGGLE2_RUNS_ROOT")
+            or raw_cfg.get("runs_root")
+        )
+        if _runs_root:
+            from core.runlayout import latest_run as _latest_run
+            _latest = _latest_run(str(_runs_root))
+            if _latest:
+                os.environ["KAGGLE2_RUN_ID"] = _latest.name
+                logging.getLogger("kaggle2").info(
+                    "Auto-resuming latest run: %s "
+                    "(pass --run-id to target a different run)",
+                    _latest.name,
+                )
+            else:
+                logging.getLogger("kaggle2").warning(
+                    "Auto-resume: no existing run directories found under %s; "
+                    "a new run_id will be created.", _runs_root,
+                )
     config = load_config(args.config)
     if args.skip_donut:
         config.skip_donut = True
