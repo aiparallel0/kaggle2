@@ -203,4 +203,23 @@ class ExpConfig:
     # config sets ``lr_assigner=3e-4`` and ``warmup_ratio_assigner=0.1``.
     lr_assigner: float = 1e-3
     warmup_ratio_assigner: float = 0.0
+    # P1 — Bug-atlas ablation. Per-bug toggles (True = guard active / bug
+    # fixed; False = reintroduce the bug for ablation).  13 flags keyed
+    # by ``bug_<n>`` (1..13).  Default all-True keeps current behaviour.
+    bug_flags: dict[str, bool] = field(
+        default_factory=lambda: {f"bug_{i}": True for i in range(1, 14)},
+    )
+    # P2 — Retrieval-augmented DONUT (RA-KIE).  When ``rag_enabled`` is
+    # True the Swin encoder is used to index train-set receipts and the
+    # top-k nearest neighbours are serialised as <retrieved> tokens
+    # prepended to the decoder input.
+    rag_enabled: bool = False
+    rag_k: int = 3
+    # P4 — Foundation-model ceiling arm.  Claude/GPT-4V zero-shot
+    # inference; cached to ``foundation_cache_path`` (keyed by content
+    # hash) for determinism.  Lazy-imported so anthropic/openai are
+    # optional dependencies.
+    foundation_enabled: bool = False
+    foundation_api: str = "anthropic"
+    foundation_cache_path: str = "./runs/foundation_cache.json"
     extra: dict[str, object] = field(default_factory=dict)

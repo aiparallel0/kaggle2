@@ -69,5 +69,16 @@
   "warmup_ratio_assigner": 0.1,
   "priors_v3": true,
   "assigner_synth_subtotal": 0.3,
-  "assigner_hardneg_weight": 0.5
+  "assigner_hardneg_weight": 0.5,
+  "bug_flags": {
+    "bug_1": true, "bug_2": true, "bug_3": true, "bug_4": true,
+    "bug_5": true, "bug_6": true, "bug_7": true, "bug_8": true,
+    "bug_9": true, "bug_10": true, "bug_11": true, "bug_12": true,
+    "bug_13": true
+  },
+  "rag_enabled": false,
+  "rag_k": 3,
+  "foundation_enabled": false,
+  "foundation_api": "anthropic",
+  "foundation_cache_path": "./runs/foundation_cache.json"
 }

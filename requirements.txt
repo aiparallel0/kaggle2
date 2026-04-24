@@ -15,3 +15,8 @@ mypy==1.10.0
 pytest==8.2.0
 psutil>=5.9.0
 matplotlib>=3.8.0
+# Optional — P2 retrieval-augmented DONUT (faiss fallbacks to numpy cosine).
+# faiss-cpu==1.8.0
+# Optional — P4 foundation-model ceiling arm (lazy-imported).
+# anthropic>=0.25.0
+# openai>=1.25.0
