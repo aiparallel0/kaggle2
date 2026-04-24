@@ -270,12 +270,33 @@ def oracle_patch_hybrid(
     patch_log["post_patch_per_field_f1"] = {
         k: round(v, 4) for k, v in patched_metrics.per_field_f1.items()
     }
+    delta = patched_metrics.global_f1 - pm.assigner.global_f1
+    patch_log["post_patch_global_f1_delta"] = round(delta, 4)
     with open(out_dir / "oracle_patched_fields.json", "w") as fh:
         json.dump(patch_log, fh, indent=2)
-    log.info(
-        "oracle_patch_hybrid: patched %d field(s) %s across %d receipt(s); "
-        "post-patch F1=%.4f (was %.4f)",
-        len(regressed), regressed, touched,
-        patched_metrics.global_f1, pm.assigner.global_f1,
-    )
+    # Diagnostic-only contract: post-patch F1 is NOT substituted into the
+    # headline ``pipeline_f1`` (see stages/eval.py "Fix A follow-up").
+    # However, when the patch *decreases* global F1 that is itself a
+    # signal — the patcher is replacing a good-enough assigner output
+    # with a worse rulebased-over-noisy-TrOCR output (the 0.80 → 0.58
+    # diagnostic from the post-eval analysis).  Surface it as a WARNING
+    # so the regression is visible in ``kaggle2_pipeline.log`` without
+    # changing behaviour.
+    if delta < 0:
+        log.warning(
+            "oracle_patch_hybrid: patched %d field(s) %s across %d receipt(s) "
+            "but post-patch F1=%.4f < pre-patch F1=%.4f (delta=%+.4f) — "
+            "rulebased-on-noisy-TrOCR is worse than the assigner for these "
+            "fields; the diagnostic artefact records this regression but "
+            "the headline pipeline F1 is unchanged.",
+            len(regressed), regressed, touched,
+            patched_metrics.global_f1, pm.assigner.global_f1, delta,
+        )
+    else:
+        log.info(
+            "oracle_patch_hybrid: patched %d field(s) %s across %d receipt(s); "
+            "post-patch F1=%.4f (was %.4f)",
+            len(regressed), regressed, touched,
+            patched_metrics.global_f1, pm.assigner.global_f1,
+        )
     return patched_metrics

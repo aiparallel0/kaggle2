@@ -15,8 +15,9 @@ snapshot written by \texttt{core.env\_snapshot}.
 \end{table}
 
 \noindent\textbf{Reproduction recipe.}
-\begin{enumerate}
-    \item \texttt{git clone https://github.com/aiparallel0/kaggle2.git \&\& cd kaggle2}
+\begin{enumerate}\sloppy
+    \item \texttt{git clone}~\url{https://github.com/aiparallel0/kaggle2.git},
+          then \texttt{cd kaggle2}
     \item \texttt{bash scripts/vastai\_bootstrap.sh}  (installs tectonic + Python deps)
     \item \texttt{make all}  (train DONUT + pipeline, run eval, render paper)
     \item Open the folder \texttt{runs/<run\_id>/}, select all, download.

@@ -1,6 +1,6 @@
 .PHONY: all train eval paper check test clean serve \
         train-pipeline eval-pipeline pipeline \
-        pack unpack runs-list latest clean-runs
+        pack pack-full unpack runs-list latest clean-runs
 
 .DELETE_ON_ERROR:
 
@@ -48,7 +48,14 @@ latest:
 	@python -c "from core.runlayout import latest_run; p=latest_run('runs'); print(p or '(none)')"
 
 pack:
-	bash scripts/pack_run.sh
+	bash scripts/pack_run.sh --light
+
+# ``pack-full`` includes the heavy model checkpoints (DONUT ~770 MiB,
+# TrOCR ~300 MiB, YOLO weights + data mirror).  Use only when the
+# checkpoints themselves need to ship; otherwise prefer ``make pack``
+# (the default, which drops files > 1 MiB and writes EXCLUDED.txt).
+pack-full:
+	bash scripts/pack_run.sh --full
 
 unpack:
 	@test -n "$(ARCHIVE)" || { echo "usage: make unpack ARCHIVE=<path>.tar.zst"; exit 1; }

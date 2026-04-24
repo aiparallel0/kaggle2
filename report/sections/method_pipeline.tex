@@ -53,7 +53,7 @@ below grand total, multi-line address block).  Four learnable
 classifier (Linear\,$\to$\,GELU\,$\to$\,Linear) that emits a scalar
 logit per field.  The cross-attention weights
 $A \in \mathbb{R}^{4\times N}$ are surfaced as the soft assignment and
-visualised in Fig.~\ref{fig:attn_heatmap}.
+visualised in Fig.~\figref{fig:attn_heatmap}.
 The module totals $\approx\VAR{assigner_params_k}\,$K parameters
 (measured exactly from \texttt{sum(p.numel() for p in assigner.parameters())}
 and persisted to \texttt{assigner\_metrics.json}).
@@ -101,13 +101,13 @@ lowest-val-loss one (not the last), at
 $\VAR{assigner_best_epoch}$ of $\VAR{assigner_stopped_at}$ actually run.
 The full train/val loss trajectory is persisted to
 \texttt{assigner\_metrics.json} and rendered as
-Fig.~\ref{fig:assigner_loss}.
+Fig.~\figref{fig:assigner_loss}.
 
 \textbf{Interpretability.}
 The attention weight $A_{f,\ell}$ is directly interpretable:
 it quantifies how much evidence line $\ell$ provides for field~$f$.
 Plotting $A$ over the receipt image yields a per-field explanation
-(Fig.~\ref{fig:attn_heatmap}) that makes address-field failures
+(Fig.~\figref{fig:attn_heatmap}) that makes address-field failures
 self-evident (the query attends to the wrong non-contiguous line),
 while DONUT offers no equivalent.
 
