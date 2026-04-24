@@ -25,6 +25,16 @@ from report.combine import (
     merge_cost_json,
     merge_pipeline_diagnostics,
 )
+from report.combine_ext import (
+    merge_ablations,
+    merge_assigner_diag,
+    merge_donut_diag,
+    merge_env,
+    merge_extended_metrics,
+    merge_latency,
+    merge_trocr_diagnostics,
+    merge_yolo_diagnostics,
+)
 from report.inject import expand_inputs, inject_results
 from report.pdflatex import compile_paper_pdf
 
@@ -104,6 +114,14 @@ def stage_paper(config: ExpConfig) -> None:
     merge_cost_json(config, metrics)
     merge_assigner_metrics(config, metrics)
     merge_pipeline_diagnostics(config, metrics)
+    merge_yolo_diagnostics(config, metrics)
+    merge_trocr_diagnostics(config, metrics)
+    merge_assigner_diag(config, metrics)
+    merge_donut_diag(config, metrics)
+    merge_latency(config, metrics)
+    merge_extended_metrics(config, metrics)
+    merge_env(config, metrics)
+    merge_ablations(config, metrics)
     with open(config.paper_template) as f:
         template = f.read()
     # Inline \input{sections/...} before \VAR{} substitution so the
