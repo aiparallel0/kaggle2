@@ -25,6 +25,8 @@ import json
 import logging
 from pathlib import Path
 
+import pytest
+
 from core.config import load_config
 from core.types import (
     EvalBundle,
@@ -83,7 +85,7 @@ def test_headline_f1_not_mutated_when_rulebased_worse(tmp_path: Path) -> None:
 
 
 def test_warns_when_postpatch_f1_regresses(
-    tmp_path: Path, caplog: logging.LogRecord,
+    tmp_path: Path, caplog: pytest.LogCaptureFixture,
 ) -> None:
     """Patch fires but post-patch F1 < pre-patch F1 ⇒ WARNING logged.
 
