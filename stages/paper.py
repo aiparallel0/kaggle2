@@ -18,6 +18,7 @@ import os
 from pathlib import Path
 
 from core.errors import EvalError
+from core.manifest import write_manifest
 from core.types import ExpConfig
 from report.combine import (
     merge_assigner_metrics,
@@ -72,14 +73,16 @@ def _render_figures(config: ExpConfig) -> None:
 
 
 def _seed_bug_timeline_fixture(config: ExpConfig) -> None:
-    """Copy the shipped ``results/bug_timeline.json`` into ``output_dir``.
+    """Copy the shipped ``results/bug_timeline.json`` fixture into ``output_dir``.
 
-    The figure emitter in :mod:`report.figures_bugs` reads from
-    ``config.output_dir``; the shipped fixture lives at the repo
-    root so the paper can be rebuilt deterministically.  No-op when
-    the fixture is already present in the output directory.
+    ``./results/`` is the repo's fixtures-only directory (tracked in
+    git).  The figure emitter in :mod:`report.figures_bugs` reads from
+    ``config.output_dir`` (which, under the runs_root/run_id layout,
+    points at ``runs/<run_id>/``), so we copy the fixture there at
+    paper-stage start.  No-op when the fixture is already present in
+    the output directory — a previous paper-stage run is authoritative.
     """
-    src = Path(__file__).resolve().parent.parent / "results" / "bug_timeline.json"
+    src = Path(__file__).resolve().parents[1] / "results" / "bug_timeline.json"
     dst = Path(config.output_dir) / "bug_timeline.json"
     if dst.exists() or not src.exists():
         return
@@ -117,3 +120,7 @@ def stage_paper(config: ExpConfig) -> None:
     pdf = compile_paper_pdf(tex_out, bib_src)
     if pdf is not None:
         log.info("Paper PDF written to %s", pdf)
+    # MANIFEST.json is the definitive "what to download" index for
+    # operators pulling the run off vast.ai (see scripts/pack_run.sh).
+    manifest_path = write_manifest(Path(config.output_dir), Path(config.output_dir).name)
+    log.info("Run manifest written to %s", manifest_path)

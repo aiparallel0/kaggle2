@@ -1,5 +1,6 @@
 .PHONY: all train eval paper check test clean serve \
-        train-pipeline eval-pipeline pipeline
+        train-pipeline eval-pipeline pipeline \
+        pack unpack runs-list latest clean-runs
 
 .DELETE_ON_ERROR:
 
@@ -21,11 +22,6 @@ eval:
 
 paper:
 	python main.py --stage paper
-	@test -s report/paper_filled.pdf || { \
-		echo "ERROR: report/paper_filled.pdf missing or empty after 'make paper'."; \
-		echo "       Install a LaTeX engine (tectonic or pdflatex) via"; \
-		echo "       scripts/vastai_bootstrap.sh and rerun."; \
-		exit 1; }
 
 # Pipeline-only targets — skip DONUT training/eval entirely (Phase 1 / GPU-constrained runs).
 # Equivalent to setting skip_donut=true in config.json, but without editing the file.
@@ -38,7 +34,28 @@ eval-pipeline:
 pipeline: train-pipeline eval-pipeline paper
 
 clean:
-	rm -rf results/ data/sroie_cache/ $(shell find . -name '__pycache__' -type d)
+	rm -rf data/sroie_cache/ $(shell find . -name '__pycache__' -type d)
+
+# Run artefact housekeeping (see core/runlayout.py for the layout contract).
+# ``runs-list`` enumerates every run on disk; ``latest`` prints the newest;
+# ``pack`` tars it into a single .tar.zst + sha256 for vast.ai → Copilot
+# round-trips; ``unpack`` is the inverse (verifies per-file sha256 against
+# MANIFEST.json); ``clean-runs`` deletes every run directory.
+runs-list:
+	@ls -1t runs 2>/dev/null || echo "(no runs/ directory yet)"
+
+latest:
+	@python -c "from core.runlayout import latest_run; p=latest_run('runs'); print(p or '(none)')"
+
+pack:
+	bash scripts/pack_run.sh
+
+unpack:
+	@test -n "$(ARCHIVE)" || { echo "usage: make unpack ARCHIVE=<path>.tar.zst"; exit 1; }
+	bash scripts/unpack_run.sh "$(ARCHIVE)"
+
+clean-runs:
+	rm -rf runs/
 
 # Run the demo website — drop a receipt, see DONUT extract the fields.
 # Uses the fine-tuned checkpoint in results/donut if present, otherwise

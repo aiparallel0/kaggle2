@@ -20,14 +20,18 @@ env/
 # ruff cache
 .ruff_cache/
 
-# Training outputs (large, not versioned); keep the paper's bug-timeline
-# fixture so the bug-timeline figure can be rebuilt deterministically.
-results/*
-!results/bug_timeline.json
+# Training outputs (large, not versioned). Per-run artefacts live under
+# runs/<run_id>/ which is ignored wholesale (see core/runlayout.py). The
+# ``results/`` directory is fixtures-only and fully tracked; writers must
+# route through core/runlayout.py and never dump into it at runtime.
+# The README under runs/ is the one tracked exception: it documents the
+# per-run layout for reviewers who may receive a packed archive.
+runs/*
+!runs/README.md
 data/sroie_cache/
 
-# YOLO run artefacts
-runs/
+# YOLO run artefacts (ultralytics default writes ./runs/detect/*; the
+# rule above already covers it, but keep the comment for grep-ability).
 
 # Third-party caches and logs
 .cache/
@@ -36,7 +40,9 @@ wandb/
 lightning_logs/
 tensorboard/
 
-# Generated paper (produced by `make paper`)
+# Legacy paper output path (pre-runs_root): may still appear on older
+# checkouts before stage_paper is rerun. New runs emit under
+# runs/<run_id>/paper/ and never touch report/.
 report/paper_filled.tex
 report/paper_filled.pdf
 report/paper_filled.aux
