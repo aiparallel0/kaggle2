@@ -48,6 +48,19 @@ _NEW_KEYS = [
     "kd_attn_weight",
     "kd_logits_weight",
     "epochs_assigner",
+    # P1 bug-atlas + P2 RAG + P4 foundation-ceiling keys.
+    "ablation_baseline_f1",
+    "ablation_n_seeds",
+    "bug_1_delta",
+    "bug_1_ci_low",
+    "bug_1_ci_high",
+    "all_off_delta",
+    "foundation_f1",
+    "foundation_ned",
+    "foundation_em",
+    "rag_on_f1",
+    "rag_off_f1",
+    "rag_k",
 ]
 
 

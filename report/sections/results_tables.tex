@@ -50,3 +50,23 @@ enumerated in \texttt{metrics/unresolved\_vars.json} for audit.
 \small
 \VAR{table_training}
 \end{table}
+
+\begin{table}[t]
+\centering
+\caption{Zero-shot foundation-model ceiling.  A frontier multimodal
+         LLM (Claude Sonnet / GPT-4V) is prompted once per test
+         image to emit the SROIE field JSON; no fine-tuning.  Shown
+         as a dashed horizontal line on Fig.~\figref{fig:f1_grouped}
+         and as the top row below.  Cached by SHA-256 of the image
+         bytes so repeated paper builds are deterministic and the
+         API is called at most once per receipt.}
+\label{tab:foundation_ceiling}
+\small
+\begin{tabular}{lccc}\toprule
+System & F1 & NED & EM \\ \midrule
+Claude Sonnet / GPT-4V (zero-shot) & \VAR{foundation_f1} & \VAR{foundation_ned} & \VAR{foundation_em} \\
+DONUT (ours, fine-tuned)           & \VAR{donut_f1}      & \VAR{donut_ned}      & \VAR{donut_em}      \\
+Pipeline (ours, fine-tuned)        & \VAR{pipeline_f1}   & \VAR{pipeline_ned}   & \VAR{pipeline_em}   \\
+\bottomrule
+\end{tabular}
+\end{table}

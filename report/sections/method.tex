@@ -104,3 +104,29 @@ teacher signal leaking into the pipeline.
 image to XML. (b) Pipeline: detect $\to$ read $\to$ assign.}
 \label{fig:pipelines}
 \end{figure}
+
+\subsection{Retrieval-augmented DONUT (RA-KIE)}\label{sec:rag}
+
+The fine-tuning set is small (500 receipts) but highly repetitive:
+the same merchant boilerplate, date orderings, and total-line
+formatting patterns recur across dozens of scans.  We exploit this
+regularity with a lightweight retrieval-augmented variant of DONUT.
+The training-set images are encoded once by the frozen Swin encoder
+into 1024-dim \texttt{[CLS]} embeddings and indexed with FAISS
+(\texttt{IndexFlatIP}, cosine similarity, L2-normalised).  For each
+training or inference receipt, the top-$k$ nearest training receipts
+(excluding self-hits at train time) are serialised as
+\texttt{<retrieved><s\_company>\ldots</s\_company></retrieved>}
+SROIE-tag spans using two new special tokens
+(\texttt{<retrieved>}, \texttt{</retrieved>}) added to the
+tokenizer alongside the existing SROIE tags.  At training the prefix
+is concatenated to the decoder label so cross-attention can
+condition on the neighbour span; at inference the same prefix is
+fed to HuggingFace's \texttt{generate()} via
+\texttt{decoder\_input\_ids}.  This mirrors the 4-shot in-context
+learning scheme of LayoutLLM~\cite{luo2024layoutllm} transplanted
+onto a 200M-param DONUT backbone and incurs no additional training
+time beyond the extra decoder tokens.  The RAG arm is opt-in via the
+\texttt{rag\_enabled} / \texttt{rag\_k} config keys and disabled by
+default so the RAG-off reported headline number remains unchanged.
+

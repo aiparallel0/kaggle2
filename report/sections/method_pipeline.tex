@@ -130,3 +130,23 @@ $\approx\VAR{assigner_params_k}$\,K trainable parameters are
 tractable precisely because the heavy perceptual work (detecting and
 reading text) has already been done by YOLO and TrOCR, whose
 representations are pretrained on much larger corpora.
+
+\subsection{Graph-attention assigner (opt-in)}\label{sec:gat}
+
+As an alternative to the full transformer assigner, we ship a pure-
+torch graph-attention variant (\texttt{models/gat\_assigner.py}) that
+operates on a $k$-nearest-neighbour graph over YOLO box centres
+($k$\,=\,6, undirected).  Each node carries the concatenation of
+the TrOCR text embedding, its bounding-box coordinates, and the
+14-dim prior vector (\texttt{priors\_v3} with
+\textsc{subtotal}/\textsc{cash}/\textsc{change}/\textsc{tax}/\textsc{rounding}
+distractor bits).  A single GAT layer with 4 heads projects onto a
+128-dim hidden space; scatter-softmax attention on the $k$NN edge
+set mixes neighbour evidence, and a final linear head emits the
+$n$-field logit vector.  The resulting model is $\sim$120\,K
+parameters --- an order of magnitude smaller than the transformer
+assigner --- and the graph prior encodes the spatial-adjacency
+invariance that the transformer otherwise has to learn from 500
+receipts.  The GAT arm is enabled by \texttt{gat\_enabled: true} in
+\texttt{config.json}; the default (\texttt{false}) path preserves
+bit-for-bit the transformer-assigner numbers reported elsewhere.

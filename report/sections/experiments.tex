@@ -135,3 +135,44 @@ from the denominator.  Both the caught-error fraction
 (\VAR{empty_detection_fraction}) are reported in
 Fig.~\figref{fig:pipeline_diagnostics}.
 
+\textbf{Retrieval-augmented DONUT ablation.}  Table~\ref{tab:rag_ablation}
+reports the RAG-off baseline and RAG-on variant with $k$\,=\,\VAR{rag_k}
+neighbours.  The retrieval bank is built over the training split using
+the DONUT Swin encoder's \texttt{[CLS]} token (1024-d) and a FAISS
+\texttt{IndexFlatIP} (cosine, L2-normalised), with a NumPy fallback on
+CPU-only CI.  At train time the top-$k$ neighbour receipts are
+serialised as \texttt{<retrieved>\ldots</retrieved>} SROIE-tag spans
+and prepended to the decoder label; at inference the same prefix is
+fed to \texttt{generate()} as \texttt{decoder\_input\_ids}.
+
+\begin{table}[t]
+  \caption{RAG-ablation headline numbers (global token F1 / NED / EM).
+    Unresolved cells render as \texttt{---} when the ablation run is
+    absent.}\label{tab:rag_ablation}
+  \centering
+  \begin{tabular}{lccc}\toprule
+    Arm & F1 & NED & EM \\ \midrule
+    DONUT (RAG off) & \VAR{rag_off_f1} & \VAR{rag_off_ned} & \VAR{rag_off_em} \\
+    DONUT (RAG on, $k$=\VAR{rag_k}) & \VAR{rag_on_f1} & \VAR{rag_on_ned} & \VAR{rag_on_em} \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\textbf{Knowledge-distillation ablation.}  The rule-based assigner
+teacher (\texttt{models/assigner\_teacher.py}) supplies soft targets
+for the learned arm.  Table~\ref{tab:kd_ablation} contrasts the full-
+vs shrunk backbone with the distillation loss disabled / enabled; the
+shipped configuration is KD-on, shrunk.
+
+\begin{table}[t]
+  \caption{Assigner knowledge-distillation ablation (assigner token F1
+    on the SROIE test split).}\label{tab:kd_ablation}
+  \centering
+  \begin{tabular}{lcc}\toprule
+    & Full (384-d, 6-layer) & Shrunk (192-d, 3-layer) \\ \midrule
+    KD off & \VAR{assigner_kd_off_full_f1} & \VAR{assigner_kd_off_shrunk_f1} \\
+    KD on  & \VAR{assigner_kd_on_full_f1}  & \VAR{assigner_kd_on_shrunk_f1} \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+

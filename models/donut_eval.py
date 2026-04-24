@@ -147,16 +147,43 @@ def eval_donut(
     }}
     predictions: list[Prediction] = []
     from PIL import Image
+
+    # P2 (RAG, inference mirror): build (or no-op) a bank and use it to
+    # prefix decoder_input_ids with <retrieved>...</retrieved> tokens.
+    # When rag_enabled is False :func:`build_rag_prompt` returns just
+    # [start_id], so the RAG-off path is bit-identical to pre-P2.
+    from models.donut_rag import build_rag_prompt
+    from models.retrieval_bank import build_bank, empty_bank
+
+    if config.rag_enabled:
+        from data.sroie import download_sroie, load_or_create_split
+        data_path = download_sroie(config)
+        split = load_or_create_split(config, data_path)
+        rag_bank = build_bank(split, config)
+    else:
+        rag_bank = empty_bank()
     with torch.no_grad():
         for rec in test:
             img = Image.open(rec.image_path).convert("RGB")
             pv = processor(
                 images=img, return_tensors="pt", legacy=False, **size_kwargs,
             ).pixel_values.to(device)
-            out = model.generate(
-                pv, decoder_start_token_id=start_id, eos_token_id=eos_id,
-                max_length=max_len, num_beams=num_beams, early_stopping=True,
+            prompt_ids = build_rag_prompt(
+                rag_bank, (str(rec.image_path), config, processor.tokenizer),
             )
+            if len(prompt_ids) > 1:
+                # RAG prefix present — pass via decoder_input_ids so HF
+                # generate() seeds beam search with the neighbour context.
+                dec_ids = torch.tensor([prompt_ids], device=device)
+                out = model.generate(
+                    pv, decoder_input_ids=dec_ids, eos_token_id=eos_id,
+                    max_length=max_len, num_beams=num_beams, early_stopping=True,
+                )
+            else:
+                out = model.generate(
+                    pv, decoder_start_token_id=start_id, eos_token_id=eos_id,
+                    max_length=max_len, num_beams=num_beams, early_stopping=True,
+                )
             tokens = processor.batch_decode(out, skip_special_tokens=False)[0]
             # Bug 3 (gate): token2json list→dict merge via _flatten_token2json.
             # Bug 12 (gate): outer <s_sroie> wrapper flattening, also handled

@@ -35,6 +35,11 @@ from report.combine_ext import (
     merge_trocr_diagnostics,
     merge_yolo_diagnostics,
 )
+from report.combine_new import (
+    merge_ablation_report,
+    merge_foundation_metrics,
+    merge_rag_metrics,
+)
 from report.inject import collect_unresolved, expand_inputs, inject_results
 from report.pdflatex import compile_paper_pdf
 
@@ -123,6 +128,9 @@ def stage_paper(config: ExpConfig) -> None:
     merge_extended_metrics(config, metrics)
     merge_env(config, metrics)
     merge_ablations(config, metrics)
+    merge_ablation_report(config, metrics)
+    merge_foundation_metrics(config, metrics)
+    merge_rag_metrics(config, metrics)
     # Materialise auto-generated tabular blocks for the new Section-D
     # tables.  Each key is a ``table_*`` identifier the LaTeX section
     # files reference as ``\\VAR{table_headline_f1}`` etc. — so the

@@ -83,6 +83,15 @@ def render_f1_grouped(run_dir: Path) -> Path | None:
     ax.set_ylim(0.0, 1.05)
     ax.set_ylabel("Token F1")
     ax.set_title("Per-field F1 with 95% bootstrap CI")
+    # P4: zero-shot foundation-model ceiling overlay (dashed line at
+    # ``foundation_f1`` when the foundation arm was run).  Renders in the
+    # legend as "Foundation (zero-shot)"; absent metric → no overlay.
+    foundation_f1 = metrics.get("foundation_f1")
+    if isinstance(foundation_f1, int | float) and 0.0 < float(foundation_f1) <= 1.0:
+        ax.axhline(
+            float(foundation_f1), linestyle="--", color="black",
+            linewidth=0.8, label="Foundation (zero-shot)",
+        )
     ax.legend(loc="lower right", frameon=False, ncol=3)
     ax.grid(axis="y", alpha=0.25, linewidth=0.4)
     return save_fig(fig, run_dir / "figures", "fig_f1_grouped")

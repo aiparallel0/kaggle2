@@ -106,3 +106,55 @@ values feed \texttt{fig\_bug\_timeline.pdf}
 \input{sections/bugs_code}
 
 \end{enumerate}
+
+\subsection{Controlled-ablation ΔF1 with 95\% bootstrap CIs}\label{sec:bug_ablation}
+
+The ``F1 impact'' value quoted per-bug above is either (a) a single-
+seed point estimate or (b) a symptom-bounded estimate labelled
+\texttt{measured:\,false} in \texttt{results/bug\_timeline.json}.
+To put the full set on a principled footing we ship a controlled
+ablation (\texttt{python\,main.py\,--stage\,ablate\_bugs}) that, for
+each of the 13 flags, toggles exactly that flag off while holding the
+remaining twelve at their fixed-correct defaults, re-evaluates the
+already-trained DONUT checkpoint, and repeats across $N$ seeds.  The
+per-bug $\Delta$F1 is the paired-mean drop relative to the
+``all-on'' baseline; the 95\% CI is normal-approximation over per-
+seed deltas for $N\geq 3$ (the \texttt{all\_off} sink reports the
+composite effect).  Table~\ref{tab:bug_ablation} shows the
+$N$\,=\,\VAR{ablation_n_seeds}-seed measurements; unresolved cells
+indicate the corresponding cell has not yet been run.  The baseline
+F1 across seeds is \VAR{ablation_baseline_f1}.
+
+\begin{table}[t]
+  \caption{Per-bug measured $\Delta$F1 with 95\% normal-approximation
+    CI from \texttt{stages/ablate\_bugs.py}.  All-on baseline:
+    \VAR{ablation_baseline_f1}.}\label{tab:bug_ablation}
+  \centering
+  \small
+  \begin{tabular}{llc}\toprule
+    Bug & $\Delta$F1 & 95\% CI \\ \midrule
+    bug\_1 & \VAR{bug_1_delta} & [\VAR{bug_1_ci_low}, \VAR{bug_1_ci_high}] \\
+    bug\_2 & \VAR{bug_2_delta} & [\VAR{bug_2_ci_low}, \VAR{bug_2_ci_high}] \\
+    bug\_3 & \VAR{bug_3_delta} & [\VAR{bug_3_ci_low}, \VAR{bug_3_ci_high}] \\
+    bug\_4 & \VAR{bug_4_delta} & [\VAR{bug_4_ci_low}, \VAR{bug_4_ci_high}] \\
+    bug\_5 & \VAR{bug_5_delta} & [\VAR{bug_5_ci_low}, \VAR{bug_5_ci_high}] \\
+    bug\_6 & \VAR{bug_6_delta} & [\VAR{bug_6_ci_low}, \VAR{bug_6_ci_high}] \\
+    bug\_7 & \VAR{bug_7_delta} & [\VAR{bug_7_ci_low}, \VAR{bug_7_ci_high}] \\
+    bug\_8 & \VAR{bug_8_delta} & [\VAR{bug_8_ci_low}, \VAR{bug_8_ci_high}] \\
+    bug\_9 & \VAR{bug_9_delta} & [\VAR{bug_9_ci_low}, \VAR{bug_9_ci_high}] \\
+    bug\_10 & \VAR{bug_10_delta} & [\VAR{bug_10_ci_low}, \VAR{bug_10_ci_high}] \\
+    bug\_11 & \VAR{bug_11_delta} & [\VAR{bug_11_ci_low}, \VAR{bug_11_ci_high}] \\
+    bug\_12 & \VAR{bug_12_delta} & [\VAR{bug_12_ci_low}, \VAR{bug_12_ci_high}] \\
+    bug\_13 & \VAR{bug_13_delta} & [\VAR{bug_13_ci_low}, \VAR{bug_13_ci_high}] \\
+    \midrule
+    all\_off & \VAR{all_off_delta} & [\VAR{all_off_ci_low}, \VAR{all_off_ci_high}] \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+Figure~\figref{fig:bug_interaction} complements the table with the
+pairwise $\Delta$F1 interaction heatmap (cell $(i,j)$ is the measured
+drop when bugs $i$ and $j$ are both off).  A diagonal cell equals the
+single-bug $\Delta$F1 of Table~\ref{tab:bug_ablation}; off-diagonal
+cells quantify how much the twelve ``supposedly independent'' fixes
+amplify one another.

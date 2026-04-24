@@ -83,6 +83,11 @@ class _NumpyIndex:
         return dist, idx
 
 
+def empty_bank(dim: int = 1024) -> RetrievalBank:
+    """Return an empty bank (used as the RAG-off inference no-op)."""
+    return RetrievalBank(index=_NumpyIndex(dim), receipts=[], dim=dim)
+
+
 def build_bank(data: DataSplit, config: ExpConfig) -> RetrievalBank:
     """Index every training receipt on its Swin-CLS embedding.
 

@@ -175,10 +175,22 @@ def train_donut(config: ExpConfig, data: DataSplit) -> str:
         _split_param_groups(model, lr_encoder=config.lr, lr_decoder=config.lr_decoder),
         weight_decay=config.weight_decay,
     )
+    # P2 (RAG): when retrieval-augmented training is on, build the
+    # Swin-CLS kNN bank once and swap the dataset constructor to the
+    # neighbour-prefix variant; RAG-off path stays bit-identical.
+    if config.rag_enabled:
+        from models.donut_rag import _RAGSROIEDataset
+        from models.retrieval_bank import build_bank
+
+        bank = build_bank(data, config)
+        train_ds: Any = _RAGSROIEDataset(data.train, proc, config, bank)
+        val_ds: Any = _RAGSROIEDataset(data.val, proc, config, bank)
+    else:
+        train_ds = _SROIEDataset(data.train, proc, config)
+        val_ds = _SROIEDataset(data.val, proc, config)
     trainer = Seq2SeqTrainer(
         model=model, args=args,
-        train_dataset=_SROIEDataset(data.train, proc, config),
-        eval_dataset=_SROIEDataset(data.val, proc, config),
+        train_dataset=train_ds, eval_dataset=val_ds,
         data_collator=_DonutCollator(model),
         compute_metrics=_make_compute_metrics(proc, config.fields),
         optimizers=(optimizer, None),
