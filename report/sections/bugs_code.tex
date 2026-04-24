@@ -25,7 +25,7 @@
 
 \item \textbf{Stale \texttt{generation\_config} on reload}
   (eval\,F1\,$\equiv$\,0 with healthy \texttt{eval\_loss}).
-  \textit{Mechanism.} \texttt{Seq2SeqTrainer(predict\_with\_generate=True)}
+  \textit{Mechanism.} \texttt{Seq2SeqTrainer}\-\texttt{(predict\_with\_generate=True)}
   reads \texttt{model.generation\_config}, which is snapshotted at
   \texttt{from\_pretrained} time --- \emph{not} the live overrides
   we place on \texttt{model.config}.  So

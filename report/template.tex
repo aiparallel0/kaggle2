@@ -19,6 +19,13 @@
 \usepackage[hidelinks]{hyperref}
 \usetikzlibrary{arrows.meta,positioning,fit,backgrounds}
 
+% IEEE two-column justification gets very tight on long technical words
+% (``cross-entropy'', ``hyperparameters'', function names, URLs).  Allow
+% TeX to stretch interword spaces up to 3em on pathological lines to
+% cut down underfull/overfull \hbox warnings without visibly
+% destroying inter-word spacing — the industry-standard IEEE remedy.
+\setlength{\emergencystretch}{3em}
+
 % Graphics-path search list.  Figure emitters write PDFs to two
 % locations across our two historical run layouts:
 %   * legacy flat layout  → ``./results/fig_*.pdf``
@@ -40,6 +47,15 @@
 % macro in sync with ``\graphicspath`` above is important.  Used by
 % every figure caption so missing PDFs degrade gracefully: no empty
 % floats, no LaTeX errors.
+%
+% ``\figref{fig:X}`` is the prose-side companion: it expands to
+% ``\ref{fig:X}`` when the label was recorded in the previous compile
+% pass, and to ``\textit{[figure absent]}`` otherwise.  Without this
+% every ``\ref{fig:X}`` pointing at a label defined inside an
+% ``\iffigurefile`` body would print as a bold ``??`` when the figure
+% is not available — the classic "unprofessional partial-run PDF"
+% symptom.  (Requires two pdflatex passes; tectonic and our pdflatex
+% helper both already run the required number of passes.)
 \makeatletter
 \newcommand{\iffigurefile}[2]{%
   \IfFileExists{#1}{#2}{%
@@ -55,6 +71,9 @@
       }%
     }%
   }%
+}
+\newcommand{\figref}[1]{%
+  \@ifundefined{r@#1}{\textit{[figure absent]}}{\ref{#1}}%
 }
 \makeatother
 

@@ -67,6 +67,10 @@ teacher signal leaking into the pipeline.
 
 \begin{figure}[t]
 \centering
+% ``\resizebox`` auto-fits the 5-box pipeline row (which is naturally
+% ~12cm wide, wider than a single IEEE column) to ``\columnwidth``,
+% eliminating the ~91pt overfull \hbox this figure used to trigger.
+\resizebox{\columnwidth}{!}{%
 \begin{tikzpicture}[
   font=\footnotesize,
   box/.style={draw,rounded corners,minimum width=2.0cm,minimum height=0.65cm,align=center,fill=blue!8},
@@ -94,8 +98,9 @@ teacher signal leaking into the pipeline.
 \draw[arr] (trocr) -- (attn);
 \draw[arr] (attn) -- (out2);
 \node[above=0.15cm of yolo,font=\scriptsize\bfseries] {(b) Pipeline};
-\end{tikzpicture}
-\caption{Side-by-side architecture overview. (a) DONUT: single forward
-pass from image to XML. (b) Pipeline: detect $\to$ read $\to$ assign.}
+\end{tikzpicture}%
+}
+\caption{Architecture overview. (a) DONUT: single forward pass from
+image to XML. (b) Pipeline: detect $\to$ read $\to$ assign.}
 \label{fig:pipelines}
 \end{figure}

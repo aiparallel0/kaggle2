@@ -1,5 +1,9 @@
 \section{F1-Destroying Bugs and Fixes}
 \label{sec:bugs}
+\sloppy  % long \texttt{} tokens like decoder_start_token_id do not
+         % break naturally in an IEEE column; \sloppy relaxes badness
+         % thresholds for this section only so the bug descriptions
+         % do not trigger ~60pt overfull \hboxes.
 
 We identified thirteen implementation bugs during development of the
 DONUT / YOLO-TrOCR-Attention pipeline.  Each is a \emph{silent}
@@ -15,7 +19,7 @@ appear only once a full eval loop has run (Bug~9's guard is now
 symmetric across DONUT and TrOCR trainers, verified by a disk
 assertion in \texttt{models/\_gen\_config.py}).  The before/after F1
 values feed \texttt{fig\_bug\_timeline.pdf}
-(Fig.~\ref{fig:bug_timeline}) via
+(Fig.~\figref{fig:bug_timeline}) via
 \texttt{results/bug\_timeline.json}.
 
 \begin{enumerate}
