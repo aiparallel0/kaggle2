@@ -43,6 +43,41 @@ from stages.eval_producers import emit_all
 log = logging.getLogger("kaggle2")
 
 
+def _emit_foundation_metrics(config: ExpConfig, test: list) -> None:  # type: ignore[type-arg]
+    """P4 — write ``foundation_metrics.json`` to ``config.output_dir``.
+
+    Calls :func:`models.foundation_oracle.foundation_predict` for each
+    test receipt (results cached by content hash) and reduces through
+    the shared ``compute_metrics`` so the numbers are directly
+    comparable with DONUT/pipeline F1/NED/EM.  Any missing API key
+    yields an empty Receipt → metrics degrade gracefully to 0.0.
+    """
+    try:
+        from core.metrics import compute_metrics
+        from core.types import EvalBundle
+        from models.foundation_oracle import foundation_predict
+    except ImportError as exc:
+        log.warning("foundation arm: %s — skipping side-car emit", exc)
+        return
+    preds = [foundation_predict(r.image_path, config) for r in test]
+    bundle = EvalBundle(
+        predictions=preds, receipts=test, fields=tuple(config.fields),
+    )
+    m = compute_metrics(bundle)
+    Path(config.output_dir).mkdir(parents=True, exist_ok=True)
+    out = Path(config.output_dir) / "foundation_metrics.json"
+    out.write_text(json.dumps({
+        "api": config.foundation_api,
+        "foundation_f1": round(m.global_f1, 4),
+        "foundation_ned": round(m.global_ned, 4),
+        "foundation_em": round(m.global_em, 4),
+        "per_field_f1": {k: round(v, 4) for k, v in m.per_field_f1.items()},
+        "n_test": len(test),
+    }, indent=2))
+    log.info("foundation_metrics.json: F1=%.4f NED=%.4f EM=%.4f",
+             m.global_f1, m.global_ned, m.global_em)
+
+
 def _eval_donut_or_skip(
     config: ExpConfig, data: DataSplit,
 ) -> tuple[Metrics, list[Prediction]]:
@@ -221,6 +256,12 @@ def stage_eval(config: ExpConfig, seeds: list[int] | None = None) -> None:
     last["n_trials"] = len(run_seeds)
     last["bootstrap_n_iter"] = config.bootstrap_n_iter
     last["bootstrap_ci_level"] = config.bootstrap_ci_level
+    # P4 — foundation-model ceiling arm (Claude Sonnet / GPT-4V zero-shot).
+    # Opt-in via ``config.foundation_enabled``; API keys + caching are
+    # owned by :mod:`models.foundation_oracle`.  Written as a side-car
+    # so it never alters the headline pipeline/DONUT metrics.
+    if getattr(config, "foundation_enabled", False):
+        _emit_foundation_metrics(config, data.test)
     Path(config.output_dir).mkdir(parents=True, exist_ok=True)
     with open(os.path.join(config.output_dir, "combined_metrics.json"), "w") as f:
         json.dump(last, f, indent=2)

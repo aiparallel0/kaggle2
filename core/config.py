@@ -41,7 +41,8 @@ def load_config(path: str, defaults: dict[str, Any] | None = None) -> ExpConfig:
     if missing:
         raise ValueError(f"config.json missing required keys: {missing}")
 
-    if raw["epochs_trocr"] < 5:  # Bug 6 prevention
+    bug_flags = _parse_bug_flags(raw.get("bug_flags"))
+    if bug_flags.get("bug_6", True) and raw["epochs_trocr"] < 5:  # Bug 6 prevention
         raise TrainError(
             f"epochs_trocr={raw['epochs_trocr']} < 5 — "
             "TrOCR will underfit (Bug 6). Set epochs_trocr >= 5.",
@@ -50,7 +51,11 @@ def load_config(path: str, defaults: dict[str, Any] | None = None) -> ExpConfig:
     # Bug 4: fp16 without gradient clipping overflows → NaN loss. bf16 is safe
     # because its dynamic range matches fp32. Enforce the invariant at load
     # time so a stale config surfaces the error before any GPU work starts.
-    if raw["precision"] == "fp16" and float(raw["max_grad_norm"]) <= 0.0:
+    if (
+        bug_flags.get("bug_4", True)
+        and raw["precision"] == "fp16"
+        and float(raw["max_grad_norm"]) <= 0.0
+    ):
         raise TrainError(
             "precision='fp16' requires max_grad_norm > 0 to prevent "
             "loss=NaN from gradient overflow (Bug 4). Set max_grad_norm=1.0 "
@@ -70,6 +75,10 @@ def load_config(path: str, defaults: dict[str, Any] | None = None) -> ExpConfig:
         "address_accept_fraction", "regex_router", "text_pool_learned",
         "total_confidence_threshold",
         "lr_assigner", "warmup_ratio_assigner",
+        "bug_flags",  # P1 — 13-bug ablation gating dict
+        "rag_enabled", "rag_k",  # P2 — retrieval-augmented DONUT
+        "gat_enabled",  # P3 — graph-attention assigner opt-in
+        "foundation_enabled", "foundation_api", "foundation_cache_path",  # P4
         "runs_root", "run_id",  # runlayout keys (optional; back-compat).
     }
     known = set(_REQUIRED) | _optional
@@ -99,34 +108,25 @@ def load_config(path: str, defaults: dict[str, Any] | None = None) -> ExpConfig:
     )
     return ExpConfig(
         seed=int(raw["seed"]),
-        base_model=str(raw["base_model"]),
-        trocr_model=str(raw["trocr_model"]),
+        base_model=str(raw["base_model"]), trocr_model=str(raw["trocr_model"]),
         yolo_model=str(raw["yolo_model"]),
         image_size=(int(img[0]), int(img[1])),
         yolo_img_size=int(raw["yolo_img_size"]),
-        max_length=int(raw["max_length"]),
-        trocr_max_len=int(raw["trocr_max_len"]),
-        epochs_donut=int(raw["epochs_donut"]),
-        epochs_yolo=int(raw["epochs_yolo"]),
+        max_length=int(raw["max_length"]), trocr_max_len=int(raw["trocr_max_len"]),
+        epochs_donut=int(raw["epochs_donut"]), epochs_yolo=int(raw["epochs_yolo"]),
         epochs_trocr=int(raw["epochs_trocr"]),
         epochs_assigner=int(raw["epochs_assigner"]),
-        batch_size=int(raw["batch_size"]),
-        grad_accum=int(raw["grad_accum"]),
-        lr=float(raw["lr"]),
-        lr_decoder=float(raw["lr_decoder"]),
+        batch_size=int(raw["batch_size"]), grad_accum=int(raw["grad_accum"]),
+        lr=float(raw["lr"]), lr_decoder=float(raw["lr_decoder"]),
         warmup_steps=int(raw["warmup_steps"]),
         weight_decay=float(raw["weight_decay"]),
         label_smoothing=float(raw["label_smoothing"]),
-        precision=str(raw["precision"]),
-        patience=int(raw["patience"]),
+        precision=str(raw["precision"]), patience=int(raw["patience"]),
         max_grad_norm=float(raw["max_grad_norm"]),
-        fields=list(raw["fields"]),
-        new_tokens=list(raw["new_tokens"]),
-        sroie_url=str(raw["sroie_url"]),
-        data_dir=str(raw["data_dir"]),
+        fields=list(raw["fields"]), new_tokens=list(raw["new_tokens"]),
+        sroie_url=str(raw["sroie_url"]), data_dir=str(raw["data_dir"]),
         output_dir=output_dir,
-        paper_template=str(raw["paper_template"]),
-        paper_output=paper_output,
+        paper_template=str(raw["paper_template"]), paper_output=paper_output,
         yolo_conf=float(raw.get("yolo_conf", 0.25)),
         trocr_max_new_tokens=int(raw.get("trocr_max_new_tokens", 64)),
         max_regions_per_image=int(raw.get("max_regions_per_image", 32)),
@@ -149,17 +149,32 @@ def load_config(path: str, defaults: dict[str, Any] | None = None) -> ExpConfig:
         weight_decay_assigner=float(raw.get("weight_decay_assigner", 5e-4)),
         dropout_assigner=float(raw.get("dropout_assigner", 0.2)),
         priors_v2=bool(raw.get("priors_v2", True)),
-        seeds=seeds_list,
-        n_trials=n_trials,
+        seeds=seeds_list, n_trials=n_trials,
         bootstrap_n_iter=int(raw.get("bootstrap_n_iter", 1000)),
         bootstrap_ci_level=float(raw.get("bootstrap_ci_level", 0.95)),
         address_accept_fraction=float(raw.get("address_accept_fraction", 0.5)),
         regex_router=bool(raw.get("regex_router", True)),
         text_pool_learned=bool(raw.get("text_pool_learned", False)),
-        total_confidence_threshold=float(
-            raw.get("total_confidence_threshold", 0.55),
-        ),
+        total_confidence_threshold=float(raw.get("total_confidence_threshold", 0.55)),
         lr_assigner=float(raw.get("lr_assigner", 1e-3)),
         warmup_ratio_assigner=float(raw.get("warmup_ratio_assigner", 0.0)),
+        bug_flags=bug_flags,
+        rag_enabled=bool(raw.get("rag_enabled", False)),
+        rag_k=int(raw.get("rag_k", 3)),
+        gat_enabled=bool(raw.get("gat_enabled", False)),
+        foundation_enabled=bool(raw.get("foundation_enabled", False)),
+        foundation_api=str(raw.get("foundation_api", "anthropic")),
+        foundation_cache_path=str(
+            raw.get("foundation_cache_path", "./runs/foundation_cache.json")),
         extra=extra,
     )
+
+
+def _parse_bug_flags(raw: object) -> dict[str, bool]:
+    """Coerce ``raw`` into a {bug_1..bug_13: bool} dict; defaults True."""
+    out = {f"bug_{i}": True for i in range(1, 14)}
+    if isinstance(raw, dict):
+        for k, v in raw.items():
+            if isinstance(k, str) and k in out:
+                out[k] = bool(v)
+    return out

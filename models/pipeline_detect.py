@@ -55,9 +55,15 @@ def _detect_and_read(
     img: Image.Image, img_path: str, cfg: ExpConfig, yolo_img: int, device: str,
 ) -> tuple[list[str], list[torch.Tensor], list[list[float]]]:
     """YOLO → TrOCR on each crop; return usable (texts, feats, bboxes)."""
-    results = yolo.predict(
-        img_path, imgsz=yolo_img, conf=cfg.yolo_conf, verbose=False,
-    )
+    # Bug 5 (gate): explicit imgsz at predict().  When the bug flag is False
+    # we omit imgsz so ultralytics defaults to 640, reintroducing the
+    # 0%-detection silent-failure.  The guard is keyed on cfg.bug_flags.
+    if cfg.bug_flags.get("bug_5", True):
+        results = yolo.predict(
+            img_path, imgsz=yolo_img, conf=cfg.yolo_conf, verbose=False,
+        )
+    else:
+        results = yolo.predict(img_path, conf=cfg.yolo_conf, verbose=False)
     # ``results`` is typically a one-element list for a single image, but
     # ultralytics has shipped builds that return an empty list on total
     # detector failure. Guard both cases explicitly.

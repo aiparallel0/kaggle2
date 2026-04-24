@@ -18,6 +18,7 @@ from typing import Any
 from core.errors import EvalError
 from core.metrics import compute_metrics
 from core.types import EvalBundle, ExpConfig, Field, Metrics, Prediction, Receipt
+from models.donut_parse import _flatten_token2json
 from models.donut_parse import token2json_safe as _token2json_safe
 
 _import_error: ImportError | None = None
@@ -146,18 +147,62 @@ def eval_donut(
     }}
     predictions: list[Prediction] = []
     from PIL import Image
+
+    # P2 (RAG, inference mirror): build (or no-op) a bank and use it to
+    # prefix decoder_input_ids with <retrieved>...</retrieved> tokens.
+    # When rag_enabled is False :func:`build_rag_prompt` returns just
+    # [start_id], so the RAG-off path is bit-identical to pre-P2.
+    from models.donut_rag import build_rag_prompt
+    from models.retrieval_bank import build_bank, empty_bank
+
+    if config.rag_enabled:
+        from data.sroie import download_sroie, load_or_create_split
+        data_path = download_sroie(config)
+        split = load_or_create_split(config, data_path)
+        rag_bank = build_bank(split, config)
+    else:
+        rag_bank = empty_bank()
     with torch.no_grad():
         for rec in test:
             img = Image.open(rec.image_path).convert("RGB")
             pv = processor(
                 images=img, return_tensors="pt", legacy=False, **size_kwargs,
             ).pixel_values.to(device)
-            out = model.generate(
-                pv, decoder_start_token_id=start_id, eos_token_id=eos_id,
-                max_length=max_len, num_beams=num_beams, early_stopping=True,
+            prompt_ids = build_rag_prompt(
+                rag_bank, (str(rec.image_path), config, processor.tokenizer),
             )
+            if len(prompt_ids) > 1:
+                # RAG prefix present — pass via decoder_input_ids so HF
+                # generate() seeds beam search with the neighbour context.
+                dec_ids = torch.tensor([prompt_ids], device=device)
+                out = model.generate(
+                    pv, decoder_input_ids=dec_ids, eos_token_id=eos_id,
+                    max_length=max_len, num_beams=num_beams, early_stopping=True,
+                )
+            else:
+                out = model.generate(
+                    pv, decoder_start_token_id=start_id, eos_token_id=eos_id,
+                    max_length=max_len, num_beams=num_beams, early_stopping=True,
+                )
             tokens = processor.batch_decode(out, skip_special_tokens=False)[0]
-            parsed = _token2json_safe(processor, tokens)
+            # Bug 3 (gate): token2json list→dict merge via _flatten_token2json.
+            # Bug 12 (gate): outer <s_sroie> wrapper flattening, also handled
+            # by _flatten_token2json (recursively merges nested dicts).
+            # Guards off → call processor.token2json directly and best-effort
+            # coerce; silently degrades to {} when the output is a list (Bug 3)
+            # or an {"sroie": {...}} wrapper (Bug 12).
+            if (
+                config.bug_flags.get("bug_3", True)
+                and config.bug_flags.get("bug_12", True)
+            ):
+                parsed = _token2json_safe(processor, tokens)
+            elif config.bug_flags.get("bug_3", True):
+                # Only Bug 3 fix active — flatten but keep outer wrapper.
+                raw = processor.token2json(tokens)
+                parsed = _flatten_token2json(raw if isinstance(raw, list) else [raw])
+            else:
+                raw = processor.token2json(tokens)
+                parsed = raw if isinstance(raw, dict) else {}
             fields = [Field(name=k, value=v) for k, v in parsed.items()]
             predictions.append(Prediction(receipt_id=rec.image_path.stem, fields=fields))
     # Symmetric numeric normalization for the TOTAL field (DONUT only):

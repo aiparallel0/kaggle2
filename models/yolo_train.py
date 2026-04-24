@@ -110,12 +110,21 @@ def train_yolo(config: ExpConfig, data: DataSplit) -> str:
     # ``./runs/detect/results/yolo/run/weights/best.pt`` — which our caller
     # never finds.  Resolve to an absolute path before handing it over so
     # the project root and the lookup path agree byte-for-byte.
-    out_dir = str(Path(config.output_dir, "yolo").resolve())
+    # Bug 8 (gate): resolve project= to an absolute path so ultralytics
+    # doesn't write under runs/detect/… and then fail to find best.pt.
+    # Guard off = pass the raw (relative) path through to reproduce the
+    # original FileExistsError / stale-checkpoint failure mode.
+    if config.bug_flags.get("bug_8", True):
+        out_dir = str(Path(config.output_dir, "yolo").resolve())
+    else:
+        out_dir = str(Path(config.output_dir, "yolo"))
     model = YOLO(config.yolo_model)
+    # Bug 5 (gate): explicit imgsz= at train.  Off = use ultralytics default.
+    _imgsz = config.yolo_img_size if config.bug_flags.get("bug_5", True) else 640
     model.train(
         data=str(yaml_path),
         epochs=config.epochs_yolo,
-        imgsz=config.yolo_img_size,  # Bug 5: always pass imgsz explicitly
+        imgsz=_imgsz,
         batch=config.batch_size,
         seed=config.seed,
         project=out_dir,

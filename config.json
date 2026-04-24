@@ -36,14 +36,14 @@
   "max_grad_norm": 1.0,
   "expected_f1_warn": 0.75,
   "skip_donut": false,
-  "assigner_hidden": 96,
-  "assigner_n_layers_level2": 1,
+  "assigner_hidden": 192,
+  "assigner_n_layers_level2": 3,
   "emit_hidden": 128,
   "emit_vocab_size": 259,
   "emit_max_len": 96,
   "emit_beam_width": 4,
-  "kd_attn_weight": 0.0,
-  "kd_logits_weight": 0.0,
+  "kd_attn_weight": 0.3,
+  "kd_logits_weight": 0.5,
   "fields": ["company", "date", "address", "total"],
   "new_tokens": [
     "<s_sroie>", "</s_sroie>",
@@ -69,5 +69,17 @@
   "warmup_ratio_assigner": 0.1,
   "priors_v3": true,
   "assigner_synth_subtotal": 0.3,
-  "assigner_hardneg_weight": 0.5
+  "assigner_hardneg_weight": 0.5,
+  "bug_flags": {
+    "bug_1": true, "bug_2": true, "bug_3": true, "bug_4": true,
+    "bug_5": true, "bug_6": true, "bug_7": true, "bug_8": true,
+    "bug_9": true, "bug_10": true, "bug_11": true, "bug_12": true,
+    "bug_13": true
+  },
+  "rag_enabled": false,
+  "rag_k": 3,
+  "gat_enabled": false,
+  "foundation_enabled": false,
+  "foundation_api": "anthropic",
+  "foundation_cache_path": "./runs/foundation_cache.json"
 }

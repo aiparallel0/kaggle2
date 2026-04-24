@@ -156,8 +156,70 @@ def render_telemetry_overlay(results_dir: str, out_dir: str) -> str | None:
     return out
 
 
+def render_bug_interaction_heatmap(
+    results_dir: str, out_dir: str,
+) -> str | None:
+    """P1 — 13×13 ΔF1 heatmap for pairwise bug interactions.
+
+    Reads ``ablation_report.json`` (written by :mod:`stages.ablate_bugs`
+    under ``runs/<run_id>/metrics/``).  Off-diagonal cell ``(i,j)`` =
+    ΔF1 when bug_i AND bug_j are both off; diagonal cell ``(i,i)`` =
+    ΔF1 when only bug_i is off (the ``per_bug_delta`` series).  Empty
+    cells render as ``0`` — the interaction sweep is opt-in (single-
+    bug ablation is the default, pairwise is expensive).
+    """
+    if not _HAS_MPL:
+        warnings.warn("matplotlib unavailable — skipping heatmap", stacklevel=2)
+        return None
+    metrics_dir = Path(results_dir) / "metrics"
+    src = metrics_dir / "ablation_report.json"
+    if not src.exists():
+        src = Path(results_dir) / "ablation_report.json"
+    report = _load_json(src)
+    if report is None:
+        warnings.warn(
+            f"ablation_report.json not found in {results_dir}", stacklevel=2,
+        )
+        return None
+    per_bug = dict(report.get("per_bug_delta") or {})
+    interaction: dict[str, dict[str, float]] = {
+        k: dict(v) for k, v in (report.get("interaction") or {}).items()
+    }
+    bugs = [f"bug_{i}" for i in range(1, 14)]
+    # Build 13×13 matrix; diagonal from per_bug_delta, off-diag from interaction.
+    grid: list[list[float]] = []
+    for i, bi in enumerate(bugs):
+        row: list[float] = []
+        for j, bj in enumerate(bugs):
+            if i == j:
+                row.append(float(per_bug.get(bi, 0.0)))
+            else:
+                val = interaction.get(bi, {}).get(bj)
+                row.append(float(val) if val is not None else 0.0)
+        grid.append(row)
+    fig, ax = plt.subplots(figsize=(5.6, 5.0))
+    im = ax.imshow(grid, cmap="RdBu_r", vmin=-0.5, vmax=0.5, aspect="equal")
+    ax.set_xticks(range(13))
+    ax.set_yticks(range(13))
+    ax.set_xticklabels([str(i + 1) for i in range(13)], fontsize=7)
+    ax.set_yticklabels([f"Bug {i + 1}" for i in range(13)], fontsize=7)
+    ax.set_xlabel("Also off (j)")
+    ax.set_ylabel("Primary bug off (i)")
+    ax.set_title("Pairwise bug-interaction $\\Delta$F1 (13×13)")
+    fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04, label="$\\Delta$F1")
+    fig.tight_layout()
+    out = str(Path(out_dir) / "fig_bug_interaction.pdf")
+    fig.savefig(out, bbox_inches="tight")
+    plt.close(fig)
+    return out
+
+
 def render_all_bugs_telemetry(results_dir: str, out_dir: str) -> list[str]:
-    """Run the two nice-to-have emitters; return written PDF paths."""
+    """Run the three bug/telemetry emitters; return written PDF paths."""
     Path(out_dir).mkdir(parents=True, exist_ok=True)
-    emitters = (render_bug_timeline, render_telemetry_overlay)
+    emitters = (
+        render_bug_timeline,
+        render_telemetry_overlay,
+        render_bug_interaction_heatmap,
+    )
     return [r for fn in emitters for r in [fn(results_dir, out_dir)] if r is not None]

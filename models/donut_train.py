@@ -47,75 +47,105 @@ def _prepare_model(config: ExpConfig) -> tuple[Any, Any]:
     model: VisionEncoderDecoderModel = VisionEncoderDecoderModel.from_pretrained(
         config.base_model,
     )
-    proc.tokenizer.add_special_tokens({"additional_special_tokens": config.new_tokens})
-    # Bug 1: untie lm_head BEFORE resize so that resize_token_embeddings does
-    # not create a shared-storage alias between embed_tokens and lm_head.
-    # Setting the flag on BOTH top-level and decoder sub-config is required
-    # because VisionEncoderDecoderModel reads the sub-config when deciding
-    # whether to re-tie weights on resize.
-    model.config.tie_word_embeddings = False
-    model.config.decoder.tie_word_embeddings = False
+    extra_tokens = list(config.new_tokens)
+    # P2 (RAG): add <retrieved>/</retrieved> sentinels alongside SROIE tags
+    # so the decoder can attend to the serialised neighbour span prefix.
+    if config.rag_enabled:
+        for tok in ("<retrieved>", "</retrieved>"):
+            if tok not in extra_tokens:
+                extra_tokens.append(tok)
+    proc.tokenizer.add_special_tokens({"additional_special_tokens": extra_tokens})
+    # Bug 1 (gate): untie lm_head BEFORE resize so safetensors cannot
+    # dedup the shared-storage alias.  Flag off = reintroduce the bug.
+    if config.bug_flags.get("bug_1", True):
+        model.config.tie_word_embeddings = False
+        model.config.decoder.tie_word_embeddings = False
     model.decoder.resize_token_embeddings(len(proc.tokenizer), mean_resizing=False)
-    # Clone unconditionally so even if the model tied weights internally during
-    # resize, lm_head.weight is now a distinct tensor with a unique data_ptr();
-    # safetensors identifies duplicates by data_ptr() and would otherwise drop
-    # lm_head, producing "missing keys: ['decoder.lm_head.weight']" on reload.
-    # The clone MUST happen before the optimizer is built so the optimizer
-    # tracks this exact Parameter for the whole of training.
-    model.decoder.lm_head.weight = torch.nn.Parameter(
-        model.decoder.lm_head.weight.data.clone(),
-    )
-    model.config.decoder_start_token_id = proc.tokenizer.convert_tokens_to_ids(
-        ["<s_sroie>"],
-    )[0]  # Bug 2
+    if config.bug_flags.get("bug_1", True):
+        # Bug 10 (gate): weight-tie drift assert.  We clone unconditionally
+        # when bug_1 fix is active so the optimizer tracks a distinct tensor.
+        model.decoder.lm_head.weight = torch.nn.Parameter(
+            model.decoder.lm_head.weight.data.clone(),
+        )
+    if config.bug_flags.get("bug_10", True):
+        # Assertion: lm_head.weight must not share storage with the
+        # embedding matrix after the clone (ablation-off leaves it tied).
+        emb = model.decoder.get_input_embeddings().weight
+        if model.decoder.lm_head.weight.data_ptr() == emb.data_ptr():
+            from core.errors import TrainError
+            raise TrainError("Bug 10 guard: lm_head still tied to embed_tokens.")
+    # Bug 2 (gate): list-form convert_tokens_to_ids.  String-form returns
+    # the ID of '<' and silently collapses F1 to 0; guard inverts for ablation.
+    if config.bug_flags.get("bug_2", True):
+        model.config.decoder_start_token_id = proc.tokenizer.convert_tokens_to_ids(
+            ["<s_sroie>"],
+        )[0]
+    else:
+        model.config.decoder_start_token_id = proc.tokenizer.convert_tokens_to_ids(
+            "<s_sroie>",
+        )
     model.config.pad_token_id = proc.tokenizer.pad_token_id
     model.config.eos_token_id = proc.tokenizer.convert_tokens_to_ids(
         ["</s_sroie>"],
     )[0]
     model.config.vocab_size = model.config.decoder.vocab_size
-    # Bug 9: Seq2SeqTrainer's predict_with_generate reads generation_config
-    # (snapshotted at from_pretrained time), NOT live model.config. Without
-    # mirroring our overrides, eval-time generation starts from the stale
-    # donut-base mBART ``<s>`` and token2json returns ``{}`` for every sample
-    # → eval_f1 ≡ 0.0 while eval_loss drops normally.
-    gc = model.generation_config
-    gc.decoder_start_token_id = model.config.decoder_start_token_id
-    gc.eos_token_id = model.config.eos_token_id
-    gc.pad_token_id = model.config.pad_token_id
-    gc.bos_token_id = model.config.decoder_start_token_id
-    gc.forced_bos_token_id = None
-    gc.forced_eos_token_id = None
+    # Bug 9 (gate): Seq2SeqTrainer's predict_with_generate reads
+    # generation_config snapshotted at from_pretrained.  Without mirroring
+    # our SROIE-specific ids here, eval_f1 ≡ 0 while eval_loss drops normally.
+    if config.bug_flags.get("bug_9", True):
+        gc = model.generation_config
+        gc.decoder_start_token_id = model.config.decoder_start_token_id
+        gc.eos_token_id = model.config.eos_token_id
+        gc.pad_token_id = model.config.pad_token_id
+        gc.bos_token_id = model.config.decoder_start_token_id
+        gc.forced_bos_token_id = None
+        gc.forced_eos_token_id = None
     w, h = config.image_size
     model.config.encoder.image_size = [h, w]
     proc.image_processor.size = {"height": h, "width": w}
     if config.gradient_checkpointing:
         model.gradient_checkpointing_enable()
         model.config.use_cache = False
-    # Bug 7: transformers ≥4.48 adds num_items_in_batch to model inputs when
-    # forward has **kwargs (VisionEncoderDecoderModel does). That leaks into
-    # kwargs_encoder, forwarded to SwinModel.forward() which has no **kwargs
-    # → TypeError on the first training batch. ``accepts_loss_kwargs=False``
-    # tells the Trainer to skip this path.
-    model.accepts_loss_kwargs = False
+    # Bug 11 (gate): transformers ≥4.48 adds num_items_in_batch to kwargs
+    # which leaks into SwinModel.forward (no **kwargs) → TypeError.
+    # Guard off keeps accepts_loss_kwargs at its default truthy value.
+    if config.bug_flags.get("bug_11", True):
+        model.accepts_loss_kwargs = False
     return proc, model
 
 
 def _build_args(config: ExpConfig, out_dir: str) -> Seq2SeqTrainingArguments:
     cuda = torch.cuda.is_available()
-    use_bf16 = cuda and config.precision == "bf16" and torch.cuda.is_bf16_supported()
-    use_fp16 = cuda and config.precision == "fp16"  # Bug 4: only when explicit
+    # Bug 4 (gate): precision selection bf16 vs fp16+grad_clip.  With the
+    # guard active we prefer bf16 on Ampere+ (no NaN risk); guard-off
+    # allows fp16 through without the max_grad_norm safety — i.e.
+    # reintroduces the overflow-to-NaN failure mode.
+    if config.bug_flags.get("bug_4", True):
+        use_bf16 = (
+            cuda and config.precision == "bf16" and torch.cuda.is_bf16_supported()
+        )
+        use_fp16 = cuda and config.precision == "fp16"
+        effective_grad_norm = config.max_grad_norm
+    else:
+        use_bf16 = cuda and config.precision == "bf16"
+        use_fp16 = cuda and config.precision == "fp16"
+        effective_grad_norm = 0.0  # re-introduce the fp16 overflow path
     return Seq2SeqTrainingArguments(
         output_dir=out_dir, num_train_epochs=config.epochs_donut,
         per_device_train_batch_size=config.batch_size,
         gradient_accumulation_steps=config.grad_accum,
         learning_rate=config.lr, lr_scheduler_type=config.lr_scheduler_type,
-        # Issue 3: HF Trainer uses warmup_steps when it is > 0, overriding
-        # warmup_ratio. Pass 0 when warmup_ratio is configured so the
-        # ratio-based schedule takes effect.
+        # Bug 13 (gate): HF Trainer uses warmup_steps when > 0, overriding
+        # warmup_ratio.  With the guard active we force steps=0 when
+        # warmup_ratio>0; guard-off intentionally re-introduces the override.
         warmup_ratio=config.warmup_ratio,
-        warmup_steps=0 if config.warmup_ratio > 0 else config.warmup_steps,
+        warmup_steps=(
+            0 if (config.warmup_ratio > 0
+                  and config.bug_flags.get("bug_13", True))
+            else config.warmup_steps
+        ),
         weight_decay=config.weight_decay, bf16=use_bf16, fp16=use_fp16,
-        max_grad_norm=config.max_grad_norm,
+        max_grad_norm=effective_grad_norm,
         label_smoothing_factor=config.label_smoothing,
         gradient_checkpointing=config.gradient_checkpointing,
         save_strategy="epoch", eval_strategy="epoch",
@@ -145,10 +175,22 @@ def train_donut(config: ExpConfig, data: DataSplit) -> str:
         _split_param_groups(model, lr_encoder=config.lr, lr_decoder=config.lr_decoder),
         weight_decay=config.weight_decay,
     )
+    # P2 (RAG): when retrieval-augmented training is on, build the
+    # Swin-CLS kNN bank once and swap the dataset constructor to the
+    # neighbour-prefix variant; RAG-off path stays bit-identical.
+    if config.rag_enabled:
+        from models.donut_rag import _RAGSROIEDataset
+        from models.retrieval_bank import build_bank
+
+        bank = build_bank(data, config)
+        train_ds: Any = _RAGSROIEDataset(data.train, proc, config, bank)
+        val_ds: Any = _RAGSROIEDataset(data.val, proc, config, bank)
+    else:
+        train_ds = _SROIEDataset(data.train, proc, config)
+        val_ds = _SROIEDataset(data.val, proc, config)
     trainer = Seq2SeqTrainer(
         model=model, args=args,
-        train_dataset=_SROIEDataset(data.train, proc, config),
-        eval_dataset=_SROIEDataset(data.val, proc, config),
+        train_dataset=train_ds, eval_dataset=val_ds,
         data_collator=_DonutCollator(model),
         compute_metrics=_make_compute_metrics(proc, config.fields),
         optimizers=(optimizer, None),

@@ -71,7 +71,37 @@ Precision                              & \VAR{precision} \\
 \end{tabular}
 \end{table}
 
-\subsection{Evaluation Protocol}
+\subsection{Knowledge-Distillation Ablation}
+\label{sec:kd-ablation}
+
+The attention-assigner supports two distillation losses gated by
+\texttt{kd\_logits\_weight} (KL against the rule-based teacher
+softmax, strategy~C) and \texttt{kd\_attn\_weight} (attention-row
+distillation against the same teacher).  Table~\ref{tab:kd} reports
+the 2$\times$2 ablation over KD~\{off, on\} and assigner capacity
+\{full, shrunk\}; the shrunk configuration reduces
+\texttt{assigner\_hidden} from 384 to 192 and
+\texttt{assigner\_n\_layers\_level2} from 6 to 3, roughly halving
+parameter count while adding distillation signal.
+
+\begin{table}[!t]
+\centering
+\caption{Assigner knowledge-distillation ablation.  ``Full'' uses
+         the original $d{=}384$, $L{=}6$ configuration; ``Shrunk''
+         uses $d{=}192$, $L{=}3$ (Proposal~6).  KD weights are
+         \texttt{kd\_logits\_weight=0.5} and \texttt{kd\_attn\_weight=0.3}
+         when on.}
+\label{tab:kd}
+\begin{tabular}{lcc}
+\toprule
+Capacity & KD off & KD on \\ \midrule
+Full (d=384, L=6)    & \VAR{kd_full_off_f1}   & \VAR{kd_full_on_f1} \\
+Shrunk (d=192, L=3)  & \VAR{kd_shrunk_off_f1} & \VAR{kd_shrunk_on_f1} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+
 
 \textbf{Metrics.}  We report whitespace-token F1 averaged uniformly
 over the four fields (``global F1''), per-field token F1, Normalised
@@ -104,4 +134,45 @@ from the denominator.  Both the caught-error fraction
 (\VAR{per_receipt_error_fraction}) and the empty-detection fraction
 (\VAR{empty_detection_fraction}) are reported in
 Fig.~\figref{fig:pipeline_diagnostics}.
+
+\textbf{Retrieval-augmented DONUT ablation.}  Table~\ref{tab:rag_ablation}
+reports the RAG-off baseline and RAG-on variant with $k$\,=\,\VAR{rag_k}
+neighbours.  The retrieval bank is built over the training split using
+the DONUT Swin encoder's \texttt{[CLS]} token (1024-d) and a FAISS
+\texttt{IndexFlatIP} (cosine, L2-normalised), with a NumPy fallback on
+CPU-only CI.  At train time the top-$k$ neighbour receipts are
+serialised as \texttt{<retrieved>\ldots</retrieved>} SROIE-tag spans
+and prepended to the decoder label; at inference the same prefix is
+fed to \texttt{generate()} as \texttt{decoder\_input\_ids}.
+
+\begin{table}[t]
+  \caption{RAG-ablation headline numbers (global token F1 / NED / EM).
+    Unresolved cells render as \texttt{---} when the ablation run is
+    absent.}\label{tab:rag_ablation}
+  \centering
+  \begin{tabular}{lccc}\toprule
+    Arm & F1 & NED & EM \\ \midrule
+    DONUT (RAG off) & \VAR{rag_off_f1} & \VAR{rag_off_ned} & \VAR{rag_off_em} \\
+    DONUT (RAG on, $k$=\VAR{rag_k}) & \VAR{rag_on_f1} & \VAR{rag_on_ned} & \VAR{rag_on_em} \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\textbf{Knowledge-distillation ablation.}  The rule-based assigner
+teacher (\texttt{models/assigner\_teacher.py}) supplies soft targets
+for the learned arm.  Table~\ref{tab:kd_ablation} contrasts the full-
+vs shrunk backbone with the distillation loss disabled / enabled; the
+shipped configuration is KD-on, shrunk.
+
+\begin{table}[t]
+  \caption{Assigner knowledge-distillation ablation (assigner token F1
+    on the SROIE test split).}\label{tab:kd_ablation}
+  \centering
+  \begin{tabular}{lcc}\toprule
+    & Full (384-d, 6-layer) & Shrunk (192-d, 3-layer) \\ \midrule
+    KD off & \VAR{assigner_kd_off_full_f1} & \VAR{assigner_kd_off_shrunk_f1} \\
+    KD on  & \VAR{assigner_kd_on_full_f1}  & \VAR{assigner_kd_on_shrunk_f1} \\
+    \bottomrule
+  \end{tabular}
+\end{table}
 

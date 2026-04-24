@@ -73,8 +73,8 @@ class _CropDataset(_DATASET_BASE):  # type: ignore[misc]
 
 def train_trocr(config: ExpConfig, crops: list[Crop]) -> str:
     """Fine-tune TrOCR on SROIE crops; return saved model directory."""
-    # Bug 6: TrOCR needs >= 5 epochs; config.py enforces this at load time
-    if config.epochs_trocr < 5:
+    # Bug 6 (gate): TrOCR needs ≥ 5 epochs; guard off disables the floor.
+    if config.bug_flags.get("bug_6", True) and config.epochs_trocr < 5:
         raise TrainError(
             f"epochs_trocr={config.epochs_trocr} < 5 — "
             "TrOCR will produce empty outputs (Bug 6)."

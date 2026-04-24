@@ -69,7 +69,7 @@ def test_bug_timeline_fixture_schema() -> None:
     """The shipped fixture must contain 13 valid entries with an F1 default."""
     repo = Path(__file__).resolve().parent.parent
     data = json.loads((repo / "results" / "bug_timeline.json").read_text())
-    assert data["schema_version"] == 1
+    assert data["schema_version"] in (1, 2)
     assert "f1_after_default" in data
     bugs = data["bugs"]
     assert len(bugs) == 13
@@ -82,4 +82,8 @@ def test_bug_timeline_fixture_schema() -> None:
         assert isinstance(bug["measured"], bool)
         assert bug["short"]
         assert bug["mechanism"]
+        # v2: optional CI fields present (may be null until measured).
+        if data["schema_version"] >= 2:
+            assert "f1_delta_measured" in bug
+            assert "ci_low" in bug and "ci_high" in bug
     assert seen_ids == set(range(1, 14))
