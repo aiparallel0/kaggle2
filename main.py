@@ -41,11 +41,30 @@ def main() -> None:
         "(e.g. '42,123,2024'). Default = single run with config.seed.",
     )
     parser.add_argument("--log-level", default="INFO")
+    parser.add_argument(
+        "--runs-root",
+        default=None,
+        help="Override ``runs_root`` from config.json (e.g. '/mnt/vast/runs'). "
+        "The effective output directory becomes <runs_root>/<run_id>/.",
+    )
+    parser.add_argument(
+        "--run-id",
+        default=None,
+        help="Override the auto-derived <UTC-timestamp>-<git-sha> run_id. "
+        "Use this to resume a specific run or to pin a human-readable name.",
+    )
     args = parser.parse_args()
     logging.basicConfig(
         level=args.log_level.upper(),
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
+    # Flags apply before load_config so derive_paths sees them.
+    import os
+    if args.runs_root is not None:
+        os.environ["KAGGLE2_RUNS_ROOT"] = args.runs_root
+    if args.run_id is not None:
+        os.environ["KAGGLE2_RUN_ID"] = args.run_id
+    os.environ["KAGGLE2_CONFIG_PATH"] = args.config
     config = load_config(args.config)
     if args.skip_donut:
         config.skip_donut = True

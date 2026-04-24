@@ -154,8 +154,76 @@ echo "deploy ALL=(ALL) NOPASSWD: /bin/systemctl restart kaggle2" \
 
 `make all` runs `check → test → train → eval → paper`. On a single RTX
 4090 the DONUT stage takes ≈ 45 min at 15 epochs; YOLO+TrOCR+Attention
-takes ≈ 30 min. Intermediate artefacts land in `./results/`, the final
-paper is `report/paper_filled.pdf`.
+takes ≈ 30 min.
+
+### Outputs — "open folder, select all, download"
+
+After `make all` finishes, **every file worth keeping lives under a
+single folder**:
+
+```
+runs/<run_id>/                          # one folder per run
+├── metrics/
+│   ├── combined_metrics.json           # headline F1/NED/EM
+│   ├── extended_metrics.json           # per-field P/R + bootstrap CI
+│   ├── assigner_metrics.json           # assigner diagnostics
+│   ├── pipeline_metrics.json           # pipeline sidecar
+│   ├── cost_{donut,pipeline}.json      # USD + Wh + CO2
+│   ├── pipeline_meta.json
+│   ├── gtocr_rulebased_metrics.json
+│   └── unresolved_vars.json            # audit: \VAR{} keys that did NOT resolve
+├── predictions/
+│   ├── donut_preds.jsonl               # one row per test image (gt, pred, per-field)
+│   ├── pipeline_preds.jsonl
+│   ├── donut_errors.jsonl
+│   ├── pipeline_errors.jsonl
+│   └── per_field_errors.jsonl          # merged 8-category miss classifier
+├── env/
+│   ├── git_sha.txt
+│   ├── pip_freeze.txt
+│   ├── nvidia_smi.txt
+│   ├── config_snapshot.json            # exact config.json used
+│   └── hostinfo.json                   # CPU, RAM, GPU model, driver, CUDA
+├── figures/                            # every PDF the paper cites
+├── paper/
+│   ├── paper_filled.tex
+│   └── paper_filled.pdf                # the final submission
+├── attention_samples.json              # attention-heatmap source
+├── training_log.json                   # per-epoch scalars
+├── bug_timeline.json                   # copied fixture (paper cites)
+└── MANIFEST.json                       # relpath + sha256 + size + producer-stage
+```
+
+**Nothing lands in `./results/` (fixtures-only) or `./report/` (template-only).**
+The Copilot round-trip contract is:
+
+```bash
+# On vast.ai:
+make all                                 # runs/<run_id>/ is self-contained
+make pack                                # optional: tar the run into a single archive
+
+# In your browser:
+# → open the folder runs/<run_id>/
+# → select all, download
+# → upload back to Copilot
+```
+
+`MANIFEST.json` is the definitive index — every download target appears
+in it with sha256 so `scripts/unpack_run.sh` can verify integrity
+end-to-end.
+
+### "No placeholders" contract
+
+After a successful `make all`, every `\VAR{}` in the compiled PDF
+resolves to a real measured value (not a fillers `---`).  The
+`metrics/unresolved_vars.json` sidecar lists any key that did NOT
+resolve on the current run — a successful full run writes
+`{"unresolved": [], "count": 0}`.
+
+Which metrics have producers (and therefore real values) is enumerated
+in `docs/TRACKING.md`; any `\VAR{}` key not covered by the producer
+matrix will surface in `unresolved_vars.json` for audit rather than
+rendering as a silent placeholder in the PDF.
 
 Partial runs:
 

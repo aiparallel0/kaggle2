@@ -10,12 +10,10 @@ Role: split out of :mod:`stages.paper` so the 166-LOC cap is respected.
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from pathlib import Path
 
 log = logging.getLogger("kaggle2")
-
-
-from collections.abc import Callable
 
 
 def render_section_c(run_dir: Path) -> None:

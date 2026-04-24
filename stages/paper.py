@@ -123,6 +123,14 @@ def stage_paper(config: ExpConfig) -> None:
     merge_extended_metrics(config, metrics)
     merge_env(config, metrics)
     merge_ablations(config, metrics)
+    # Materialise auto-generated tabular blocks for the new Section-D
+    # tables.  Each key is a ``table_*`` identifier the LaTeX section
+    # files reference as ``\\VAR{table_headline_f1}`` etc. — so the
+    # table body is sourced from the real metrics dict rather than
+    # hand-coded literals.
+    from report.inject_tables import inject_tables
+    for key, tabular in inject_tables(metrics).items():
+        metrics[key] = tabular
     with open(config.paper_template) as f:
         template = f.read()
     # Inline \input{sections/...} before \VAR{} substitution so the

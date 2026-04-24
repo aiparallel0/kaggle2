@@ -78,8 +78,17 @@ def _format_value(key: str, value: Any, metrics: dict[str, Any]) -> str:
 
 
 def inject_results(template: str, metrics: dict[str, Any]) -> str:
-    """Replace \\VAR{key} placeholders with formatted metric values."""
-    result = template
+    """Replace \\VAR{key} placeholders with formatted metric values.
+
+    Two-pass: first apply the typed formatter DSL (``:pct1``, ``:ms``,
+    ``:usd``, …) via :mod:`report.inject_format`, then the legacy
+    plain-``\\VAR{key}`` substitution.  Directives that the formatter
+    could not resolve (unknown directive, or missing key) are left
+    intact so the plain substitution step either formats or counts
+    them in the unresolved-VAR audit.
+    """
+    from report.inject_format import apply_formatters
+    result = apply_formatters(template, metrics)
     for key, value in metrics.items():
         placeholder = f"\\VAR{{{key}}}"
         result = result.replace(placeholder, _format_value(key, value, metrics))

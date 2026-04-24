@@ -4,11 +4,25 @@
 \usepackage{amsmath,amssymb}
 \usepackage{graphicx}
 \usepackage{booktabs}
+\usepackage{siunitx}
+\usepackage{subcaption}
+\usepackage{colortbl}
 \usepackage{tikz}
 \usepackage{url}
 \usepackage{algorithm}
 \usepackage{algpseudocode}
 \usetikzlibrary{arrows.meta,positioning,fit,backgrounds}
+
+% Conditional figure inclusion.  ``\iffigurefile{path}{body}`` expands
+% to ``body`` when ``path`` is found by graphicx's search, otherwise
+% expands to an empty string.  Used by every Section-C figure caption
+% so missing PDFs (e.g. blocked metrics on this run) degrade gracefully
+% — no empty floats, no LaTeX errors.
+\makeatletter
+\newcommand{\iffigurefile}[2]{%
+  \IfFileExists{#1}{#2}{}%
+}
+\makeatother
 
 \begin{document}
 
@@ -59,11 +73,14 @@ $n{=}1$ point estimate to any number of seeds without code changes.
 \input{sections/bugs}
 \input{sections/experiments}
 \input{sections/results}
+\input{sections/results_tables}
+\input{sections/results_gallery}
 \input{sections/discussion}
 \input{sections/limitations}
 \input{sections/broader_impact}
 \input{sections/conclusion}
 \input{sections/appendix}
+\input{sections/appendix_env}
 
 \bibliographystyle{IEEEtran}
 \bibliography{references}
