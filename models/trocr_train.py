@@ -127,7 +127,17 @@ def train_trocr(config: ExpConfig, crops: list[Crop]) -> str:
     pad = processor.tokenizer.pad_token_id
 
     def _compute_metrics(pred: Any) -> dict[str, float]:
-        """Token-F1 over decoded crop texts — drives load_best_model_at_end."""
+        """Per-crop token-F1 (OCR-level, **not** KIE-level).
+
+        Returned under the key ``crop_cer_f1`` — HuggingFace Trainer
+        prepends ``eval_`` when logging, yielding ``eval_crop_cer_f1``
+        in ``training_log.json`` / trainer state.  The previous
+        ``f1`` key mislead every downstream reader (including the
+        paper's Table I writer) into treating the 0.96 per-crop OCR
+        F1 as a field-level KIE F1; the downstream YOLO-detect /
+        Assigner-assign stages stack three further failure modes on
+        top of this number, so the KIE F1 is always far lower.
+        """
         preds, labels = pred.predictions, pred.label_ids
         if isinstance(preds, tuple):
             preds = preds[0]
@@ -136,7 +146,7 @@ def train_trocr(config: ExpConfig, crops: list[Crop]) -> str:
         p_txt = processor.tokenizer.batch_decode(preds, skip_special_tokens=True)
         g_txt = processor.tokenizer.batch_decode(labels, skip_special_tokens=True)
         scores = [token_f1(g, p) for g, p in zip(g_txt, p_txt, strict=True)]
-        return {"f1": float(sum(scores) / len(scores)) if scores else 0.0}
+        return {"crop_cer_f1": float(sum(scores) / len(scores)) if scores else 0.0}
 
     args = Seq2SeqTrainingArguments(
         output_dir=out_dir,
@@ -150,7 +160,7 @@ def train_trocr(config: ExpConfig, crops: list[Crop]) -> str:
         eval_strategy="epoch",
         save_total_limit=2,
         load_best_model_at_end=True,
-        metric_for_best_model="eval_f1",
+        metric_for_best_model="eval_crop_cer_f1",
         greater_is_better=True,
         predict_with_generate=True,
         seed=config.seed,

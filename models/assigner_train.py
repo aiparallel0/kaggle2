@@ -438,6 +438,17 @@ def train_assigner(config: ExpConfig, data: AssignerData) -> str:
         sched.step()
     if best_state is not None:
         assigner.load_state_dict(best_state)
+        # Round-trip guard: re-evaluate after loading best_state and
+        # assert the reproduced val_loss matches the tracked best_val
+        # (follow-up Fix B3 — noisy val curves made early-stop fire on
+        # epochs where the *last* checkpoint was worse than ``best``;
+        # this guarantees the returned ``assigner.pt`` is the best-val
+        # checkpoint, not whatever happened to live in memory last).
+        reloaded_val = _evaluate(assigner, val_groups, device)
+        assert abs(reloaded_val - best_val) < 1e-6, (
+            f"Assigner best-checkpoint round-trip failed: "
+            f"reloaded val_loss={reloaded_val:.6f} != best_val={best_val:.6f}"
+        )
     out_path = os.path.join(config.output_dir, "assigner.pt")
     Path(config.output_dir).mkdir(parents=True, exist_ok=True)
     save_assigner(assigner, out_path)
