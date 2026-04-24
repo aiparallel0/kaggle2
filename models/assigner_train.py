@@ -369,7 +369,11 @@ def train_assigner(config: ExpConfig, data: AssignerData) -> str:
         text_pool_learned=config.text_pool_learned,
     ).to(device)
     hardneg_weight = _loss_knob(config, "assigner_hardneg_weight", 0.0)
-    kd_weight = _loss_knob(config, "assigner_kd_weight", 0.0)
+    # P6 — prefer typed ExpConfig KD knobs over legacy ``config.extra``.
+    # ``kd_logits_weight`` feeds the KL term (was ``assigner_kd_weight``);
+    # ``kd_attn_weight`` adds attention-row KD against the teacher softmax.
+    # Both default to 0.0 so legacy runs stay bit-compatible.
+    kd_weight = config.kd_logits_weight or _loss_knob(config, "assigner_kd_weight", 0.0)
     synth_subtotal = _loss_knob(config, "assigner_synth_subtotal", 0.0)
     ocr_noise = _loss_knob(config, "assigner_ocr_noise", 0.0)
     opt = torch.optim.AdamW(

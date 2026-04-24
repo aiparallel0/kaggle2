@@ -71,7 +71,37 @@ Precision                              & \VAR{precision} \\
 \end{tabular}
 \end{table}
 
-\subsection{Evaluation Protocol}
+\subsection{Knowledge-Distillation Ablation}
+\label{sec:kd-ablation}
+
+The attention-assigner supports two distillation losses gated by
+\texttt{kd\_logits\_weight} (KL against the rule-based teacher
+softmax, strategy~C) and \texttt{kd\_attn\_weight} (attention-row
+distillation against the same teacher).  Table~\ref{tab:kd} reports
+the 2$\times$2 ablation over KD~\{off, on\} and assigner capacity
+\{full, shrunk\}; the shrunk configuration reduces
+\texttt{assigner\_hidden} from 384 to 192 and
+\texttt{assigner\_n\_layers\_level2} from 6 to 3, roughly halving
+parameter count while adding distillation signal.
+
+\begin{table}[!t]
+\centering
+\caption{Assigner knowledge-distillation ablation.  ``Full'' uses
+         the original $d{=}384$, $L{=}6$ configuration; ``Shrunk''
+         uses $d{=}192$, $L{=}3$ (Proposal~6).  KD weights are
+         \texttt{kd\_logits\_weight=0.5} and \texttt{kd\_attn\_weight=0.3}
+         when on.}
+\label{tab:kd}
+\begin{tabular}{lcc}
+\toprule
+Capacity & KD off & KD on \\ \midrule
+Full (d=384, L=6)    & \VAR{kd_full_off_f1}   & \VAR{kd_full_on_f1} \\
+Shrunk (d=192, L=3)  & \VAR{kd_shrunk_off_f1} & \VAR{kd_shrunk_on_f1} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+
 
 \textbf{Metrics.}  We report whitespace-token F1 averaged uniformly
 over the four fields (``global F1''), per-field token F1, Normalised
