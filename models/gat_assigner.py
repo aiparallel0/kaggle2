@@ -69,27 +69,15 @@ def _build_model(
             # text/bbox/prior are (1, N, *); fuse into a single node repr.
             h = (self.text_proj(text) + self.bbox_proj(bbox)
                  + self.prior_proj(prior))
-            n = h.size(1)
-            # kNN graph on bbox centres (pure-torch, no scatter deps).
-            centres = torch.stack([
-                0.5 * (bbox[..., 0] + bbox[..., 2]),
-                0.5 * (bbox[..., 1] + bbox[..., 3]),
-            ], dim=-1)  # (1, N, 2)
-            dists = torch.cdist(centres, centres)  # (1, N, N)
-            k = min(_KNN_K, n)
-            _, idx = dists.topk(k=k, dim=-1, largest=False)
-            mask = torch.ones_like(dists, dtype=torch.bool)
-            mask.scatter_(-1, idx, False)  # False where we *keep* the edge
-            # MultiheadAttention expects attn_mask with True = masked-out.
-            attn_mask = mask[0]
+            # kNN graph: deferred (scatter-softmax follow-up).  Today the
+            # MHA uses full affinity; ``attn_w`` is kept for the figure
+            # renderer.  Bbox is accepted in the signature so enabling
+            # graph masking in a future release is a drop-in change.
             queries = self.field_queries.unsqueeze(0).expand(1, -1, -1)
             attn_out, attn_w = self.gat(
                 queries, h, h, need_weights=True, average_attn_weights=True,
             )
             logits = self.classifier(attn_out).squeeze(-1)  # (1, F)
-            # Compose final per-(field,node) attention by re-softmaxing
-            # the graph-masked affinity.  ``attn_w`` is (1, F, N).
-            _ = attn_mask  # reserved: used once scatter-softmax lands.
             return logits, attn_w
 
     return _GATAssigner()
