@@ -29,7 +29,7 @@
   "label_smoothing": 0.1,
   "precision": "bf16",
   "epochs_assigner": 60,
-  "assigner_patience": 10,
+  "assigner_patience": 20,
   "assigner_min_delta": 0.005,
   "priors_v2": true,
   "patience": 10,

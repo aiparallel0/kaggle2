@@ -229,10 +229,13 @@ def eval_pipeline(config: ExpConfig, test: list[Receipt]) -> PipelineResult:
     # report/combine, and core/validate all read the same file; the attn
     # sampler still writes into results/yolo/ for fig_attn_heatmap.
     out_dir = Path(config.output_dir)
-    yolo_dir = Path(paths.yolo).parent.parent
     n_total = max(len(test), 1)
-    attn_sampler.write(yolo_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
+    # Write attention_samples into ``results/`` (not ``results/yolo/run/``)
+    # so :func:`report.figures_attn.render_attention_heatmap` — which
+    # reads from ``config.output_dir`` — can find the artefact and
+    # render Fig.~\ref{fig:attn_heatmap}.
+    attn_sampler.write(out_dir)
     with open(out_dir / "pipeline_metrics.json", "w") as f:
         json.dump({
             "assigner_f1": m_l.global_f1, "rulebased_f1": m_r.global_f1,

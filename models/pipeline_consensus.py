@@ -173,7 +173,13 @@ _ADDR_TERMINATOR = re.compile(
     r"SIMPLIFIED(?:\s+TAX)?|SHOPPING\s+HOURS|"
     r"ADJUSTMENT\s+NOTE|PAY\s+BY|CARRY\s+OUT|"
     r"WEBSITE|\bBRN\b|SITE\s+\d|POSTED|RETAIL\b|TAKEAWAY|"
-    r"OWNED\s+BY|SUN-THU|MON-SUN|ROC\s+NO|DEPT\s+(?:DOC|SO))\b",
+    r"OWNED\s+BY|SUN-THU|MON-SUN|ROC\s+NO|DEPT\s+(?:DOC|SO)|"
+    # Fix B5 (follow-up): contact-info prefixes reliably mark the end
+    # of the postal-address block on SROIE receipts — adding them
+    # curbs the address-over-merge failure mode where the learned
+    # span ran past the postcode line into the phone / fax block.
+    r"TEL(?:EPHONE)?\s*(?:NO|[:.])|"
+    r"PHONE\s*(?:NO|[:.])|FAX\s*(?:NO|[:.]))\b",
     re.IGNORECASE,
 )
 # Company-identifier tokens — any line carrying one of these is a
