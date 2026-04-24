@@ -125,8 +125,10 @@ def _resolve_start_eos(processor: Any, model: Any) -> tuple[int, int | None]:
     return start_id, eos_id
 
 
-def eval_donut(config: ExpConfig, test: list[Receipt]) -> Metrics:
-    """Run DONUT inference on test receipts; return Metrics (2-in/1-out)."""
+def eval_donut(
+    config: ExpConfig, test: list[Receipt],
+) -> tuple[Metrics, list[Prediction]]:
+    """Run DONUT inference; return (Metrics, per-receipt predictions)."""
     if _import_error is not None:
         raise ImportError(
             "torch and transformers are required for DONUT evaluation. "
@@ -173,4 +175,4 @@ def eval_donut(config: ExpConfig, test: list[Receipt]) -> Metrics:
                 "global_em": metrics.global_em, "per_field_f1": metrics.per_field_f1,
             }, f, indent=2,
         )
-    return metrics
+    return metrics, norm_preds

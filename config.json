@@ -55,6 +55,7 @@
   "sroie_url": "https://github.com/zzzDavid/ICDAR-2019-SROIE.git",
   "data_dir": "./data/sroie_cache",
   "output_dir": "./results",
+  "runs_root": "./runs",
   "paper_template": "./report/template.tex",
   "paper_output": "./report/paper_filled.tex",
   "yolo_conf": 0.25,

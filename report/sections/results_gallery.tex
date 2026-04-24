@@ -1,0 +1,106 @@
+\section{Figure Gallery}
+\label{sec:gallery}
+
+This gallery gathers the diagnostic figures produced by
+\texttt{report.figures\_section\_c}.  Every \verb|\iffigurefile|
+wrapper skips its enclosed block when the underlying PDF does not
+exist --- this happens when the corresponding metric producer is
+disabled on a run (see \texttt{docs/TRACKING.md} for the producer
+$\leftrightarrow$ figure matrix).  Therefore this gallery reflects
+exactly what the run measured, with no placeholder floats.
+
+\iffigurefile{figures/fig_curves.pdf}{%
+\begin{figure}[t]
+\centering
+\includegraphics[width=\columnwidth]{figures/fig_curves.pdf}
+\caption{Training-time diagnostics per tracked scalar (loss, learning
+         rate, gradient norm, throughput).  Source:
+         \texttt{curves/*.csv}.}
+\label{fig:curves}
+\end{figure}}
+
+\iffigurefile{figures/fig_f1_grouped.pdf}{%
+\begin{figure}[t]
+\centering
+\includegraphics[width=\columnwidth]{figures/fig_f1_grouped.pdf}
+\caption{Per-field F1 with bootstrap-95\% CI whiskers and
+         significance stars from the paired-bootstrap test.  Source:
+         \texttt{metrics/extended\_metrics.json}.}
+\label{fig:f1_grouped}
+\end{figure}}
+
+\iffigurefile{figures/fig_calibration.pdf}{%
+\begin{figure}[t]
+\centering
+\includegraphics[width=\columnwidth]{figures/fig_calibration.pdf}
+\caption{Reliability diagrams per field.  ECE text annotation in each
+         panel; diagonal is perfect calibration.}
+\label{fig:calibration}
+\end{figure}}
+
+\iffigurefile{figures/fig_latency.pdf}{%
+\begin{figure}[t]
+\centering
+\includegraphics[width=\columnwidth]{figures/fig_latency.pdf}
+\caption{Latency percentiles, throughput, and cost--quality Pareto
+         across DONUT and Pipeline.}
+\label{fig:latency}
+\end{figure}}
+
+\iffigurefile{figures/fig_cost.pdf}{%
+\begin{figure}[t]
+\centering
+\includegraphics[width=\columnwidth]{figures/fig_cost.pdf}
+\caption{Per-stage USD and Wh; cost--F1 Pareto frontier.}
+\label{fig:cost}
+\end{figure}}
+
+\iffigurefile{figures/fig_errors.pdf}{%
+\begin{figure}[t]
+\centering
+\includegraphics[width=\columnwidth]{figures/fig_errors.pdf}
+\caption{8-category error decomposition per (model, field).}
+\label{fig:errors}
+\end{figure}}
+
+\iffigurefile{figures/fig_yolo_pr.pdf}{%
+\begin{figure}[t]
+\centering
+\includegraphics[width=\columnwidth]{figures/fig_yolo_pr.pdf}
+\caption{YOLO detection diagnostics: mAP@.5, per-class AP, PR curve.}
+\label{fig:yolo_pr}
+\end{figure}}
+
+\iffigurefile{figures/fig_trocr.pdf}{%
+\begin{figure}[t]
+\centering
+\includegraphics[width=\columnwidth]{figures/fig_trocr.pdf}
+\caption{TrOCR CER/WER headline and per-field breakdown.}
+\label{fig:trocr}
+\end{figure}}
+
+\iffigurefile{figures/fig_assigner.pdf}{%
+\begin{figure}[t]
+\centering
+\includegraphics[width=\columnwidth]{figures/fig_assigner.pdf}
+\caption{Attention-assigner diagnostics: per-field attention entropy,
+         top-$k$ accuracy, ECE/MCE/Brier.}
+\label{fig:assigner}
+\end{figure}}
+
+\iffigurefile{figures/fig_gpu_series.pdf}{%
+\begin{figure}[t]
+\centering
+\includegraphics[width=\columnwidth]{figures/fig_gpu_series.pdf}
+\caption{GPU utilisation, VRAM, temperature, and power draw time
+         series over the training run.}
+\label{fig:gpu_series}
+\end{figure}}
+
+\iffigurefile{figures/fig_samples.pdf}{%
+\begin{figure*}[t]
+\centering
+\includegraphics[width=\textwidth]{figures/fig_samples.pdf}
+\caption{Qualitative samples: 12 receipts, GT vs.\ DONUT vs.\ Pipeline.}
+\label{fig:samples}
+\end{figure*}}

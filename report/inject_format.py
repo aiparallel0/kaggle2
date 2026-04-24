@@ -1,0 +1,123 @@
+"""Numeric-formatting directives for ``\\VAR{key:directive}`` injection.
+
+Project: kaggle2 — End-to-End vs. Pipeline Receipt KIE on SROIE.
+Role: extend :func:`report.inject.inject_results` with a small
+    typed DSL so ``\\VAR{donut_f1_company:pct1}`` renders ``84.2\\%``
+    and ``\\VAR{lat_p95:ms}`` renders ``142\\,ms``.  The DSL is
+    intentionally minimal — every directive maps a float to a
+    LaTeX-safe string.  Unknown directives fall through to
+    ``{value:.4f}`` which is :func:`report.inject._format_value`'s
+    default contract.
+
+Supported directives:
+    * ``:pct1`` — percentage with one decimal (``0.842 → 84.2\\%``)
+    * ``:pct2`` — percentage with two decimals
+    * ``:pct0`` — integer percentage (``0.842 → 84\\%``)
+    * ``:ms``   — milliseconds with no decimals (``142.3 → 142\\,ms``)
+    * ``:ms1``  — milliseconds with one decimal
+    * ``:usd``  — USD amount (``1.234 → \\$1.23``)
+    * ``:usd4`` — USD amount with four decimals (for per-image)
+    * ``:wh``   — watt-hours integer
+    * ``:gb1``  — GiB with one decimal (``12.34 → 12.3\\,GiB``)
+    * ``:sig3`` — 3 significant figures
+    * ``:sig4`` — 4 significant figures
+    * ``:int``  — integer with thousands separator
+    * ``:bits`` — bits with one decimal
+"""
+from __future__ import annotations
+
+import logging
+import re
+
+log = logging.getLogger("kaggle2")
+
+_VAR_RE = re.compile(r"\\VAR\{([A-Za-z_][A-Za-z0-9_]*):([a-z0-9]+)\}")
+
+
+def _to_float(value: object) -> float | None:
+    """Cast ``value`` to float; return None if impossible."""
+    if isinstance(value, bool):
+        return float(value)
+    if isinstance(value, int | float):
+        return float(value)
+    if isinstance(value, str):
+        try:
+            return float(value)
+        except ValueError:
+            return None
+    return None
+
+
+def apply_directive(value: object, directive: str) -> str | None:
+    """Render ``value`` per ``directive``; return None for unknown directives."""
+    fv = _to_float(value)
+    if fv is None:
+        return None
+    if directive == "pct1":
+        return f"{fv * 100.0:.1f}\\%"
+    if directive == "pct2":
+        return f"{fv * 100.0:.2f}\\%"
+    if directive == "pct0":
+        return f"{fv * 100.0:.0f}\\%"
+    if directive == "ms":
+        return f"{fv:.0f}\\,ms"
+    if directive == "ms1":
+        return f"{fv:.1f}\\,ms"
+    if directive == "usd":
+        return f"\\${fv:.2f}"
+    if directive == "usd4":
+        return f"\\${fv:.4f}"
+    if directive == "wh":
+        return f"{fv:.0f}\\,Wh"
+    if directive == "gb1":
+        return f"{fv:.1f}\\,GiB"
+    if directive == "bits":
+        return f"{fv:.2f}\\,bits"
+    if directive == "sig3":
+        return _sig_fig(fv, 3)
+    if directive == "sig4":
+        return _sig_fig(fv, 4)
+    if directive == "int":
+        return f"{int(round(fv)):,}"
+    return None
+
+
+def _sig_fig(x: float, digits: int) -> str:
+    """Format ``x`` with ``digits`` significant figures (no scientific unless needed)."""
+    if x == 0.0:
+        return "0"
+    from math import floor, log10
+    mag = 10.0 ** (digits - 1 - int(floor(log10(abs(x)))))
+    rounded = round(x * mag) / mag
+    if abs(rounded) >= 1e4 or abs(rounded) < 1e-3:
+        return f"{rounded:.{digits - 1}e}"
+    # Trim trailing zeros but keep at least ``digits`` significant digits.
+    return f"{rounded:.{max(0, digits - 1 - int(floor(log10(abs(rounded)))))}f}"
+
+
+def apply_formatters(template: str, metrics: dict[str, object]) -> str:
+    """Resolve every ``\\VAR{key:directive}`` in ``template``.
+
+    Unknown directives pass through to the default injector by leaving
+    the placeholder intact, then :func:`report.inject.inject_results`
+    replaces them as regular ``\\VAR{key}`` (ignoring the directive).
+    Missing keys are left intact too so the unresolved-VAR audit in
+    :func:`report.inject.collect_unresolved` can count them.
+    """
+    def _replace(match: re.Match[str]) -> str:
+        key, directive = match.group(1), match.group(2)
+        if key not in metrics:
+            # Leave intact; the base injector's audit will flag it.
+            return match.group(0)
+        rendered = apply_directive(metrics[key], directive)
+        if rendered is None:
+            log.warning(
+                "inject_format: unknown directive ':%s' on key '%s' "
+                "— falling back to default formatter.",
+                directive, key,
+            )
+            # Strip directive so the base injector formats the raw value.
+            return f"\\VAR{{{key}}}"
+        return rendered
+
+    return _VAR_RE.sub(_replace, template)

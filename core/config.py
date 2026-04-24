@@ -11,9 +11,11 @@ Role: single source of truth for every hyperparameter surfaced in the
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from typing import Any
 
 from core.errors import TrainError
+from core.runlayout import derive_paths
 from core.types import ExpConfig
 
 _REQUIRED = [
@@ -58,8 +60,7 @@ def load_config(path: str, defaults: dict[str, Any] | None = None) -> ExpConfig:
     _optional = {
         "yolo_conf", "trocr_max_new_tokens", "max_regions_per_image",
         "warmup_ratio", "lr_scheduler_type", "gradient_checkpointing",
-        "num_beams", "expected_f1_warn",
-        "skip_donut",
+        "num_beams", "expected_f1_warn", "skip_donut",
         "assigner_hidden", "assigner_n_layers_level2",
         "emit_hidden", "emit_vocab_size", "emit_max_len", "emit_beam_width",
         "kd_attn_weight", "kd_logits_weight",
@@ -69,16 +70,14 @@ def load_config(path: str, defaults: dict[str, Any] | None = None) -> ExpConfig:
         "address_accept_fraction", "regex_router", "text_pool_learned",
         "total_confidence_threshold",
         "lr_assigner", "warmup_ratio_assigner",
+        "runs_root", "run_id",  # runlayout keys (optional; back-compat).
     }
     known = set(_REQUIRED) | _optional
     extra = {k: v for k, v in raw.items() if k not in known}
 
     img = raw["image_size"]
-    # Seeds are the single source of truth for how many trials to run.
-    # `seed` is retained for back-compat as the scalar legacy key, but
-    # `seeds` (a list) is what drives the multi-trial loops in
-    # `stages.eval` and `core.statistics`.  `n_trials` is derived from
-    # `seeds` unless explicitly overridden (useful for truncated smoke runs).
+    # `seeds` (a list) is authoritative; `seed` is legacy scalar back-compat.
+    # `n_trials` defaults to len(seeds) unless explicitly truncated.
     raw_seeds = raw.get("seeds")
     if isinstance(raw_seeds, list) and raw_seeds:
         seeds_list = [int(s) for s in raw_seeds]
@@ -91,6 +90,13 @@ def load_config(path: str, defaults: dict[str, Any] | None = None) -> ExpConfig:
             f"n_trials={n_trials} exceeds len(seeds)={len(seeds_list)}; "
             "extend the `seeds` list or reduce `n_trials`.",
         )
+    # Route output_dir + paper_output through runs_root/run_id layout
+    # when configured (back-compat: raw config values survive unchanged).
+    output_dir, paper_output = derive_paths(
+        str(raw["output_dir"]), str(raw["paper_output"]),
+        raw.get("runs_root"), raw.get("run_id"),
+        Path(path).resolve().parent,
+    )
     return ExpConfig(
         seed=int(raw["seed"]),
         base_model=str(raw["base_model"]),
@@ -118,9 +124,9 @@ def load_config(path: str, defaults: dict[str, Any] | None = None) -> ExpConfig:
         new_tokens=list(raw["new_tokens"]),
         sroie_url=str(raw["sroie_url"]),
         data_dir=str(raw["data_dir"]),
-        output_dir=str(raw["output_dir"]),
+        output_dir=output_dir,
         paper_template=str(raw["paper_template"]),
-        paper_output=str(raw["paper_output"]),
+        paper_output=paper_output,
         yolo_conf=float(raw.get("yolo_conf", 0.25)),
         trocr_max_new_tokens=int(raw.get("trocr_max_new_tokens", 64)),
         max_regions_per_image=int(raw.get("max_regions_per_image", 32)),
