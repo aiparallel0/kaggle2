@@ -122,5 +122,6 @@ def stage_paper(config: ExpConfig) -> None:
         log.info("Paper PDF written to %s", pdf)
     # MANIFEST.json is the definitive "what to download" index for
     # operators pulling the run off vast.ai (see scripts/pack_run.sh).
-    manifest_path = write_manifest(Path(config.output_dir), Path(config.output_dir).name)
+    run_dir = Path(config.output_dir)
+    manifest_path = write_manifest(run_dir, run_dir.name)
     log.info("Run manifest written to %s", manifest_path)

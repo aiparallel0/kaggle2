@@ -9,6 +9,7 @@ Role: guard the contract in ``core/runlayout.py``.  ``results/`` must
 """
 from __future__ import annotations
 
+import os
 import subprocess
 from pathlib import Path
 
@@ -44,7 +45,7 @@ def test_runs_dir_is_ignored_except_readme() -> None:
 
 
 def test_make_run_id_shape() -> None:
-    """run_id must be ``<14-char-UTC>-<7-char-sha>`` (or nosha fallback)."""
+    """run_id must be ``<16-char-UTC>-<7-char-sha>`` (or nosha fallback)."""
     rid = make_run_id(REPO)
     ts, _, sha = rid.partition("-")
     assert len(ts) == 16 and ts.endswith("Z"), rid
@@ -98,7 +99,6 @@ def test_latest_run_picks_newest(tmp_path: Path) -> None:
     newer.mkdir()
     # Force the newer directory to have a later mtime regardless of OS
     # filesystem timestamp resolution.
-    import os
     os.utime(newer, (10**9, 10**9))
     os.utime(runs_root / "older", (10**9 - 60, 10**9 - 60))
     assert latest_run(runs_root) == newer
