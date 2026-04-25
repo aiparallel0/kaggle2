@@ -61,23 +61,43 @@ def render_attention_heatmap(results_dir: str, out_dir: str) -> str | None:
         return None
     paths, attns = data["image_paths"], data["attn"]
     n = len(paths)
-    fig, axes = plt.subplots(n, 1, figsize=(7.0, 1.8 * n + 0.4))
+    # ``constrained_layout`` resolves the suptitle ↔ subplot-title ↔
+    # per-axes colorbar packing problem that ``tight_layout`` cannot:
+    # without it, each subplot title overlapped the x-axis labels of
+    # the panel above (visible as collisions in the source figure).
+    fig, axes = plt.subplots(
+        n, 1, figsize=(7.2, 2.0 * n + 0.6), constrained_layout=True,
+    )
     if n == 1:
         axes = [axes]  # make iterable shape uniform across K=1 / K>1
     for ax, path, attn in zip(axes, paths, attns, strict=True):
         im = ax.imshow(attn, aspect="auto", cmap="viridis", vmin=0.0, vmax=1.0)
         ax.set_yticks(range(len(_FIELDS)))
-        ax.set_yticklabels(_FIELDS, fontsize=8)
-        ax.set_xlabel("Detected line index", fontsize=8)
-        ax.set_title(Path(path).name, fontsize=8)
-        ax.tick_params(axis="x", labelsize=7)
+        ax.set_yticklabels(_FIELDS, fontsize=9)
+        ax.set_xlabel("Detected line index", fontsize=9)
+        ax.set_title(Path(path).name, fontsize=9)
+        ax.tick_params(axis="x", labelsize=8)
+        # Light row separators — peaks straddling the field boundary
+        # become unambiguously row-attributed.  ``set_xlim`` keeps the
+        # lines flush with the heatmap edges (imshow extends 0.5 beyond).
+        n_lines = len(attn[0]) if attn and attn[0] else 0
+        for k in range(1, len(_FIELDS)):
+            ax.axhline(k - 0.5, color="white", linewidth=0.4, alpha=0.5)
+        # Minor x-ticks at every detected line let the reader locate a
+        # peak's exact line index without counting major-tick offsets.
+        if n_lines:
+            ax.set_xticks(range(0, n_lines), minor=True)
+            ax.grid(which="minor", axis="x", color="white",
+                    linewidth=0.15, alpha=0.25)
         fig.colorbar(im, ax=ax, fraction=0.025, pad=0.02)
     fig.suptitle(
-        "Attention-assigner cross-attention (field query → line)", fontsize=9,
+        "Attention-assigner cross-attention (field query → line)",
+        fontsize=10,
     )
-    fig.tight_layout()
     out = str(Path(out_dir) / "fig_attention_heatmap.pdf")
-    fig.savefig(out, bbox_inches="tight")
+    # ``bbox_inches="tight"`` is incompatible with ``constrained_layout``
+    # and would re-introduce the spacing collapse we just fixed.
+    fig.savefig(out)
     plt.close(fig)
     return out
 
