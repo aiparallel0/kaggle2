@@ -51,7 +51,7 @@ def _build_model(
     import torch
     from torch import nn
 
-    class _GATAssigner(nn.Module):
+    class _GATAssigner(nn.Module):  # type: ignore[misc]  # nn imported lazily → Any under --strict
         def __init__(self) -> None:
             super().__init__()
             self.text_proj = nn.Linear(768, hidden)
