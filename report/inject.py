@@ -49,6 +49,24 @@ def _format_lr(value: float) -> str:
     return f"${mantissa}\\times 10^{{{int(exp)}}}$"
 
 
+def _format_pvalue(value: float) -> str:
+    """Render a p-value without the ``%.4f`` trap that turns ``p=3e-5`` into
+    a meaningless ``0.0000``.  Tiny values are printed as ``<10^{-k}`` so
+    the McNemar test result is not silently contradicted by the bootstrap
+    CI in the discussion (review item S5).
+    """
+    if value <= 0.0:
+        # Numerical underflow / exact zero — IEEE 754 double precision is
+        # ~1e-308; any p-value sufficiently small to round to literal 0.0
+        # is far below the 1e-12 threshold typically reported in journals.
+        return "$<10^{-12}$"
+    if value < 1e-4:
+        # Scientific: e.g. 3.2e-05 → $3.2\times 10^{-5}$.
+        mantissa, exp = f"{value:.1e}".split("e")
+        return f"${mantissa}\\times 10^{{{int(exp)}}}$"
+    return f"{value:.4f}"
+
+
 def _has_multi_seed(metrics: dict[str, Any], base_key: str) -> bool:
     seeds = metrics.get("seeds_used")
     return (
@@ -65,6 +83,10 @@ def _format_value(key: str, value: Any, metrics: dict[str, Any]) -> str:
     # (paper_corrections.md item 9).
     if (key == "lr" or key.startswith("lr_")) and isinstance(value, int | float):
         return _format_lr(float(value))
+    # P-values render with scientific notation below 1e-4 — round-to-4
+    # turns ``p=3e-5`` into the misleading ``0.0000`` (review item S5).
+    if key == "mcnemar_p" and isinstance(value, int | float):
+        return _format_pvalue(float(value))
     if key == "seeds_used" and isinstance(value, list):
         ids = ", ".join(str(s) for s in value)
         return f"{len(value)} seeds ({ids})" if value else "0 seeds"

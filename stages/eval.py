@@ -251,7 +251,9 @@ def stage_eval(config: ExpConfig, seeds: list[int] | None = None) -> None:
         )
         last["delta_f1_ci_lo"] = round(ci_lo, 4)
         last["delta_f1_ci_hi"] = round(ci_hi, 4)
-        last["mcnemar_p"] = round(mcnemar(d_vec, p_vec), 4)
+        # Full-precision float: ``report.inject._format_pvalue`` handles
+        # rendering (``p=3e-5`` → ``$3.0\times 10^{-5}$`` not ``0.0000``).
+        last["mcnemar_p"] = float(mcnemar(d_vec, p_vec))
     last["seeds_used"] = list(run_seeds)
     last["n_trials"] = len(run_seeds)
     last["bootstrap_n_iter"] = config.bootstrap_n_iter

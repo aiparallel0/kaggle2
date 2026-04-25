@@ -45,6 +45,14 @@ def synthetic_results_dir(tmp_path: Path) -> Path:
         "\n".join(json.dumps({"ts": 1.0 + i, "gpu_util_pct": 70 + i})
                  for i in range(10)),
     )
+    # Overlay figure is, by name, an *overlay* — both traces are
+    # required (review item S3).  Earlier fixtures provided only the
+    # DONUT trace, which silently produced a one-line "overlay"; the
+    # renderer now refuses, so the test fixture must include both.
+    (tmp_path / "telemetry_pipeline.jsonl").write_text(
+        "\n".join(json.dumps({"ts": 1.0 + i, "gpu_util_pct": 40 + i})
+                 for i in range(10)),
+    )
     repo = Path(__file__).resolve().parent.parent
     (tmp_path / "bug_timeline.json").write_text(
         (repo / "results" / "bug_timeline.json").read_text(),

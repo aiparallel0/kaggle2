@@ -21,13 +21,14 @@ Rule-based (GT-OCR stream)  & \VAR{gtocr_rulebased_f1} & \VAR{gtocr_rulebased_ne
 \begin{table}[!t]
 \centering
 \caption{Per-field F1 on the 63-image SROIE test split.  Pipeline
-         per-field F1 is rendered in Fig.~\figref{fig:f1_by_system}.}
+         per-field F1 is also visualised in
+         Fig.~\figref{fig:f1_by_system}.}
 \label{tab:perfield}
 \begin{tabular}{lcccc}
 \toprule
 Architecture & Company & Date & Address & Total \\ \midrule
 DONUT                 & \VAR{donut_f1_company}     & \VAR{donut_f1_date}     & \VAR{donut_f1_address}     & \VAR{donut_f1_total} \\
-Pipeline (learned)    & see Fig.~\figref{fig:f1_by_system} & & & \\
+Pipeline (learned)    & \VAR{pipeline_f1_company}  & \VAR{pipeline_f1_date}  & \VAR{pipeline_f1_address}  & \VAR{pipeline_f1_total} \\
 Rule-based (GT-OCR stream) & \VAR{rulebased_f1_company} & \VAR{rulebased_f1_date} & \VAR{rulebased_f1_address} & \VAR{rulebased_f1_total} \\
 \bottomrule
 \end{tabular}
