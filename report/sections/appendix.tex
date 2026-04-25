@@ -20,9 +20,18 @@
         $\Delta$F1 (\VAR{bootstrap_n_iter} resamples at
         \VAR{bootstrap_ci_level} level) and McNemar's exact test on
         per-image correctness.
-  \item \emph{Hyperparameters.}  Full table in
-        Section~\ref{sec:results}; the live \texttt{config.json} is
-        the single source of truth.
+  \item \emph{Headline hyperparameters.}  Base learning rate
+        $\eta=\VAR{lr}$ (encoder; decoder uses $\eta_d=\VAR{lr_decoder}$
+        — see Sec.~\ref{sec:method}); label smoothing
+        $\varepsilon=\VAR{label_smoothing}$; KD weights
+        $\lambda_\text{attn}=\VAR{kd_attn_weight}$,
+        $\lambda_\text{logits}=\VAR{kd_logits_weight}$ (both currently
+        zero in the shipped run, see
+        Sec.~\ref{sec:kd-ablation}).  Best assigner validation loss:
+        \VAR{assigner_best_val_loss} at epoch
+        \VAR{assigner_best_epoch}.
+  \item \emph{Hyperparameters (full).}  See Section~\ref{sec:results};
+        the live \texttt{config.json} is the single source of truth.
 \end{itemize}
 
 
@@ -36,6 +45,7 @@ DONUT F1 $=\VAR{donut_f1}$, NED $=\VAR{donut_ned}$, EM $=\VAR{donut_em}$;
 Pipeline F1 $=\VAR{pipeline_f1}$, NED $=\VAR{pipeline_ned}$, EM $=\VAR{pipeline_em}$;
 Baseline (GT-OCR stream) F1 $=\VAR{gtocr_rulebased_f1}$,
 NED $=\VAR{gtocr_rulebased_ned}$, EM $=\VAR{gtocr_rulebased_em}$;
+predicted-OCR rule baseline NED $=\VAR{rulebased_ned}$;
 $\Delta$F1 $=\VAR{f1_gap}$ (DONUT minus pipeline);
 learned-vs-rule $\Delta$F1 $=\VAR{assigner_delta}$.
 Paired-bootstrap CIs at \VAR{bootstrap_ci_level} confidence over
@@ -45,6 +55,9 @@ all-fields-EM $\Delta$EM
 $\in [\VAR{delta_em_ci_lo},\,\VAR{delta_em_ci_hi}]$
 (both vectors of length $n=63$ are persisted alongside
 \texttt{combined\_metrics.json} for reviewer audit).
+Artifact mode: \texttt{\VAR{artifact_mode}} (``full'' = headline run
+including DONUT + pipeline + rule baselines; ``gtocr\_rulebased\_only''
+= no-GPU fast-path that fills rule-baseline columns only).
 The four-decimal numbers are persisted to
 \texttt{results/combined\_metrics.json}; mean/std/CI fields are
 populated automatically when \texttt{n\_trials}$\ge 2$.
