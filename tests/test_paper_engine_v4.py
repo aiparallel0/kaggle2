@@ -30,17 +30,22 @@ from report.missing import (
 
 
 def test_render_missing_cell_emits_typed_marker() -> None:
+    # Underscores must be escaped as \_ so LaTeX text mode does not treat
+    # them as math-mode subscript operators (Missing $ inserted).
     out = render_missing_cell("donut_f1")
-    assert out == "\\MissingCell{donut_f1}"
+    assert out == "\\MissingCell{donut\\_f1}"
 
 
 def test_render_missing_cell_sanitises_key() -> None:
-    """LaTeX-unsafe characters in the key get sanitised to ``_``."""
+    """LaTeX-unsafe characters in the key get sanitised; underscores are escaped as ``\\_``."""
     out = render_missing_cell("foo bar$\\baz")
     assert "$" not in out
-    assert "\\" not in out.removeprefix("\\MissingCell{")
     assert out.startswith("\\MissingCell{")
     assert out.endswith("}")
+    # Only escape sequences (\_ for underscores) should appear inside the arg —
+    # raw unescaped underscores must not remain.
+    inner = out[len("\\MissingCell{"):-1]
+    assert "_" not in inner.replace("\\_", "")
 
 
 def test_missing_ok_allow_list() -> None:
@@ -234,11 +239,14 @@ def test_mean_std_directive_collapses_when_std_zero() -> None:
 
 
 def test_mean_std_directive_unresolved_when_mean_missing() -> None:
-    """Missing ``<key>_mean`` triggers the standard unresolved-VAR audit."""
+    """Directive-format keys (``key:directive``) are excluded from collect_unresolved.
+
+    ``apply_formatters`` owns directive resolution; counting them in
+    ``collect_unresolved`` before formatters run produces false positives.
+    A template with only directive-format ``\\VAR{}`` keys reports zero
+    unresolved even when the underlying metric keys are absent.
+    """
     from report.inject import collect_unresolved
     template = "F1 = \\VAR{donut_f1:mean_std_pct1}"
-    # The key the audit reports is the bare ``donut_f1`` since that's what
-    # the template asked for; downstream code can pattern-match the
-    # directive to find ``donut_f1_mean`` if needed.
     unresolved = collect_unresolved(template, {})
-    assert any("donut_f1" in u for u in unresolved)
+    assert unresolved == []

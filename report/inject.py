@@ -173,6 +173,12 @@ def collect_unresolved(template: str, metrics: dict[str, Any]) -> list[str]:
     ``metrics/unresolved_vars.json`` so reviewers can audit which
     placeholders did NOT resolve to a real value.  Empty list on a
     fully-populated run is the "no placeholders" guarantee.
+
+    Directive-format keys (``key:directive``) are intentionally excluded:
+    they are resolved by :func:`report.inject_format.apply_formatters`
+    which runs before the plain-key substitution, so counting them here
+    produces false positives in the unresolved-VAR audit.
     """
     used = set(re.findall(r"\\VAR\{([^}]+)\}", template))
-    return sorted(used - set(metrics.keys()))
+    plain_keys = {k for k in used if ":" not in k}
+    return sorted(plain_keys - set(metrics.keys()))
