@@ -33,10 +33,16 @@ from models.rule_fields import (
     extract_total,
 )
 from models.rule_regex import (
+    _ADDR_ANCHOR,
+    _ADDR_CONTINUATION,
     _ADDR_EXCLUDE,
+    _ADDR_LEADING_JUNK_RE,
+    _ADDR_TERMINATOR,
+    _COMPANY_TOKEN,
     _DATE_RE,
     _HEADER_JUNK,
     _MONEY_RE,
+    _POSTCODE_RE,
     _TOTAL_NEGATIVE,
     _TOTAL_STRONG,
     _TOTAL_WEAK,
@@ -44,43 +50,6 @@ from models.rule_regex import (
 )
 
 _CURRENCY_PREFIX_RE = re.compile(r"^(RM|USD|SGD|MYR|\$)\s*", re.IGNORECASE)
-# Address anchor: Malaysian-receipt address-line openers.  The topmost
-# region matching this pattern is the first line of the postal address,
-# regardless of where the assigner's attention fell.  Coverage extended
-# beyond the street openers (``NO.``/``LOT``/``JALAN``) to include mall /
-# floor / place tokens (``PARADIGM``, ``AEON``, ``CITTA``, ``SQUARE``,
-# ``CENTRE``/``CENTER``, ``TINGKAT``, ``MILES``, ``BUILDING``, ``LORONG``,
-# ``LRG``, ``PERSIARAN``, ``PUSAT``, ``DESA``, ``UTAMA``) and the 5-digit
-# Malaysian postcode.  The postcode alternative makes the anchor search
-# terminate on the tail line for receipts whose only address-like cue is
-# ``43200 CHERAS, SELANGOR``-style postcode + city/state, and lets the
-# backward-extend below still recover the street/floor prefix.
-_ADDR_ANCHOR = re.compile(
-    r"\b(NO\.?|LOT|JALAN|JLN|TAMAN|TMN|BANDAR|BDR|PLAZA|"
-    r"GROUND|GRD|FLR|FLOOR|KAWASAN|SEKSYEN|BLOCK|BLK|MALL|"
-    r"LORONG|LRG|PERSIARAN|PUSAT|DESA|PARADIGM|AEON|CITTA|"
-    r"SQUARE|CENTRE|CENTER|TINGKAT|MILES|BUILDING|BLDG|UTAMA)\b"
-    r"|\b\d{5}\b",
-    re.IGNORECASE,
-)
-# Malaysian postcode — definitive signal of a complete postal address.
-_POSTCODE_RE = re.compile(r"\b\d{5}\b")
-# City/state tokens that confirm a line is still inside the address span
-# even when it lacks a street keyword (e.g. ``SETIA ALAM`` continuation,
-# ``SELANGOR`` tail).  Used both for same-span extension and for picking
-# between (learned, rule, span) in :func:`_refine_address`.
-_ADDR_CONTINUATION = re.compile(
-    r"\b(SELANGOR|JOHOR|KEDAH|KELANTAN|MELAKA|MALACCA|"
-    r"PAHANG|PERAK|PERLIS|PENANG|PULAU\s+PINANG|SABAH|SARAWAK|"
-    r"TERENGGANU|KUALA\s+LUMPUR|KL|PUTRAJAYA|LABUAN|MALAYSIA|"
-    r"DARUL\s+EHSAN|DARUL\s+KHUSUS|DARUL\s+MAKMUR|DARUL\s+NAIM|"
-    r"D\.E\.?|N\.S\.?|"
-    r"CHERAS|PUCHONG|SUBANG|KLANG|SHAH\s+ALAM|KAJANG|KEPONG|"
-    r"PETALING|SKUDAI|JAYA|BRINCHANG|BALAKONG|DENGKIL|SERDANG|"
-    r"SETIA\s+ALAM|SETAPAK|BATANG\s+BERJUNTAI|AMPANG|GOMBAK|"
-    r"JOHOR\s+BAHRU|SEREMBAN|IPOH|KUANTAN|MASAI|BAHRU)\b",
-    re.IGNORECASE,
-)
 # Currency-prefix cue on the SAME line as the money value — a weak positive
 # because TOTAL lines are the ones most often printed with ``RM``/``MYR``.
 _CURRENCY_CUE_RE = re.compile(r"\b(?:RM|MYR|\$)\b", re.IGNORECASE)
@@ -155,60 +124,6 @@ def _is_attn_diffuse(row: list[float] | None) -> bool:
         return True
     return (_attn_entropy(row) >= _ATTN_DIFFUSE_ENTROPY
             or _attn_margin(row) <= _ATTN_DIFFUSE_MARGIN)
-
-
-# Keywords that mark a transition OUT of the address block into invoice
-# metadata, cashier info, or post-address footer junk.  Observed in the
-# miss table as over-extension cases: the learned-pick + span merge ran
-# past the postcode line into ``INV NO 1053110 CASHIER THANDAR`` /
-# ``SIMPLIFIED TAX INVOICE`` / ``BILL TO SUCI ALAM JAYA TRANSPORT`` etc.
-# Matching is word-boundary-anchored so a city like ``TABLETON`` could
-# never match ``TABLE``.  Used only by :func:`_is_addr_boundary`.
-_ADDR_TERMINATOR = re.compile(
-    r"\b(INVOICE(?:\s+NO)?|INV\s+NO|TAX\s+INVOICE|"
-    r"CASH(?:IER|\s+SALES?|\s+RECEIPT)|"
-    r"BILL\s+(?:TO|NO)|"
-    r"RECEIPT\s+NO|TABLE\s+NO?\b|TABLE\s+\d|"
-    r"COUNTER|GUEST\s+CHECK|ORDER\s+NO|DOC\s*#|"
-    r"SIMPLIFIED(?:\s+TAX)?|SHOPPING\s+HOURS|"
-    r"ADJUSTMENT\s+NOTE|PAY\s+BY|CARRY\s+OUT|"
-    r"WEBSITE|\bBRN\b|SITE\s+\d|POSTED|RETAIL\b|TAKEAWAY|"
-    r"OWNED\s+BY|SUN-THU|MON-SUN|ROC\s+NO|DEPT\s+(?:DOC|SO)|"
-    # Fix B5 (follow-up): contact-info prefixes reliably mark the end
-    # of the postal-address block on SROIE receipts — adding them
-    # curbs the address-over-merge failure mode where the learned
-    # span ran past the postcode line into the phone / fax block.
-    r"TEL(?:EPHONE)?\s*(?:NO|[:.])|"
-    r"PHONE\s*(?:NO|[:.])|FAX\s*(?:NO|[:.]))\b",
-    re.IGNORECASE,
-)
-# Company-identifier tokens — any line carrying one of these is a
-# company header, never an address line.  Kept strictly to tokens that
-# *only* appear in company names so we never mistakenly boundary-stop
-# on a legitimate address like ``LOT 1851-A`` (where a naive trailing
-# reg-no pattern ``\d+-[A-Z]`` would match).
-_COMPANY_TOKEN = re.compile(
-    r"\b(SDN\.?\s*BHD\.?|BERHAD|ENTERPRISE|HOLDINGS|"
-    r"TRADING|MARKETING|CORPORATION|CORP\.?|"
-    r"CO\.?\s*M\s*BHD|CO\.\s*LTD\.?|LIMITED|INC\.?)\b",
-    re.IGNORECASE,
-)
-# Leading company-registration / tax-ID tokens that OCR sometimes fuses
-# onto the learned address pick (miss #240: ``"CO. NO. 37365-A LOT F15,
-# GIANT BANDAR PUTERI"``).  Matches only at the start of the string so
-# we never strip a legitimate address containing ``NO.`` / ``LOT``.
-# Also used by :func:`_address_span` to reject such lines as anchor
-# candidates — the shared ``_ADDR_EXCLUDE`` doesn't tolerate a period
-# between ``CO`` and ``NO``, so we need a localised guard here.
-_ADDR_LEADING_JUNK_RE = re.compile(
-    r"^\s*(?:CO\.?\s*NO\.?\s*[\w\-]+"
-    r"|COMPANY\s*NO\.?\s*[\w\-]+"
-    r"|REG(?:ISTRATION)?\s*NO\.?\s*[\w\-]+"
-    r"|GST(?:\s*NO\.?)?\s*[\w\-]+"
-    r"|SST(?:\s*NO\.?)?\s*[\w\-]+"
-    r"|TIN(?:\s*NO\.?)?\s*[\w\-]+)[,\s:;\-]*",
-    re.IGNORECASE,
-)
 
 
 def _strip_currency(s: str) -> str:

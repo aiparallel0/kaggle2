@@ -91,3 +91,76 @@ _ADDR_EXCLUDE = re.compile(
     r"kad|vat|tin|www\.|http|\.com|\.my)\b",
     re.IGNORECASE,
 )
+
+# Address-block anchors: Malaysian-receipt address-line openers (street /
+# floor / mall tokens) plus the 5-digit postcode.  The topmost line that
+# matches is the first line of the postal address regardless of where
+# attention fell.  Postcode alternative lets the search terminate on the
+# tail line for receipts whose only address-like cue is a postcode +
+# city/state line; a backward-extend then recovers the street prefix.
+_ADDR_ANCHOR = re.compile(
+    r"\b(NO\.?|LOT|JALAN|JLN|TAMAN|TMN|BANDAR|BDR|PLAZA|"
+    r"GROUND|GRD|FLR|FLOOR|KAWASAN|SEKSYEN|BLOCK|BLK|MALL|"
+    r"LORONG|LRG|PERSIARAN|PUSAT|DESA|PARADIGM|AEON|CITTA|"
+    r"SQUARE|CENTRE|CENTER|TINGKAT|MILES|BUILDING|BLDG|UTAMA)\b"
+    r"|\b\d{5}\b",
+    re.IGNORECASE,
+)
+# Malaysian postcode — definitive signal of a complete postal address.
+_POSTCODE_RE = re.compile(r"\b\d{5}\b")
+# City/state tokens that confirm a line is still inside the address span
+# even when it lacks a street keyword (e.g. SETIA ALAM continuation,
+# SELANGOR tail).  Used both for same-span extension and for picking
+# between (learned, rule, span) in :func:`_refine_address`.
+_ADDR_CONTINUATION = re.compile(
+    r"\b(SELANGOR|JOHOR|KEDAH|KELANTAN|MELAKA|MALACCA|"
+    r"PAHANG|PERAK|PERLIS|PENANG|PULAU\s+PINANG|SABAH|SARAWAK|"
+    r"TERENGGANU|KUALA\s+LUMPUR|KL|PUTRAJAYA|LABUAN|MALAYSIA|"
+    r"DARUL\s+EHSAN|DARUL\s+KHUSUS|DARUL\s+MAKMUR|DARUL\s+NAIM|"
+    r"D\.E\.?|N\.S\.?|"
+    r"CHERAS|PUCHONG|SUBANG|KLANG|SHAH\s+ALAM|KAJANG|KEPONG|"
+    r"PETALING|SKUDAI|JAYA|BRINCHANG|BALAKONG|DENGKIL|SERDANG|"
+    r"SETIA\s+ALAM|SETAPAK|BATANG\s+BERJUNTAI|AMPANG|GOMBAK|"
+    r"JOHOR\s+BAHRU|SEREMBAN|IPOH|KUANTAN|MASAI|BAHRU)\b",
+    re.IGNORECASE,
+)
+# Keywords that mark a transition OUT of the address block into invoice
+# metadata, cashier info, or post-address footer junk.  Word-boundary
+# anchored so a city like TABLETON could never match TABLE.
+_ADDR_TERMINATOR = re.compile(
+    r"\b(INVOICE(?:\s+NO)?|INV\s+NO|TAX\s+INVOICE|"
+    r"CASH(?:IER|\s+SALES?|\s+RECEIPT)|"
+    r"BILL\s+(?:TO|NO)|"
+    r"RECEIPT\s+NO|TABLE\s+NO?\b|TABLE\s+\d|"
+    r"COUNTER|GUEST\s+CHECK|ORDER\s+NO|DOC\s*#|"
+    r"SIMPLIFIED(?:\s+TAX)?|SHOPPING\s+HOURS|"
+    r"ADJUSTMENT\s+NOTE|PAY\s+BY|CARRY\s+OUT|"
+    r"WEBSITE|\bBRN\b|SITE\s+\d|POSTED|RETAIL\b|TAKEAWAY|"
+    r"OWNED\s+BY|SUN-THU|MON-SUN|ROC\s+NO|DEPT\s+(?:DOC|SO)|"
+    r"TEL(?:EPHONE)?\s*(?:NO|[:.])|"
+    r"PHONE\s*(?:NO|[:.])|FAX\s*(?:NO|[:.]))\b",
+    re.IGNORECASE,
+)
+# Company-identifier tokens — any line carrying one of these is a company
+# header, never an address line.  Kept strictly to tokens that *only*
+# appear in company names so we never boundary-stop on a legitimate
+# address like ``LOT 1851-A``.
+_COMPANY_TOKEN = re.compile(
+    r"\b(SDN\.?\s*BHD\.?|BERHAD|ENTERPRISE|HOLDINGS|"
+    r"TRADING|MARKETING|CORPORATION|CORP\.?|"
+    r"CO\.?\s*M\s*BHD|CO\.\s*LTD\.?|LIMITED|INC\.?)\b",
+    re.IGNORECASE,
+)
+# Leading company-registration / tax-ID tokens that OCR sometimes fuses
+# onto the learned address pick.  Matches only at start of string so we
+# never strip a legitimate address containing NO. / LOT.  ``_ADDR_EXCLUDE``
+# doesn't tolerate a period between CO and NO, hence this localised guard.
+_ADDR_LEADING_JUNK_RE = re.compile(
+    r"^\s*(?:CO\.?\s*NO\.?\s*[\w\-]+"
+    r"|COMPANY\s*NO\.?\s*[\w\-]+"
+    r"|REG(?:ISTRATION)?\s*NO\.?\s*[\w\-]+"
+    r"|GST(?:\s*NO\.?)?\s*[\w\-]+"
+    r"|SST(?:\s*NO\.?)?\s*[\w\-]+"
+    r"|TIN(?:\s*NO\.?)?\s*[\w\-]+)[,\s:;\-]*",
+    re.IGNORECASE,
+)
