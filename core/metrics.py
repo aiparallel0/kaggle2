@@ -92,26 +92,40 @@ def compute_metrics(bundle: EvalBundle) -> Metrics:
 
     ``per_image_correct`` is set to ``True`` for a receipt only when
     every field is an exact match — the binary signal used by the
-    McNemar test and paired bootstrap CI in the paper.
+    McNemar test in the paper.  ``per_image_f1`` is the mean per-field
+    token-F1 for the same receipt and is the right input for the
+    bootstrap CI accompanying the headline F1 number (the all-fields-EM
+    vector is degenerate — and silently zero — whenever no receipt has
+    every field correct simultaneously, which is the failure mode that
+    produced the zero-width ``pipeline_bootstrap_ci_*`` keys in
+    earlier runs).
     """
     pf1: dict[str, list[float]] = {f: [] for f in bundle.fields}
     pned: dict[str, list[float]] = {f: [] for f in bundle.fields}
     pem: dict[str, list[float]] = {f: [] for f in bundle.fields}
     per_image_ok: list[bool] = []
+    per_image_macro_f1: list[float] = []
     for pred, rec in zip(bundle.predictions, bundle.receipts, strict=True):
         gt = {fld.name.lower(): fld.value.lower() for fld in rec.fields}
         pr = {fld.name.lower(): fld.value.lower() for fld in pred.fields}
         all_fields_match = True
+        per_field_f1_for_image: list[float] = []
         for f in bundle.fields:
             g = gt.get(f, "")
             p = pr.get(f, "")
             match = (g == p)
             pem[f].append(1.0 if match else 0.0)
             pned[f].append(ned(g, p))
-            pf1[f].append(token_f1(g, p))
+            f1_value = token_f1(g, p)
+            pf1[f].append(f1_value)
+            per_field_f1_for_image.append(f1_value)
             if not match:
                 all_fields_match = False
         per_image_ok.append(all_fields_match)
+        per_image_macro_f1.append(
+            sum(per_field_f1_for_image) / len(per_field_f1_for_image)
+            if per_field_f1_for_image else 0.0,
+        )
     per_f1 = {f: sum(v) / len(v) for f, v in pf1.items() if v}
     per_ned = {f: sum(v) / len(v) for f, v in pned.items() if v}
     per_em = {f: sum(v) / len(v) for f, v in pem.items() if v}
@@ -122,4 +136,5 @@ def compute_metrics(bundle: EvalBundle) -> Metrics:
         global_f1=g_f1, global_ned=g_ned, global_em=g_em,
         per_field_f1=per_f1, per_field_ned=per_ned, per_field_em=per_em,
         per_image_correct=per_image_ok,
+        per_image_f1=per_image_macro_f1,
     )

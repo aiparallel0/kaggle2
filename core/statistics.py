@@ -11,10 +11,19 @@ from __future__ import annotations
 
 import math
 import random
+from collections.abc import Sequence
+
+# Both ``bootstrap_ci`` and ``paired_bootstrap_delta_ci`` operate on a
+# per-image score vector.  Historically that vector was the all-fields-EM
+# correctness flag (``list[bool]``); it is now also used with the per-image
+# macro-F1 score (``list[float]``) so the headline F1 numbers can carry an
+# honest CI even when the all-fields-EM vector is degenerate (every entry
+# zero).  ``Sequence[bool | float]`` keeps both call sites strict-typed.
+_PerImageScores = Sequence[bool] | Sequence[float]
 
 
 def bootstrap_ci(
-    per_image_correct: list[bool],
+    per_image_correct: _PerImageScores,
     n_iter: int = 1000,
     ci_level: float = 0.95,
 ) -> tuple[float, float]:
@@ -42,17 +51,20 @@ def bootstrap_ci(
 
 
 def paired_bootstrap_delta_ci(
-    a_correct: list[bool],
-    b_correct: list[bool],
+    a_correct: _PerImageScores,
+    b_correct: _PerImageScores,
     n_iter: int = 1000,
     ci_level: float = 0.95,
 ) -> tuple[float, float, float]:
-    """Paired bootstrap CI on the per-image correctness delta ``a - b``.
+    """Paired bootstrap CI on the per-image score delta ``a - b``.
 
     Returns ``(delta_mean, ci_lo, ci_hi)``.  The paired resample keeps
     the same image in both arms in every iterate, which is the right
     test for ``DONUT`` vs. ``pipeline`` on a shared test set — simple
-    unpaired bootstrap wastes the pairing information.
+    unpaired bootstrap wastes the pairing information.  Accepts either
+    a binary all-fields-EM vector (``list[bool]``) or a per-image
+    macro-F1 vector (``list[float]``); the same arithmetic applies in
+    both cases.
     """
     n = len(a_correct)
     if n == 0 or len(b_correct) != n:

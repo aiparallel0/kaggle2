@@ -91,9 +91,19 @@ def build_combined(
         "bootstrap_n_iter": config.bootstrap_n_iter,
         "bootstrap_ci_level": config.bootstrap_ci_level,
         # Per-image correctness vectors (all-fields EM per receipt):
-        # consumed by stages/eval.py for bootstrap CI and McNemar's test.
+        # consumed by stages/eval.py for the McNemar test and the
+        # ``*_em_*`` paired-bootstrap CIs.
         "donut_per_image_correct": list(dm.per_image_correct),
         "pipeline_per_image_correct": list(pm.assigner.per_image_correct),
+        # Per-image macro-F1 vectors (mean of per-field token-F1):
+        # consumed by stages/eval.py for the headline ``pipeline_bootstrap_ci_*``
+        # and ``delta_f1_ci_*`` keys.  Computed per receipt so the CI
+        # tracks the headline F1 metric directly — the all-fields-EM
+        # vector is degenerate whenever no receipt has every field
+        # correct simultaneously, which produced the zero-width
+        # ``pipeline_bootstrap_ci_*`` keys in earlier runs.
+        "donut_per_image_f1": list(dm.per_image_f1),
+        "pipeline_per_image_f1": list(pm.assigner.per_image_f1),
     }
 
 
@@ -132,7 +142,8 @@ def merge_pipeline_diagnostics(
         try:
             with open(path) as fh:
                 pm: dict[str, object] = json.load(fh)
-            for key in ("empty_detection_fraction", "per_receipt_error_fraction"):
+            for key in ("empty_detection_fraction", "per_receipt_error_fraction",
+                        "donut_params_m", "pipeline_params_m"):
                 if key in pm:
                     metrics[key] = pm[key]
         except Exception as exc:  # noqa: BLE001
@@ -152,8 +163,20 @@ def merge_pipeline_diagnostics(
 
 
 def merge_cost_json(config: ExpConfig, metrics: dict[str, object]) -> None:
-    """Fold every ``cost_<stage>.json`` into the metrics dict in place."""
-    for stage in ("donut", "yolo", "trocr", "pipeline"):
+    """Fold every ``cost_<stage>.json`` into the metrics dict in place.
+
+    When ``cost_pipeline.json`` is absent (the common case — we only
+    measure per-stage cost during ``--stage train``), synthesise the
+    headline ``pipeline_<key>`` aggregates from the per-stage cost
+    files so Table II's pipeline column resolves: cost / energy / CO₂
+    / minutes are summed over YOLO + TrOCR + assigner; peak VRAM
+    takes the max (the binding constraint at any single moment).
+    """
+    sums: dict[str, float] = {}
+    peak_vrams: list[float] = []
+    have_pipeline_file = Path(
+        os.path.join(config.output_dir, "cost_pipeline.json")).exists()
+    for stage in ("donut", "yolo", "trocr", "assigner", "pipeline"):
         cost_path = os.path.join(config.output_dir, f"cost_{stage}.json")
         if not Path(cost_path).exists():
             continue
@@ -162,5 +185,18 @@ def merge_cost_json(config: ExpConfig, metrics: dict[str, object]) -> None:
                 cost_data: dict[str, object] = json.load(fh)
             for k, v in cost_data.items():
                 metrics.setdefault(f"{stage}_{k}", v)
+            if not have_pipeline_file and stage in ("yolo", "trocr", "assigner"):
+                for k in ("cost_usd", "energy_kwh", "co2_kg", "train_minutes"):
+                    val = cost_data.get(k)
+                    if isinstance(val, int | float):
+                        sums[k] = sums.get(k, 0.0) + float(val)
+                pv = cost_data.get("peak_vram_gb")
+                if isinstance(pv, int | float):
+                    peak_vrams.append(float(pv))
         except Exception as exc:  # noqa: BLE001
             log.warning("Failed to merge cost_%s.json: %s", stage, exc)
+    if not have_pipeline_file:
+        for k, v in sums.items():
+            metrics.setdefault(f"pipeline_{k}", round(v, 4))
+        if peak_vrams:
+            metrics.setdefault("pipeline_peak_vram_gb", round(max(peak_vrams), 4))

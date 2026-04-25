@@ -23,7 +23,7 @@ producers available.
 | `report.combine.merge_cost_json` | reads `cost_donut.json`, `cost_pipeline.json` | `donut_cost_usd`, `pipeline_cost_usd`, `donut_energy_kwh`, `pipeline_energy_kwh`, `donut_co2_kg`, `pipeline_co2_kg`, `donut_train_minutes`, `pipeline_train_minutes` |
 | `report.combine.merge_assigner_metrics` | reads `assigner_metrics.json` | `assigner_params_k`, `assigner_best_epoch`, `assigner_stopped_at` |
 | `report.combine.merge_pipeline_diagnostics` | reads `pipeline_metrics.json`, `pipeline_meta.json` | `donut_params_m`, `pipeline_params_m`, `donut_peak_vram_gb`, `pipeline_peak_vram_gb`, `empty_detection_fraction`, `per_receipt_error_fraction`, `parity_ok` |
-| `stages.eval.stage_eval` | `combined_metrics.json` (McNemar block) | `mcnemar_p`, `seeds_used` |
+| `stages.eval.stage_eval` | `combined_metrics.json` (McNemar block) | `mcnemar_p`, `seeds_used`, `pipeline_bootstrap_ci_lo`, `pipeline_bootstrap_ci_hi`, `pipeline_em_bootstrap_ci_lo`, `pipeline_em_bootstrap_ci_hi`, `delta_f1_ci_lo`, `delta_f1_ci_hi`, `delta_em_ci_lo`, `delta_em_ci_hi` |
 | `stages.eval_producers.emit_all` | `predictions/*.jsonl`, `metrics/extended_metrics.json` | `donut_precision_<field>`, `donut_recall_<field>`, `donut_em_<field>`, `donut_em_<field>_ci_lo`, `donut_em_<field>_ci_hi`, same for `pipeline_*` |
 | `core.env_snapshot.write_env_snapshot` | `env/hostinfo.json`, `env/git_sha.txt`, … | `git_sha`, `config_sha256`, `torch_version`, `cuda_version`, `gpu_model`, `driver_version`, `seed`, `run_id` |
 | `report.inject_tables.inject_tables` | — (in-memory dict) | `table_headline_f1`, `table_extended`, `table_latency`, `table_env`, `table_training` |

@@ -31,7 +31,11 @@ def test_results_is_fixtures_only() -> None:
         ["git", "-C", str(REPO), "ls-files", "results"],
         capture_output=True, text=True, check=True,
     ).stdout.splitlines()
-    allowed = {"results/bug_timeline.json", "results/README.md"}
+    allowed = {
+        "results/bug_timeline.json",
+        "results/foundation_baseline.json",
+        "results/README.md",
+    }
     assert set(tracked) <= allowed, f"unexpected tracked files: {set(tracked) - allowed}"
 
 

@@ -120,7 +120,13 @@ def render_env_table(metrics: dict[str, Any]) -> str:
 
 
 def render_training_table(metrics: dict[str, Any]) -> str:
-    """Training-summary — epochs / best / wall-clock / VRAM / USD / energy."""
+    """Training-summary — epochs / best / wall-clock / VRAM / USD / energy.
+
+    Rows cover both the headline systems (DONUT, Pipeline) and each
+    pipeline sub-stage (YOLO, TrOCR, assigner) so every per-stage
+    ``cost_<stage>.json`` value emitted by the train-stage telemetry
+    has a one-to-one consumer in Table~\\ref{tab:training}.
+    """
     rows: list[str] = []
     for system in ("donut", "pipeline"):
         rows.append(
@@ -130,11 +136,23 @@ def render_training_table(metrics: dict[str, Any]) -> str:
             f"& {_fmt(metrics, f'{system}_wall_clock_s', 'sig4')} "
             f"& {_fmt(metrics, f'{system}_peak_vram_gb', 'gb1')} "
             f"& {_fmt(metrics, f'{system}_cost_usd', 'usd')} "
-            f"& {_fmt(metrics, f'{system}_energy_wh', 'wh')} \\\\",
+            f"& {_fmt(metrics, f'{system}_energy_wh', 'wh')} "
+            f"& {_fmt(metrics, f'{system}_co2_kg', 'sig4')} \\\\",
+        )
+    rows.append("\\midrule")
+    for stage in ("yolo", "trocr", "assigner"):
+        rows.append(
+            f"\\quad {stage} "
+            f"& --- & --- "
+            f"& {_fmt(metrics, f'{stage}_train_minutes', 'sig4')} "
+            f"& {_fmt(metrics, f'{stage}_peak_vram_gb', 'gb1')} "
+            f"& {_fmt(metrics, f'{stage}_cost_usd', 'usd')} "
+            f"& {_fmt(metrics, f'{stage}_energy_kwh', 'sig4')} "
+            f"& {_fmt(metrics, f'{stage}_co2_kg', 'sig4')} \\\\",
         )
     return (
-        "\\begin{tabular}{lcccccc}\n\\toprule\n"
-        "system & epochs & best & wall-s & VRAM & USD & energy \\\\\n\\midrule\n"
+        "\\begin{tabular}{lccccccc}\n\\toprule\n"
+        "system & epochs & best & wall & VRAM & USD & energy & CO\\textsubscript{2} \\\\\n\\midrule\n"
         + "\n".join(rows) + "\n\\bottomrule\n\\end{tabular}"
     )
 

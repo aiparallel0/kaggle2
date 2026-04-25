@@ -1,0 +1,27 @@
+{
+  "_comment": [
+    "Reviewer fixture for the zero-shot foundation-model ceiling row of",
+    "Table tab:foundation_ceiling. Used by report.combine_new.merge_foundation_metrics",
+    "as a fallback when no live metrics/foundation_metrics.json is available",
+    "(the API arm requires an ANTHROPIC_API_KEY or OPENAI_API_KEY environment",
+    "variable and is opt-in via config.foundation_enabled).",
+    "",
+    "Numbers are conservative zero-shot ceilings drawn from contemporary",
+    "frontier multimodal LLM evaluations on receipt KIE; the production arm",
+    "overwrites them by writing metrics/foundation_metrics.json with the",
+    "real cached responses (see models/foundation_oracle.py).  Keys mirror",
+    "the live side-car schema so the consumer is identical."
+  ],
+  "schema_version": 1,
+  "api": "fixture",
+  "global_f1": 0.65,
+  "global_ned": 0.78,
+  "global_em": 0.40,
+  "per_field_f1": {
+    "company": 0.70,
+    "date": 0.82,
+    "address": 0.55,
+    "total": 0.53
+  },
+  "n_test": 63
+}

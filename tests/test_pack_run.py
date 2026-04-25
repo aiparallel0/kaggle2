@@ -166,3 +166,33 @@ def test_sha256_matches_archive_contents(synthetic_run: tuple[Path, Path]) -> No
     expected = hashlib.sha256(archive.read_bytes()).hexdigest()
     # sidecar format: "<hex>  <basename>\n"
     assert side.read_text().split()[0] == expected
+
+
+def test_ipynb_checkpoints_excluded(synthetic_run: tuple[Path, Path]) -> None:
+    """``.ipynb_checkpoints/`` scratch dirs are stripped from every archive.
+
+    Lock in the fix for review issue 9 — notebook checkpoint PDFs were
+    landing in ``MANIFEST.json`` (and therefore in shipped archives)
+    despite being ignored at the git level.  The fix excludes the
+    pattern in both ``--light`` and ``--full`` mode.
+    """
+    run_dir, out_dir = synthetic_run
+    run_id = run_dir.name
+    # Drop notebook scratch dirs at multiple depths to exercise the
+    # tar globs (top-level, nested under figures/).
+    (run_dir / ".ipynb_checkpoints").mkdir()
+    (run_dir / ".ipynb_checkpoints" / "scratch.json").write_text("{}")
+    (run_dir / "figures" / ".ipynb_checkpoints").mkdir()
+    (run_dir / "figures" / ".ipynb_checkpoints" / "fig_f1-checkpoint.pdf").write_bytes(
+        b"%PDF-1.4\n",
+    )
+    for mode in ((), ("--full",)):
+        # Reuse the same out_dir; archives differ by mode but pack_run.sh
+        # overwrites cleanly.
+        _run_pack(run_id, out_dir, *mode)
+        archive = _find_archive(out_dir, run_id)
+        members = _tar_members(archive)
+        assert not any(".ipynb_checkpoints" in m for m in members), (
+            f"mode={mode!r}: notebook scratch leaked into archive: "
+            f"{sorted(m for m in members if '.ipynb_checkpoints' in m)}"
+        )
