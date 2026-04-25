@@ -130,6 +130,12 @@ def summarise_extended(
     for f in bundle.fields:
         out[f"precision_{f}"] = p[f]
         out[f"recall_{f}"] = r[f]
+        # Per-field point estimates surface ``\VAR{<sys>_ned_<field>}`` and
+        # ``\VAR{<sys>_em_<field>}`` in the paper's appendix per-field
+        # table; without them only the CI bounds would be available and
+        # the cell would render bound-only, breaking bus-accuracy.
+        out[f"ned_{f}"] = metrics.per_field_ned[f]
+        out[f"em_{f}"] = metrics.per_field_em[f]
         out[f"f1_{f}_ci_lo"] = cis["f1"][f][0]
         out[f"f1_{f}_ci_hi"] = cis["f1"][f][1]
         out[f"ned_{f}_ci_lo"] = cis["ned"][f][0]

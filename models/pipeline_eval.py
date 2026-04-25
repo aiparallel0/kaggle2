@@ -255,6 +255,28 @@ def eval_pipeline(config: ExpConfig, test: list[Receipt]) -> PipelineResult:
     # reads from ``config.output_dir`` — can find the artefact and
     # render Fig.~\ref{fig:attn_heatmap}.
     attn_sampler.write(out_dir)
+    # Parameter counts surface ``donut_params_m`` and ``pipeline_params_m``
+    # in Table II via :func:`report.combine.merge_pipeline_diagnostics`.
+    # YOLO/TrOCR/assigner modules each expose ``parameters()``; the DONUT
+    # checkpoint sits next to the pipeline checkpoints under ``output_dir``.
+    def _params_m(model: object) -> float:
+        try:
+            return round(sum(p.numel() for p in model.parameters()) / 1e6, 2)  # type: ignore[attr-defined]
+        except Exception:  # noqa: BLE001
+            return 0.0
+    pipeline_params_m = round(
+        _params_m(trocr_model) + _params_m(assigner)
+        + _params_m(getattr(yolo, "model", yolo)), 2)
+    donut_params_m = 0.0
+    donut_dir = Path(config.output_dir) / "donut"
+    if donut_dir.exists():
+        try:
+            from transformers import VisionEncoderDecoderModel as _Donut
+            _dm = _Donut.from_pretrained(str(donut_dir))
+            donut_params_m = _params_m(_dm)
+            del _dm
+        except Exception as exc:  # noqa: BLE001
+            log.warning("pipeline_eval: could not measure donut_params_m: %s", exc)
     with open(out_dir / "pipeline_metrics.json", "w") as f:
         json.dump({
             "assigner_f1": m_l.global_f1, "rulebased_f1": m_r.global_f1,
@@ -263,6 +285,8 @@ def eval_pipeline(config: ExpConfig, test: list[Receipt]) -> PipelineResult:
             "rulebased_per_field_f1": m_r.per_field_f1,
             "empty_detection_fraction": n_empty_detect / n_total,
             "per_receipt_error_fraction": n_receipt_err / n_total,
+            "donut_params_m": donut_params_m,
+            "pipeline_params_m": pipeline_params_m,
             "n_test_receipts": len(test),
             "receipt_error_samples": receipt_error_samples,
             "receipt_error_types": sorted(receipt_error_type_set),

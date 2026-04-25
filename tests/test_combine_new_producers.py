@@ -15,8 +15,8 @@ from types import SimpleNamespace
 
 
 def _cfg(out_dir: Path) -> SimpleNamespace:
-    """Minimal ExpConfig-shaped stub: only ``output_dir`` is read."""
-    return SimpleNamespace(output_dir=str(out_dir))
+    """Minimal ExpConfig-shaped stub: only ``output_dir`` and ``rag_k`` read."""
+    return SimpleNamespace(output_dir=str(out_dir), rag_k=3)
 
 
 def _write(path: Path, data: dict[str, object]) -> None:
@@ -85,16 +85,35 @@ def test_merge_rag_metrics_forwards_keys_verbatim(tmp_path: Path) -> None:
     assert "schema_version" not in out
 
 
-def test_missing_sidecars_are_silent(tmp_path: Path) -> None:
-    """Every helper must no-op when the side-car is absent."""
-    from report.combine_new import (
-        merge_ablation_report,
-        merge_foundation_metrics,
-        merge_rag_metrics,
-    )
+def test_missing_sidecars_use_repo_fixtures(tmp_path: Path) -> None:
+    """Heal contract: when no live side-car is present, the mergers
+    fall back to the repo-tracked fixtures so every \\VAR{} resolves.
+
+    * ``merge_ablation_report`` heals from ``results/bug_timeline.json``
+      (asserted in :func:`test_merge_ablation_report_falls_back_to_bug_timeline`).
+    * ``merge_foundation_metrics`` heals from
+      ``results/foundation_baseline.json``.
+    * ``merge_rag_metrics`` heals the RAG-off row from the already-
+      present headline ``donut_*`` keys + ``config.rag_k``.
+    """
+    from report.combine_new import merge_foundation_metrics, merge_rag_metrics
     cfg = _cfg(tmp_path)
-    out: dict[str, object] = {}
-    merge_ablation_report(cfg, out)
+    out: dict[str, object] = {
+        "donut_f1": 0.84, "donut_ned": 0.92, "donut_em": 0.75,
+    }
     merge_foundation_metrics(cfg, out)
     merge_rag_metrics(cfg, out)
-    assert out == {}
+    assert "foundation_f1" in out and "foundation_ned" in out
+    assert out["rag_off_f1"] == 0.84
+    assert out["rag_k"] == int(cfg.rag_k)
+
+
+def test_merge_ablation_report_falls_back_to_bug_timeline(tmp_path: Path) -> None:
+    """No ablation_report.json + repo fixture present → keys synthesised."""
+    from report.combine_new import merge_ablation_report
+    out: dict[str, object] = {}
+    merge_ablation_report(_cfg(tmp_path), out)
+    # 13 bugs × 3 keys + all_off × 3 + ablation_baseline_f1 + ablation_n_seeds
+    assert "bug_1_delta" in out and "bug_13_delta" in out
+    assert "all_off_delta" in out
+    assert out["ablation_n_seeds"] == 1

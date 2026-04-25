@@ -49,6 +49,71 @@ The four-decimal numbers are persisted to
 \texttt{results/combined\_metrics.json}; mean/std/CI fields are
 populated automatically when \texttt{n\_trials}$\ge 2$.
 
+\section{Per-Field Precision, Recall, and 95\,\% Bootstrap CIs}
+\label{app:per_field_extended}
+
+Table~\ref{tab:per_field_extended} surfaces the full per-field
+precision / recall / token-F1 / NED / EM breakdown that backs
+Fig.~\figref{fig:f1_grouped} and Tables~\ref{tab:headline} /
+\ref{tab:extended}.  Every cell is a separate \texttt{\textbackslash
+VAR\{\}} substitution from \texttt{metrics/extended\_metrics.json}; CI
+bounds are paired-bootstrap (\VAR{bootstrap_n_iter} resamples at
+\VAR{bootstrap_ci_level} confidence) over the 63-image test split.
+Macro-averaged headline numbers ---
+DONUT F1 / NED / EM $=\VAR{donut_f1_macro}$ / $\VAR{donut_ned_macro}$
+/ $\VAR{donut_em_macro}$, Pipeline F1 / NED / EM
+$=\VAR{pipeline_f1_macro}$ / $\VAR{pipeline_ned_macro}$ /
+$\VAR{pipeline_em_macro}$ --- agree with Table~\ref{tab:headline} to
+the displayed precision.
+
+\begin{table*}[t]
+\centering
+\caption{Per-system, per-field precision / recall / token-F1 / NED /
+  EM with 95\,\% paired-bootstrap CIs.  Sourced cell-by-cell from
+  \texttt{metrics/extended\_metrics.json} so every number on this
+  page has a one-to-one \texttt{\textbackslash VAR\{\}} producer.}
+\label{tab:per_field_extended}
+\small
+\begin{tabular}{llccccc}\toprule
+System & Field & Precision & Recall & F1 [95\,\% CI] & NED [95\,\% CI] & EM [95\,\% CI] \\ \midrule
+\multirow{4}{*}{DONUT}
+ & company  & \VAR{donut_precision_company} & \VAR{donut_recall_company}
+   & \VAR{donut_f1_company}\,[\VAR{donut_f1_company_ci_lo},\,\VAR{donut_f1_company_ci_hi}]
+   & \VAR{donut_ned_company}\,[\VAR{donut_ned_company_ci_lo},\,\VAR{donut_ned_company_ci_hi}]
+   & \VAR{donut_em_company}\,[\VAR{donut_em_company_ci_lo},\,\VAR{donut_em_company_ci_hi}] \\
+ & date     & \VAR{donut_precision_date} & \VAR{donut_recall_date}
+   & \VAR{donut_f1_date}\,[\VAR{donut_f1_date_ci_lo},\,\VAR{donut_f1_date_ci_hi}]
+   & \VAR{donut_ned_date}\,[\VAR{donut_ned_date_ci_lo},\,\VAR{donut_ned_date_ci_hi}]
+   & \VAR{donut_em_date}\,[\VAR{donut_em_date_ci_lo},\,\VAR{donut_em_date_ci_hi}] \\
+ & address  & \VAR{donut_precision_address} & \VAR{donut_recall_address}
+   & \VAR{donut_f1_address}\,[\VAR{donut_f1_address_ci_lo},\,\VAR{donut_f1_address_ci_hi}]
+   & \VAR{donut_ned_address}\,[\VAR{donut_ned_address_ci_lo},\,\VAR{donut_ned_address_ci_hi}]
+   & \VAR{donut_em_address}\,[\VAR{donut_em_address_ci_lo},\,\VAR{donut_em_address_ci_hi}] \\
+ & total    & \VAR{donut_precision_total} & \VAR{donut_recall_total}
+   & \VAR{donut_f1_total}\,[\VAR{donut_f1_total_ci_lo},\,\VAR{donut_f1_total_ci_hi}]
+   & \VAR{donut_ned_total}\,[\VAR{donut_ned_total_ci_lo},\,\VAR{donut_ned_total_ci_hi}]
+   & \VAR{donut_em_total}\,[\VAR{donut_em_total_ci_lo},\,\VAR{donut_em_total_ci_hi}] \\ \midrule
+\multirow{4}{*}{Pipeline}
+ & company  & \VAR{pipeline_precision_company} & \VAR{pipeline_recall_company}
+   & \VAR{pipeline_f1_company}\,[\VAR{pipeline_f1_company_ci_lo},\,\VAR{pipeline_f1_company_ci_hi}]
+   & \VAR{pipeline_ned_company}\,[\VAR{pipeline_ned_company_ci_lo},\,\VAR{pipeline_ned_company_ci_hi}]
+   & \VAR{pipeline_em_company}\,[\VAR{pipeline_em_company_ci_lo},\,\VAR{pipeline_em_company_ci_hi}] \\
+ & date     & \VAR{pipeline_precision_date} & \VAR{pipeline_recall_date}
+   & \VAR{pipeline_f1_date}\,[\VAR{pipeline_f1_date_ci_lo},\,\VAR{pipeline_f1_date_ci_hi}]
+   & \VAR{pipeline_ned_date}\,[\VAR{pipeline_ned_date_ci_lo},\,\VAR{pipeline_ned_date_ci_hi}]
+   & \VAR{pipeline_em_date}\,[\VAR{pipeline_em_date_ci_lo},\,\VAR{pipeline_em_date_ci_hi}] \\
+ & address  & \VAR{pipeline_precision_address} & \VAR{pipeline_recall_address}
+   & \VAR{pipeline_f1_address}\,[\VAR{pipeline_f1_address_ci_lo},\,\VAR{pipeline_f1_address_ci_hi}]
+   & \VAR{pipeline_ned_address}\,[\VAR{pipeline_ned_address_ci_lo},\,\VAR{pipeline_ned_address_ci_hi}]
+   & \VAR{pipeline_em_address}\,[\VAR{pipeline_em_address_ci_lo},\,\VAR{pipeline_em_address_ci_hi}] \\
+ & total    & \VAR{pipeline_precision_total} & \VAR{pipeline_recall_total}
+   & \VAR{pipeline_f1_total}\,[\VAR{pipeline_f1_total_ci_lo},\,\VAR{pipeline_f1_total_ci_hi}]
+   & \VAR{pipeline_ned_total}\,[\VAR{pipeline_ned_total_ci_lo},\,\VAR{pipeline_ned_total_ci_hi}]
+   & \VAR{pipeline_em_total}\,[\VAR{pipeline_em_total_ci_lo},\,\VAR{pipeline_em_total_ci_hi}] \\
+\bottomrule
+\end{tabular}
+\end{table*}
+
 \section*{Acknowledgements}
 
 Code, training harness, and artefacts are available at
