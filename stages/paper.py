@@ -160,8 +160,8 @@ def stage_paper(config: ExpConfig) -> None:
         json.dump({"unresolved": unresolved, "count": len(unresolved)}, f, indent=2)
     if unresolved:
         log.warning(
-            "stage_paper: %d unresolved \\VAR{} keys render as --- in the PDF. "
-            "See metrics/unresolved_vars.json for the full list.",
+            "stage_paper: %d unresolved \\VAR{} keys render as \\MissingCell{key} "
+            "in the PDF. See metrics/unresolved_vars.json for the full list.",
             len(unresolved),
         )
     filled = inject_results(template, metrics)
@@ -171,9 +171,16 @@ def stage_paper(config: ExpConfig) -> None:
         f.write(filled)
     log.info("Paper LaTeX written to %s", tex_out)
     bib_src = Path(config.paper_template).parent / "references.bib"
-    pdf = compile_paper_pdf(tex_out, bib_src)
-    if pdf is not None:
-        log.info("Paper PDF written to %s", pdf)
+    try:
+        pdf = compile_paper_pdf(tex_out, bib_src)
+        if pdf is not None:
+            log.info("Paper PDF written to %s", pdf)
+    except EvalError as exc:
+        log.warning(
+            "PDF compilation failed — LaTeX source preserved at %s. "
+            "Run tectonic manually to diagnose. Error: %s",
+            tex_out, exc,
+        )
     # MANIFEST.json is the definitive "what to download" index for
     # operators pulling the run off vast.ai (see scripts/pack_run.sh).
     run_dir = Path(config.output_dir)
