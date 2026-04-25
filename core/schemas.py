@@ -74,6 +74,12 @@ class YoloDiagnostics(TypedDict, total=False):
     r_at_0_25: float
     pr_curve_precision: list[float]
     pr_curve_recall: list[float]
+    # v4 — per-stage best/total epoch surfaced so the training table
+    # (\\VAR{table_training}) can show YOLO's own best checkpoint
+    # rather than ``\\textit{n/a}`` (which was an oversight: each
+    # stage HAS its own best epoch — we just hadn't extracted it).
+    best_epoch: int
+    epochs_run: int
 
 
 class TrocrDiagnostics(TypedDict, total=False):
@@ -88,6 +94,12 @@ class TrocrDiagnostics(TypedDict, total=False):
     latency_p50_ms: float
     latency_p95_ms: float
     latency_p99_ms: float
+    # v4 — TrOCR's HuggingFace Trainer was configured with
+    # ``load_best_model_at_end=True`` and ``metric_for_best_model``
+    # already; the resulting best epoch is recoverable from
+    # ``trainer_state.json`` and now surfaced through the merge layer.
+    best_epoch: int
+    epochs_run: int
 
 
 class AssignerDiagnostics(TypedDict, total=False):

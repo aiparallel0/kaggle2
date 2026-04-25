@@ -136,13 +136,32 @@ def inject_results(template: str, metrics: dict[str, Any]) -> str:
     unresolved = re.findall(r"\\VAR\{([^}]+)\}", result)
     if unresolved:
         import logging
-        logging.getLogger("kaggle2").warning(
-            "inject_results: %d unresolved \\VAR{} keys (first 5: %s). "
-            "These render as --- in the PDF; run the full eval stage to "
-            "populate every metric sidecar.",
-            len(unresolved), unresolved[:5],
-        )
-    result = re.sub(r"\\VAR\{[^}]+\}", "---", result)
+
+        from report.missing import filter_blockers
+        blockers = filter_blockers(unresolved)
+        log = logging.getLogger("kaggle2")
+        if blockers:
+            log.error(
+                "inject_results: %d UNRESOLVED \\VAR{} keys are not on the "
+                "intentional-missing allow-list — these will render as a "
+                "red \\MissingCell{} marker and FAIL `make check_artefacts`. "
+                "First 5: %s",
+                len(blockers), blockers[:5],
+            )
+        if len(unresolved) - len(blockers) > 0:
+            log.info(
+                "inject_results: %d unresolved keys are on the allow-list "
+                "(intentionally not measured on this profile).",
+                len(unresolved) - len(blockers),
+            )
+    # Replace each unresolved \VAR{key} with \MissingCell{key} — a typed,
+    # red marker that survives compile and is counted by the build gate.
+    # The previous "blanket --- em-dash" backstop is gone (silent failure
+    # mode that produced the v1–v3 em-dash regression cycle).
+    from report.missing import render_missing_cell
+    def _to_missing(match: re.Match[str]) -> str:
+        return render_missing_cell(match.group(1))
+    result = re.sub(r"\\VAR\{([^}]+)\}", _to_missing, result)
     return result
 
 

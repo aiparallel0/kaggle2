@@ -8,6 +8,7 @@
 \usepackage{siunitx}
 \usepackage{subcaption}
 \usepackage{colortbl}
+\usepackage[dvipsnames]{xcolor}
 \usepackage{tikz}
 \usepackage{url}
 \usepackage{algorithm}
@@ -19,6 +20,18 @@
 \usepackage{microtype}
 \usepackage[hidelinks]{hyperref}
 \usetikzlibrary{arrows.meta,positioning,fit,backgrounds}
+
+% ``\MissingCell{<key>}`` — the typed sentinel emitted by
+% :mod:`report.inject` when a \VAR{} placeholder did not resolve to a
+% real measurement.  Renders as a small red typewriter ``?<key>`` so
+% reviewers see exactly which producer failed; counted as a hard build
+% blocker by :mod:`report.check_artefacts` unless ``<key>`` is on the
+% allow-list in :data:`report.missing.MISSING_OK_PREFIXES`.  This
+% replaces the silent ``---`` em-dash backstop that produced the
+% v1–v3 em-dash regression cycle.
+\newcommand{\MissingCell}[1]{%
+  {\color{BrickRed}\textbf{\texttt{?}}\textsubscript{\tiny\texttt{#1}}}%
+}
 
 % IEEE two-column justification gets very tight on long technical words
 % (``cross-entropy'', ``hyperparameters'', function names, URLs).  Allow

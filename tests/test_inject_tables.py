@@ -20,10 +20,12 @@ def test_f1_table_produces_tabular() -> None:
         assert fld in out
 
 
-def test_f1_table_missing_value_renders_dashes() -> None:
+def test_f1_table_missing_value_renders_missing_cells() -> None:
     out = render_f1_table({})
-    # All four fields + macro → 5 rows × 3 value cells = at least 15 dashes.
-    assert out.count("---") >= 15
+    # v4 contract: every absent value renders as \MissingCell{key}, not ---.
+    # 5 rows × 3 system columns = 15 cells.
+    assert out.count("\\MissingCell{") >= 15
+    assert "---" not in out
 
 
 def test_f1_table_resolves_populated_values() -> None:
@@ -56,8 +58,27 @@ def test_env_table_structure() -> None:
     })
     assert "\\texttt{abc1234}" in out
     assert "42" in out
-    # Missing keys render ---
-    assert "---" in out
+    # Missing keys render as \MissingCell{} markers (v4 contract);
+    # allow-listed (n/a) keys render as \textit{n/a}.  Either way no
+    # silent em-dashes.
+    assert "---" not in out
+    assert "\\MissingCell{" in out or "\\textit{n/a}" in out
+
+
+def test_env_table_reads_prefixed_keys() -> None:
+    """v4 fix: ``merge_env`` writes ``env_*`` / ``host_*`` prefixed keys
+    (not bare ones); the env table must consume both naming conventions
+    so Table~XIV no longer renders all em-dashes despite the producer
+    running.
+    """
+    out = render_env_table({
+        "env_git_sha": "deadbee", "host_gpu_model": "RTX A6000",
+        "host_torch_version": "2.4.0", "host_cuda_version": "12.4",
+    })
+    assert "\\texttt{deadbee}" in out
+    assert "RTX A6000" in out
+    assert "2.4.0" in out
+    assert "12.4" in out
 
 
 def test_training_table_full_values() -> None:

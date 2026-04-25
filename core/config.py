@@ -80,6 +80,12 @@ def load_config(path: str, defaults: dict[str, Any] | None = None) -> ExpConfig:
         "gat_enabled",  # P3 — graph-attention assigner opt-in
         "foundation_enabled", "foundation_api", "foundation_cache_path",  # P4
         "runs_root", "run_id",  # runlayout keys (optional; back-compat).
+        # v4 — canonical SROIE / LayoutLMv3 / latency / curation keys.
+        "canonical_sroie_enabled", "canonical_sroie_test_path",
+        "layoutlmv3_enabled", "layoutlmv3_model",
+        "measure_latency",
+        "qualitative_sample_ids", "fig1_receipt_id",
+        "strict_paper",
     }
     known = set(_REQUIRED) | _optional
     extra = {k: v for k, v in raw.items() if k not in known}
@@ -166,6 +172,16 @@ def load_config(path: str, defaults: dict[str, Any] | None = None) -> ExpConfig:
         foundation_api=str(raw.get("foundation_api", "anthropic")),
         foundation_cache_path=str(
             raw.get("foundation_cache_path", "./runs/foundation_cache.json")),
+        canonical_sroie_enabled=bool(raw.get("canonical_sroie_enabled", False)),
+        canonical_sroie_test_path=str(raw.get("canonical_sroie_test_path", "")),
+        layoutlmv3_enabled=bool(raw.get("layoutlmv3_enabled", False)),
+        layoutlmv3_model=str(raw.get("layoutlmv3_model", "microsoft/layoutlmv3-base")),
+        measure_latency=bool(raw.get("measure_latency", False)),
+        qualitative_sample_ids=[
+            str(x) for x in raw.get("qualitative_sample_ids", []) or []
+        ],
+        fig1_receipt_id=str(raw.get("fig1_receipt_id", "")),
+        strict_paper=bool(raw.get("strict_paper", False)),
         extra=extra,
     )
 

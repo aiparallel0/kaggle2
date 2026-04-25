@@ -122,10 +122,17 @@ def merge_foundation_metrics(config: ExpConfig, metrics: dict[str, object]) -> N
     data = _load_json(path) or _load_json(
         os.path.join(config.output_dir, "foundation_metrics.json"),
     )
+    source = "measured"
     if data is None:
         data = _load_json(os.path.join("results", "foundation_baseline.json"))
+        source = "fixture"
     if data is None:
         return
+    # ``foundation_source`` resolves the v3 ambiguity (was the row a
+    # live API call or a conservative reviewer fixture?) at the cell
+    # level: every Table~\ref{tab:foundation_ceiling} row now carries
+    # this provenance flag so reviewers cannot misread.
+    metrics.setdefault("foundation_source", source)
     # Paper uses the ``foundation_`` prefix so figures and tables can
     # overlay the zero-shot ceiling on top of trained-system bars.
     for src, dst in (
