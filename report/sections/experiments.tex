@@ -28,7 +28,7 @@ Fine-tuned for \VAR{epochs_donut} epochs, image resolution
 $\VAR{img_w}\times\VAR{img_h}$, batch~\VAR{batch_size},
 cosine LR schedule, \texttt{\VAR{precision}} precision,
 gradient checkpointing.  Differential learning rate:
-encoder at \VAR{lr_encoder}, decoder at \VAR{lr_decoder}
+encoder at $\VAR{lr_encoder}$, decoder at $\VAR{lr_decoder}$
 (10$\times$; resized embedding rows for newly added task tokens).
 
 \textbf{YOLOv8.}
@@ -58,7 +58,7 @@ $\approx$\,\VAR{assigner_params_k}\,K parameters.
 \toprule
 Parameter & Value \\ \midrule
 DONUT epochs                           & \VAR{epochs_donut} \\
-DONUT LR (encoder / decoder)           & \VAR{lr_encoder} / \VAR{lr_decoder} \\
+DONUT LR (encoder / decoder)           & $\VAR{lr_encoder}$ / $\VAR{lr_decoder}$ \\
 TrOCR epochs                           & \VAR{epochs_trocr} \\
 YOLO epochs                            & \VAR{epochs_yolo} \\
 YOLO imgsz                             & \VAR{yolo_img_size} \\
