@@ -121,7 +121,15 @@ def _resolve_f1_after(results_dir: Path, fixture: dict[str, Any]) -> float:
 
 
 def render_telemetry_overlay(results_dir: str, out_dir: str) -> str | None:
-    """DONUT vs. pipeline GPU utilisation on a common minutes-axis."""
+    """DONUT vs. pipeline GPU utilisation on a common minutes-axis.
+
+    The figure is, by name, an *overlay* — it is only meaningful when
+    both ``telemetry_donut.jsonl`` and ``telemetry_pipeline.jsonl``
+    exist.  When only one trace is present, returning a single-line
+    plot would silently mislead the reader (review item S3 in the
+    paper-craftsmanship critique); we instead warn and return ``None``
+    so the LaTeX ``\\iffigurefile`` macro suppresses the figure entirely.
+    """
     if not _HAS_MPL:
         warnings.warn(
             "matplotlib unavailable — skipping telemetry overlay", stacklevel=2,
@@ -129,17 +137,18 @@ def render_telemetry_overlay(results_dir: str, out_dir: str) -> str | None:
         return None
     donut = _load_jsonl(Path(results_dir) / "telemetry_donut.jsonl")
     pipe = _load_jsonl(Path(results_dir) / "telemetry_pipeline.jsonl")
-    if not donut and not pipe:
+    if not donut or not pipe:
         warnings.warn(
-            f"no telemetry_*.jsonl files found in {results_dir}", stacklevel=2,
+            "telemetry overlay needs BOTH telemetry_donut.jsonl and "
+            f"telemetry_pipeline.jsonl in {results_dir}; "
+            f"have donut={bool(donut)} pipeline={bool(pipe)} — skipping",
+            stacklevel=2,
         )
         return None
     fig, ax = plt.subplots(figsize=(6.8, 3.4))
     for rows, label, color in (
         (donut, "DONUT", "tab:blue"), (pipe, "Pipeline", "tab:orange"),
     ):
-        if not rows:
-            continue
         t0 = float(rows[0].get("ts", 0.0))
         ts = [(float(r.get("ts", t0)) - t0) / 60.0 for r in rows]
         util = [float(r.get("gpu_util_pct", 0.0)) for r in rows]

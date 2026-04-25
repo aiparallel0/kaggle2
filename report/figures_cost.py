@@ -46,10 +46,19 @@ def render_cost(run_dir: Path) -> Path | None:
     if guard_empty(per_stage, "cost"):
         return None
     metrics = load_json(run_dir / "metrics" / "combined_metrics.json") or {}
-    fig, axes = plt.subplots(1, 2, figsize=(COL_DOUBLE, 0.4 * COL_DOUBLE))
     stages = list(per_stage.keys())
     usd = [float(per_stage[s].get("usd", 0.0) or 0.0) for s in stages]
     wh = [float(per_stage[s].get("energy_wh", 0.0) or 0.0) for s in stages]
+    # Refuse to emit an all-zero figure (the rendered axes would span
+    # roughly -0.04 to +0.04 with no bars — the empty Pareto-plus-stub
+    # the reviewer flagged in Fig. 11).  When *every* stage reports
+    # zero USD and zero Wh, the producer ran but the data is sparse;
+    # better to suppress the figure than ship empty axes (review
+    # item S1).
+    if not any(usd) and not any(wh):
+        log.info("figures_cost: all stages report zero usd/wh — skipping")
+        return None
+    fig, axes = plt.subplots(1, 2, figsize=(COL_DOUBLE, 0.4 * COL_DOUBLE))
     x = list(range(len(stages)))
     axes[0].bar([i - 0.18 for i in x], usd, width=0.35,
                 color=PALETTE[0], label="USD")
@@ -64,6 +73,7 @@ def render_cost(run_dir: Path) -> Path | None:
     axes[0].spines["top"].set_visible(False)
     ax2.spines["top"].set_visible(False)
     # Panel 2: cost-vs-F1 Pareto — one point per system label.
+    pareto_n = 0
     for i, system in enumerate(("donut", "pipeline", "rulebased")):
         f1 = float(metrics.get(f"{system}_f1", 0.0) or 0.0)
         cost = float(metrics.get(f"{system}_usd", 0.0) or 0.0)
@@ -71,9 +81,19 @@ def render_cost(run_dir: Path) -> Path | None:
             continue
         axes[1].scatter(cost, f1, s=64, color=PALETTE[i],
                         edgecolor="black", linewidth=0.4, label=system)
+        pareto_n += 1
     axes[1].set_xlabel("total USD")
     axes[1].set_ylabel("macro F1")
     axes[1].set_title("cost–quality Pareto")
     axes[1].grid(True, alpha=0.25, linewidth=0.4)
-    axes[1].legend(frameon=False, loc="lower right", fontsize=6)
+    if pareto_n:
+        axes[1].legend(frameon=False, loc="lower right", fontsize=6)
+    else:
+        # No (cost, F1) pair available — annotate the panel rather than
+        # ship blank axes spanning a meaningless [-0.04, 0.04] range.
+        axes[1].text(
+            0.5, 0.5, "no (cost, F1) pairs", ha="center", va="center",
+            transform=axes[1].transAxes, fontsize=7, color="gray",
+        )
+        axes[1].set_axis_off()
     return save_fig(fig, run_dir / "figures", "fig_cost")

@@ -115,26 +115,39 @@ def render_gpu_telemetry(results_dir: str, out_dir: str) -> str | None:
 
 
 def render_per_field_confusion(results_dir: str, out_dir: str) -> str | None:
-    """Stacked bar of per-field F1 per system (DONUT vs Pipeline)."""
+    """Side-by-side per-field F1 bars for DONUT vs Pipeline.
+
+    The Pipeline panel was previously rendered blank because
+    ``combined_metrics.json`` did not surface ``pipeline_f1_<field>``
+    keys (review item S4) — now produced by
+    :func:`report.combine.build_combined`.  All-zero data suppresses
+    the figure rather than shipping two empty axes.
+    """
     if not _HAS_MPL:
         warnings.warn("matplotlib unavailable — skipping confusion figure", stacklevel=2)
         return None
     data = _load_json(Path(results_dir) / "combined_metrics.json")
     if data is None:
-        log.info(
-            "combined_metrics.json not found in %s — skipping per-field confusion "
-            "(run: eval)", results_dir,
-        )
+        log.info("combined_metrics.json not found in %s — skipping", results_dir)
         return None
     fields = ["company", "date", "address", "total"]
-    systems = [("DONUT", "donut_f1"), ("Pipeline", "pipeline_f1")]
+    systems = [("DONUT", "donut_f1", "tab:blue"),
+               ("Pipeline", "pipeline_f1", "tab:orange")]
+    series = {n: [float(data.get(f"{p}_{f}", 0.0)) for f in fields]
+              for n, p, _ in systems}
+    if not any(v for vs in series.values() for v in vs):
+        log.info("per-field F1 keys all zero in %s — skipping", results_dir)
+        return None
     fig, axes = plt.subplots(1, 2, figsize=(9, 3.5), sharey=True)
-    for ax, (name, pfx) in zip(axes, systems, strict=False):
-        vals = [float(data.get(f"{pfx}_{f}", 0.0)) for f in fields]
-        ax.bar(fields, vals, color="tab:blue")
-        ax.set(title=name, ylim=(0, 1))
-        ax.set_ylabel("F1" if ax is axes[0] else "")
+    for ax, (name, _p, color) in zip(axes, systems, strict=False):
+        vals = series[name]
+        ax.bar(fields, vals, color=color)
+        for x, v in enumerate(vals):
+            ax.text(x, v + 0.02, f"{v:.3f}", ha="center", va="bottom", fontsize=7)
+        ax.set(title=name, ylim=(0, 1.05))
+        ax.set_ylabel("Per-field F1" if ax is axes[0] else "")
         ax.tick_params(axis="x", labelsize=7)
+        ax.yaxis.grid(True, alpha=0.3)
     fig.tight_layout()
     out = str(Path(out_dir) / "fig_per_field_confusion.pdf")
     fig.savefig(out, bbox_inches="tight")

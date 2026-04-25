@@ -56,6 +56,11 @@ def build_combined(
         "donut_f1_date": dm.per_field_f1.get("date", 0.0),
         "donut_f1_address": dm.per_field_f1.get("address", 0.0),
         "donut_f1_total": dm.per_field_f1.get("total", 0.0),
+        # Pipeline per-field F1 — Table IV row + Fig. 9 panel (S4, S8).
+        "pipeline_f1_company": pm.assigner.per_field_f1.get("company", 0.0),
+        "pipeline_f1_date": pm.assigner.per_field_f1.get("date", 0.0),
+        "pipeline_f1_address": pm.assigner.per_field_f1.get("address", 0.0),
+        "pipeline_f1_total": pm.assigner.per_field_f1.get("total", 0.0),
         "rulebased_f1_company": gtocr_rb.per_field_f1.get("company", 0.0),
         "rulebased_f1_date": gtocr_rb.per_field_f1.get("date", 0.0),
         "rulebased_f1_address": gtocr_rb.per_field_f1.get("address", 0.0),
