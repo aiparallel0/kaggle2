@@ -51,7 +51,7 @@ def _build_model(
     import torch
     from torch import nn
 
-    class _GATAssigner(nn.Module):  # type: ignore[misc]  # nn imported lazily → Any under --strict
+    class _GATAssigner(nn.Module):  # type: ignore[misc, unused-ignore]  # nn lazy-imported → Any when torch stubs absent
         def __init__(self) -> None:
             super().__init__()
             self.text_proj = nn.Linear(768, hidden)
