@@ -16,7 +16,7 @@
 #   4. make check  (mypy --strict + ruff — the kaggle2 test suite).
 #   5. Optionally runs any `make <target>` arguments you pass (in order).
 #
-# Available make targets you can chain after the update:
+# Available make targets you can pass as arguments to this script:
 #   all        — full train + eval + paper
 #   train      — training only
 #   eval       — evaluation only (needs a completed run)

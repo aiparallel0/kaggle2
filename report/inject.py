@@ -54,16 +54,22 @@ def _format_pvalue(value: float) -> str:
     a meaningless ``0.0000``.  Tiny values are printed as ``<10^{-k}`` so
     the McNemar test result is not silently contradicted by the bootstrap
     CI in the discussion (review item S5).
+
+    Returns raw math-mode content (no outer ``$...$``) because the only
+    template usage is ``$p=\\VAR{mcnemar_p}$`` in
+    ``report/sections/results.tex`` — already inside math mode.
+    Adding ``$...$`` here produces nested delimiters, causing
+    ``Missing $ inserted`` (tectonic/pdflatex error).
     """
     if value <= 0.0:
         # Numerical underflow / exact zero — IEEE 754 double precision is
         # ~1e-308; any p-value sufficiently small to round to literal 0.0
         # is far below the 1e-12 threshold typically reported in journals.
-        return "$<10^{-12}$"
+        return "<10^{-12}"
     if value < 1e-4:
-        # Scientific: e.g. 3.2e-05 → $3.2\times 10^{-5}$.
+        # Scientific: e.g. 3.2e-05 → 3.2\times 10^{-5} (no outer $).
         mantissa, exp = f"{value:.1e}".split("e")
-        return f"${mantissa}\\times 10^{{{int(exp)}}}$"
+        return f"{mantissa}\\times 10^{{{int(exp)}}}"
     return f"{value:.4f}"
 
 
