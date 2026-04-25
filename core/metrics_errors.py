@@ -1,10 +1,10 @@
-"""Seven-category miss classification for per-sample error analysis.
+"""Eight-category miss classification for per-sample error analysis.
 
 Project: kaggle2 — End-to-End vs. Pipeline Receipt KIE on SROIE.
-Role: classify each wrong-or-missing prediction into one of seven
-    disjoint categories so the paper's Table II and the stacked-bar
-    figure in :mod:`report.figures_errors` can decompose *why* a model
-    loses points:
+Role: classify each wrong-or-missing prediction into one of eight
+    disjoint error categories (plus ``correct``) so the paper's
+    Table II and the stacked-bar figure in :mod:`report.figures_errors`
+    can decompose *why* a model loses points:
 
     * ``missed_detection`` — pipeline: YOLO saw no box for the field.
     * ``ocr_error``        — pipeline: YOLO found a box, TrOCR produced wrong text.

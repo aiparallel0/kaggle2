@@ -82,8 +82,11 @@ def render_errors(run_dir: Path) -> Path | None:
     models = sorted({m for (m, _) in counts})
     if not models:
         return None
-    fig, axes = plt.subplots(2, 2, figsize=(COL_DOUBLE, 0.55 * COL_DOUBLE))
-    for ax, field in zip(axes.flat, _FIELDS, strict=True):
+    fig, axes = plt.subplots(
+        2, 2, figsize=(COL_DOUBLE, 0.75 * COL_DOUBLE),
+        constrained_layout=True,
+    )
+    for idx, (ax, field) in enumerate(zip(axes.flat, _FIELDS, strict=True)):
         bottom = [0.0] * len(models)
         for ci, cat in enumerate(_CATEGORIES):
             vals = [float(counts.get((m, field), {}).get(cat, 0)) for m in models]
@@ -92,12 +95,14 @@ def render_errors(run_dir: Path) -> Path | None:
                    edgecolor="black", linewidth=0.3)
             bottom = [b + v for b, v in zip(bottom, vals, strict=True)]
         ax.set_title(field)
-        ax.tick_params(axis="x", labelrotation=20)
-    # Single shared legend at the top.
+        if idx % 2 == 0:
+            ax.set_ylabel("count")
+    # Single shared legend + suptitle, anchored via constrained_layout so
+    # they never collide with subplot titles or x-tick labels.
     handles, labels = axes[0, 0].get_legend_handles_labels()
+    fig.suptitle("Error-type decomposition per field per model")
     fig.legend(
-        handles, labels, loc="upper center", ncol=5, fontsize=6,
-        frameon=False, bbox_to_anchor=(0.5, 1.05),
+        handles, labels, loc="outside upper center", ncol=5, fontsize=6,
+        frameon=False,
     )
-    fig.suptitle("Error-type decomposition per field per model", y=1.10)
     return save_fig(fig, run_dir / "figures", "fig_errors")
