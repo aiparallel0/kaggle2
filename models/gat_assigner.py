@@ -15,7 +15,7 @@ dependency on :mod:`core.types`.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 if TYPE_CHECKING:
     import torch
@@ -51,7 +51,7 @@ def _build_model(
     import torch
     from torch import nn
 
-    class _GATAssigner(nn.Module):  # type: ignore[misc]
+    class _GATAssigner(nn.Module):
         def __init__(self) -> None:
             super().__init__()
             self.text_proj = nn.Linear(768, hidden)
@@ -98,9 +98,9 @@ def gat_assign(feats: AssignerInput, config: object) -> FieldAssignment:
     except ImportError:  # pragma: no cover — torch optional
         return FieldAssignment(values={f: "" for f in feats.fields}, attn=None)
     n_text_priors = int(feats.priors.shape[-1]) if feats.priors.ndim > 0 else 1
-    model: nn.Module = _build_model(
+    model: nn.Module = cast(nn.Module, _build_model(
         _HIDDEN, _N_HEADS, n_text_priors, len(feats.fields),
-    )
+    ))
     model.eval()
     with torch.no_grad():
         text_b = feats.text_feats.unsqueeze(0)
