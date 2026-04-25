@@ -201,9 +201,9 @@ def stage_eval(config: ExpConfig, seeds: list[int] | None = None) -> None:
     for seed in run_seeds:
         if len(run_seeds) > 1:
             log.info("--- Eval seed=%d ---", seed)
+        seed_everything(seed)
         dm, dp = _eval_donut_or_skip(config, data)
         log.info("DONUT F1=%.4f", dm.global_f1)
-        seed_everything(seed)
         pm = eval_pipeline(config, data.test)
         validate_f1(pm.assigner, "pipeline",
                     os.path.join(config.output_dir, "pipeline_metrics.json"))
