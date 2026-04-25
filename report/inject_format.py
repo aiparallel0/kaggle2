@@ -31,6 +31,11 @@ import re
 
 log = logging.getLogger("kaggle2")
 
+# Match ``\VAR{key:directive}`` where the directive name can contain
+# lowercase letters, digits, and underscores.  Underscores were added
+# in v4 so composite directives like ``mean_std_pct1`` parse —
+# previously the regex was ``[a-z0-9]+`` which silently fell through to
+# the unresolved-VAR audit on any directive containing ``_``.
 _VAR_RE = re.compile(r"\\VAR\{([A-Za-z_][A-Za-z0-9_]*):([a-z0-9_]+)\}")
 
 

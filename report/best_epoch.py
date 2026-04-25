@@ -97,8 +97,14 @@ def _read_yolo_best(run_dir: Path) -> tuple[int | None, int | None]:
         range(len(rows)),
         key=lambda i: (_f(rows[i].get(metric_key, "nan")), -i),
     )
+    # Ultralytics' ``results.csv`` is 0-indexed (epoch column starts at
+    # 0).  Papers and Ultralytics' own console output / ``best.pt``
+    # filename use 1-indexed epoch numbers, so we add 1 here to match
+    # the convention reviewers see in the rest of the paper.  Falling
+    # back to ``best_idx + 1`` (the row position) covers the rare case
+    # where the epoch column is non-numeric / missing.
     try:
-        best = int(float(rows[best_idx][epoch_key])) + 1  # 1-indexed for paper
+        best = int(float(rows[best_idx][epoch_key])) + 1
     except (TypeError, ValueError):
         best = best_idx + 1
     return best, len(rows)
