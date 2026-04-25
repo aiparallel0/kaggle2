@@ -4,19 +4,23 @@
 # WITHOUT wiping the workspace or re-cloning.
 #
 # Usage (from inside the cloned repo on the vast.ai instance):
-#   bash scripts/vastai_update.sh
+#   bash scripts/vastai_update.sh                 # update + make check only
+#   bash scripts/vastai_update.sh paper           # … then run `make paper`
+#   bash scripts/vastai_update.sh all             # … then run `make all` (full pipeline)
+#   bash scripts/vastai_update.sh train eval paper
 #
 # What it does:
 #   1. Sanity-checks you are inside the kaggle2 repo.
 #   2. git pull --rebase (fast-forward; aborts cleanly if you have local edits).
 #   3. pip install -r requirements.txt  (picks up any new/changed deps).
 #   4. make check  (mypy --strict + ruff — the kaggle2 test suite).
+#   5. Optionally runs any `make <target>` arguments you pass (in order).
 #
-# After it completes, run:
-#   make all        — full train + eval + paper
-#   make train      — training only
-#   make eval       — evaluation only (needs a completed run)
-#   make paper      — paper generation only
+# Available make targets you can pass as arguments to this script:
+#   all        — full train + eval + paper
+#   train      — training only
+#   eval       — evaluation only (needs a completed run)
+#   paper      — paper generation only
 #
 # Tip: if you have local edits you want to keep, stash them first:
 #   git stash && bash scripts/vastai_update.sh && git stash pop
@@ -80,6 +84,14 @@ fi
 # ── 5. Static checks ─────────────────────────────────────────────────────────
 log "Running static checks (mypy --strict + ruff)…"
 make check
+
+# ── 6. Optional: chain make targets passed as arguments ──────────────────────
+if [ "$#" -gt 0 ]; then
+    for target in "$@"; do
+        log "Running: make $target"
+        make "$target"
+    done
+fi
 
 log ""
 log "Update complete. Ready to run:"
