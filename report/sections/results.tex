@@ -37,8 +37,11 @@ Rule-based (GT-OCR stream) & \VAR{rulebased_f1_company} & \VAR{rulebased_f1_date
 On the 63-image test split DONUT and the pipeline are statistically
 indistinguishable ($\Delta$F1 $=$ \VAR{f1_gap}; the paired McNemar
 exact test on per-image correctness gives $p=\VAR{mcnemar_p}$ and
-the paired-bootstrap 95\% CI on $\Delta$F1 straddles zero, so the
-sign of the gap is not resolved at $n{=}63$).  The pipeline's learned
+the paired-bootstrap 95\% CI on $\Delta$F1 is
+$[\VAR{delta_f1_ci_lo},\,\VAR{delta_f1_ci_hi}]$, with the pipeline's
+own per-image macro-F1 lying in
+$[\VAR{pipeline_bootstrap_ci_lo},\,\VAR{pipeline_bootstrap_ci_hi}]$
+at the same confidence level).  The pipeline's learned
 attention assigner improves over rule-based assignment on the same
 YOLO+TrOCR features by \VAR{assigner_delta} F1 absolute, confirming
 that the cross-attention module captures spatial and lexical cues

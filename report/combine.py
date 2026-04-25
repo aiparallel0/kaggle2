@@ -91,9 +91,19 @@ def build_combined(
         "bootstrap_n_iter": config.bootstrap_n_iter,
         "bootstrap_ci_level": config.bootstrap_ci_level,
         # Per-image correctness vectors (all-fields EM per receipt):
-        # consumed by stages/eval.py for bootstrap CI and McNemar's test.
+        # consumed by stages/eval.py for the McNemar test and the
+        # ``*_em_*`` paired-bootstrap CIs.
         "donut_per_image_correct": list(dm.per_image_correct),
         "pipeline_per_image_correct": list(pm.assigner.per_image_correct),
+        # Per-image macro-F1 vectors (mean of per-field token-F1):
+        # consumed by stages/eval.py for the headline ``pipeline_bootstrap_ci_*``
+        # and ``delta_f1_ci_*`` keys.  Computed per receipt so the CI
+        # tracks the headline F1 metric directly — the all-fields-EM
+        # vector is degenerate whenever no receipt has every field
+        # correct simultaneously, which produced the zero-width
+        # ``pipeline_bootstrap_ci_*`` keys in earlier runs.
+        "donut_per_image_f1": list(dm.per_image_f1),
+        "pipeline_per_image_f1": list(pm.assigner.per_image_f1),
     }
 
 

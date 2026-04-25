@@ -47,6 +47,12 @@ LIGHT_MAX_BYTES="${LIGHT_MAX_BYTES:-1048576}"
 # Whole-directory excludes in --light mode (HF safetensors, YOLO weights
 # + dataset mirror).  Kept grouped so tar's --exclude-from stays readable.
 HEAVY_DIRS=("donut" "trocr" "yolo/run" "yolo_data")
+# Always-exclude patterns (both --light and --full): editor / notebook
+# scratch directories that occasionally land inside a run dir and add
+# nothing to reviewer artefacts.  Matched against tar's per-entry path
+# so a nested ``figures/.ipynb_checkpoints/`` is dropped just like a
+# top-level one.
+ALWAYS_EXCLUDE_GLOBS=(".ipynb_checkpoints" "*/.ipynb_checkpoints" "*/.ipynb_checkpoints/*")
 
 log() { printf "\033[1;36m[pack]\033[0m %s\n" "$*" >&2; }
 
@@ -126,6 +132,11 @@ else
 fi
 
 TAR_EXCLUDE=(--exclude-from="$EXCLUDE_FROM")
+# .ipynb_checkpoints/ scratch dirs are dropped from every archive
+# (review issue 9: notebook checkpoints landing in MANIFEST).
+for pat in "${ALWAYS_EXCLUDE_GLOBS[@]}"; do
+    TAR_EXCLUDE+=(--exclude="$pat")
+done
 
 if command -v zstd >/dev/null 2>&1; then
     ARCHIVE="$OUT_DIR/${RUN_ID}.tar.zst"

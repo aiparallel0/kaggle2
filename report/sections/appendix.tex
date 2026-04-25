@@ -38,6 +38,13 @@ Baseline (GT-OCR stream) F1 $=\VAR{gtocr_rulebased_f1}$,
 NED $=\VAR{gtocr_rulebased_ned}$, EM $=\VAR{gtocr_rulebased_em}$;
 $\Delta$F1 $=\VAR{f1_gap}$ (DONUT minus pipeline);
 learned-vs-rule $\Delta$F1 $=\VAR{assigner_delta}$.
+Paired-bootstrap CIs at \VAR{bootstrap_ci_level} confidence over
+\VAR{bootstrap_n_iter} resamples: per-image macro-F1
+$\Delta$F1 $\in [\VAR{delta_f1_ci_lo},\,\VAR{delta_f1_ci_hi}]$;
+all-fields-EM $\Delta$EM
+$\in [\VAR{delta_em_ci_lo},\,\VAR{delta_em_ci_hi}]$
+(both vectors of length $n=63$ are persisted alongside
+\texttt{combined\_metrics.json} for reviewer audit).
 The four-decimal numbers are persisted to
 \texttt{results/combined\_metrics.json}; mean/std/CI fields are
 populated automatically when \texttt{n\_trials}$\ge 2$.

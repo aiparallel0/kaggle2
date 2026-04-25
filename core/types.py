@@ -49,6 +49,11 @@ class Metrics:
     per_field_ned: dict[str, float]
     per_field_em: dict[str, float]
     per_image_correct: list[bool] = field(default_factory=list)
+    # Per-image *macro* F1 (mean of per-field token F1 for the receipt) —
+    # the right vector for bootstrap CIs on the headline F1 metric.
+    # Defaults to [] for back-compat with legacy constructions that
+    # only populate the all-fields-EM vector above.
+    per_image_f1: list[float] = field(default_factory=list)
 
 
 @dataclass

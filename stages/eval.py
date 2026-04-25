@@ -227,30 +227,60 @@ def stage_eval(config: ExpConfig, seeds: list[int] | None = None) -> None:
     _aggregate_seed_variance(donut_f1s, "donut_f1", last)
     _aggregate_seed_variance(pipeline_f1s, "pipeline_f1", last)
     _aggregate_seed_variance(gtocr_rulebased_f1s, "gtocr_rulebased_f1", last)
-    # Per-image bootstrap CI + paired McNemar: uses the last run's per-image
-    # all-fields-EM correctness vectors (populated by compute_metrics via
-    # build_combined). Paired test is valid because DONUT and pipeline are
-    # evaluated on the same 63 test images in fixed order.
+    # Per-image bootstrap CI + paired McNemar: uses the last run's
+    # per-image vectors populated by ``compute_metrics`` via
+    # ``build_combined``.  The McNemar test runs on the binary
+    # all-fields-EM vector (``per_image_correct``) — that's the right
+    # signal for "did this image change between systems".  The
+    # bootstrap CI on the headline F1 metric uses the per-image
+    # macro-F1 vector (``per_image_f1``); the all-fields-EM vector is
+    # degenerate (every entry zero) whenever no receipt has every
+    # field correct simultaneously, which produced the zero-width
+    # ``pipeline_bootstrap_ci_*`` keys in earlier runs.  The
+    # all-fields-EM-based CI is still emitted under ``*_em_*`` keys so
+    # the paper can quote both quantities without ambiguity.  Paired
+    # tests are valid because DONUT and pipeline are evaluated on the
+    # same 63 test images in fixed order.
     d_raw = last.get("donut_per_image_correct")
     p_raw = last.get("pipeline_per_image_correct")
     d_vec = [bool(x) for x in d_raw] if isinstance(d_raw, list) else []
     p_vec = [bool(x) for x in p_raw] if isinstance(p_raw, list) else []
-    if p_vec:
+    d_f1_raw = last.get("donut_per_image_f1")
+    p_f1_raw = last.get("pipeline_per_image_f1")
+    d_f1_vec = [float(x) for x in d_f1_raw] if isinstance(d_f1_raw, list) else []
+    p_f1_vec = [float(x) for x in p_f1_raw] if isinstance(p_f1_raw, list) else []
+    if p_f1_vec:
         lo, hi = bootstrap_ci(
-            p_vec,
+            p_f1_vec,
             n_iter=config.bootstrap_n_iter,
             ci_level=config.bootstrap_ci_level,
         )
         last["pipeline_bootstrap_ci_lo"] = round(lo, 4)
         last["pipeline_bootstrap_ci_hi"] = round(hi, 4)
-    if d_vec and p_vec and len(d_vec) == len(p_vec):
+    if p_vec:
+        em_lo, em_hi = bootstrap_ci(
+            p_vec,
+            n_iter=config.bootstrap_n_iter,
+            ci_level=config.bootstrap_ci_level,
+        )
+        last["pipeline_em_bootstrap_ci_lo"] = round(em_lo, 4)
+        last["pipeline_em_bootstrap_ci_hi"] = round(em_hi, 4)
+    if d_f1_vec and p_f1_vec and len(d_f1_vec) == len(p_f1_vec):
         _, ci_lo, ci_hi = paired_bootstrap_delta_ci(
-            d_vec, p_vec,
+            d_f1_vec, p_f1_vec,
             n_iter=config.bootstrap_n_iter,
             ci_level=config.bootstrap_ci_level,
         )
         last["delta_f1_ci_lo"] = round(ci_lo, 4)
         last["delta_f1_ci_hi"] = round(ci_hi, 4)
+    if d_vec and p_vec and len(d_vec) == len(p_vec):
+        _, em_ci_lo, em_ci_hi = paired_bootstrap_delta_ci(
+            d_vec, p_vec,
+            n_iter=config.bootstrap_n_iter,
+            ci_level=config.bootstrap_ci_level,
+        )
+        last["delta_em_ci_lo"] = round(em_ci_lo, 4)
+        last["delta_em_ci_hi"] = round(em_ci_hi, 4)
         # Full-precision float: ``report.inject._format_pvalue`` handles
         # rendering (``p=3e-5`` → ``$3.0\times 10^{-5}$`` not ``0.0000``).
         last["mcnemar_p"] = float(mcnemar(d_vec, p_vec))
