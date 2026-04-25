@@ -207,3 +207,38 @@ def test_training_table_resolves_per_stage_best_epochs() -> None:
     assert "see sub-stages" in out
     # No silent em-dashes anywhere.
     assert "---" not in out
+
+
+def test_mean_std_directive_renders_pm() -> None:
+    """v4 inject directive: ``mean_std_pct1`` renders ``X ± Y``."""
+    from report.inject import inject_results
+    template = "F1 = \\VAR{donut_f1:mean_std_pct1}"
+    out = inject_results(template, {"donut_f1_mean": 0.852, "donut_f1_std": 0.007})
+    assert "85.2\\%" in out
+    assert "\\pm" in out
+    assert "0.7\\%" in out
+
+
+def test_mean_std_directive_collapses_when_std_zero() -> None:
+    """When the std is zero (n=1 run), the mean alone is rendered.
+
+    Single-seed runs do not have inter-seed variance to report; the
+    directive degrades gracefully so n=1 PDFs read naturally instead
+    of always carrying a meaningless ``± 0.0\\%`` tail.
+    """
+    from report.inject import inject_results
+    template = "F1 = \\VAR{donut_f1:mean_std_pct1}"
+    out = inject_results(template, {"donut_f1_mean": 0.852, "donut_f1_std": 0.0})
+    assert "85.2\\%" in out
+    assert "\\pm" not in out
+
+
+def test_mean_std_directive_unresolved_when_mean_missing() -> None:
+    """Missing ``<key>_mean`` triggers the standard unresolved-VAR audit."""
+    from report.inject import collect_unresolved
+    template = "F1 = \\VAR{donut_f1:mean_std_pct1}"
+    # The key the audit reports is the bare ``donut_f1`` since that's what
+    # the template asked for; downstream code can pattern-match the
+    # directive to find ``donut_f1_mean`` if needed.
+    unresolved = collect_unresolved(template, {})
+    assert any("donut_f1" in u for u in unresolved)

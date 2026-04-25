@@ -101,6 +101,34 @@ exactly what the run measured, with no placeholder floats.
 \begin{figure*}[t]
 \centering
 \includegraphics[width=\textwidth]{figures/fig_samples.pdf}
-\caption{Qualitative samples: 12 receipts, GT vs.\ DONUT vs.\ Pipeline.}
+\caption{Qualitative samples — curated 2$\times$2 outcome buckets:
+         (a) both correct, (b) DONUT correct only, (c) Pipeline
+         correct only, (d) both fail.  GT, DONUT, and Pipeline JSON
+         are rendered in 9-pt black monospace below each receipt
+         thumbnail; each line that fails the GT match is
+         individually recoloured red and tagged with an
+         ``$\times$'' glyph so reviewers can see at a glance which
+         sub-field was responsible.  IDs come from
+         \texttt{config.qualitative\_sample\_ids} when set, otherwise
+         we auto-curate one example per bucket on a deterministic
+         sorted-id traversal.  Cells with no candidate of the
+         designated outcome render an honest ``no candidate'' grey
+         placeholder rather than fabricated data.  See
+         Fig.~\ref{fig:samples_full} for the supplementary
+         9-receipt full grid.}
 \label{fig:samples}
+\end{figure*}}
+
+\iffigurefile{figures/fig_samples_full.pdf}{%
+\begin{figure*}[t]
+\centering
+\includegraphics[width=\textwidth]{figures/fig_samples_full.pdf}
+\caption{Supplementary qualitative grid — first nine test receipts
+         in sorted-id order (or four when matplotlib is text-only).
+         Same JSON-comparison conventions as
+         Fig.~\ref{fig:samples}, smaller font.  Preserved from v3
+         per the ``no figure deleted'' policy; the curated 4-cell
+         grid in Fig.~\ref{fig:samples} is the headline view
+         reviewers should consult first.}
+\label{fig:samples_full}
 \end{figure*}}

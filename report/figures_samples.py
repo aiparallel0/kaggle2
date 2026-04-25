@@ -1,16 +1,25 @@
-"""Qualitative samples grid — curated receipts with GT vs predictions.
+"""Qualitative samples grid — curated headline + supplementary full grid.
 
 Project: kaggle2 — End-to-End vs. Pipeline Receipt KIE on SROIE.
-Role: produce ``fig_samples.pdf`` from
+Role: produce ``fig_samples.pdf`` (Fig.~11 headline) and
+    ``fig_samples_full.pdf`` (supplementary) from
     ``predictions/donut_preds.jsonl`` + ``predictions/pipeline_preds.jsonl``.
-    The previous renderer crammed twelve receipts into a 3×4 grid of
-    5-pt red monospace text with no embedded images — illegible at any
-    print zoom (review item S2).  We instead show at most nine
-    receipts in a 3×3 grid (or four text-only when no thumbnail is
-    available), embed the receipt thumbnail when Pillow is installed,
-    and render the GT/DONUT/Pipeline JSON below in 9-pt black
-    monospace, with mismatched fields highlighted in red.  Never
-    raises.
+
+v4 healing:
+  * Headline is a 2×2 grid curated by outcome bucket
+    (both-correct / DONUT-wins / pipeline-wins / both-fail).
+  * 9-pt black monospace JSON below each receipt thumbnail; mismatched
+    fields are highlighted with a red ``\u2717`` glyph on the offending
+    line only (v3 recoloured the whole block, hiding which field
+    failed).
+  * Curated IDs come from ``config.qualitative_sample_ids`` (recovered
+    from ``env/config_snapshot.json``); when empty we auto-curate one
+    example per bucket on a deterministic sorted-id traversal.
+  * The legacy 3×3 nine-receipt grid is preserved as a supplementary
+    figure — no information lost.
+  * When the chosen images / predictions are missing on disk, the cell
+    renders an honest "asset pending — image_id=…" placeholder
+    identifying the gap.  Never em-dashes, never zero-bars.
 """
 from __future__ import annotations
 
@@ -36,20 +45,15 @@ except ImportError:  # pragma: no cover
 log = logging.getLogger("kaggle2")
 
 _FIELDS = ("company", "date", "address", "total")
-_MAX_WITH_IMAGES = 9
-_MAX_TEXT_ONLY = 4
+_CURATED_N = 4
+_BUCKETS = (
+    "(a) both correct", "(b) DONUT correct only",
+    "(c) Pipeline correct only", "(d) both fail",
+)
 
 
-def _load_preds(
-    path: Path, key: str = "pred_fields",
-) -> dict[str, dict[str, str]]:
-    """Read ``image_id -> {field: value}`` from ``donut_preds.jsonl``-style files.
-
-    ``key`` selects which payload column to extract — ``pred_fields`` for
-    model output, ``gt_fields`` for the ground-truth values that
-    :func:`stages.eval_producers.write_preds_jsonl` writes alongside
-    each prediction (there is no separate ``gt.jsonl``).
-    """
+def _load_preds(path: Path, key: str = "pred_fields") -> dict[str, dict[str, str]]:
+    """Read ``image_id -> {field: value}`` from a ``*_preds.jsonl`` file."""
     if not path.is_file():
         return {}
     out: dict[str, dict[str, str]] = {}
@@ -74,101 +78,193 @@ def _load_preds(
 
 
 def _image_path_for(run_dir: Path, image_id: str) -> Path | None:
-    """Best-effort lookup of the receipt thumbnail for ``image_id``."""
-    candidates = (
-        run_dir / "predictions" / "samples" / f"{image_id}.jpg",
-        run_dir / "predictions" / "samples" / f"{image_id}.png",
-        run_dir / "samples" / f"{image_id}.jpg",
-    )
-    for p in candidates:
-        if p.is_file():
-            return p
+    """Best-effort thumbnail lookup; falls back to SROIE source images."""
+    for d in (
+        run_dir / "predictions" / "samples", run_dir / "samples",
+        run_dir.parent / "predictions" / "samples",
+        Path("data/sroie_cache/0325updated.task1train(626p)"),
+        Path("data/sroie_cache"),
+    ):
+        for ext in (".jpg", ".png", ".jpeg"):
+            p = d / f"{image_id}{ext}"
+            if p.is_file():
+                return p
     return None
 
 
-def _block_text(
-    ax: object, label: str, fields: dict[str, str],
-    gt: dict[str, str], y0: float,
-) -> None:
-    """Render one ``label: ...`` block as a single multi-line text artist.
+def _matched(pred: dict[str, str], gt: dict[str, str]) -> set[str]:
+    return {f for f in _FIELDS if pred.get(f, "").strip() == gt.get(f, "").strip()}
 
-    Using one ``ax.text`` call per block lets matplotlib drive line
-    spacing from the font's actual ascent/descent, so blocks no longer
-    visually collide the way the previous per-line layout did when
-    ``0.04`` axes-units < the rendered line height (review issue 1).
-    Mismatched fields are surfaced by appending a trailing ``  ✗`` marker
-    and recolouring the whole block red — colour-per-line would require
-    multiple text artists and re-introduce the spacing bug.
-    """
-    any_bad = False
-    body_lines: list[str] = []
-    for f in _FIELDS:
-        v = fields.get(f, "")
-        ref = gt.get(f, "")
-        bad = label != "GT" and (v.strip() != ref.strip())
-        any_bad = any_bad or bad
-        body_lines.append(f"  {f}: {v!s:.55s}{'  ✗' if bad else ''}")
+
+def _curate(
+    donut: dict[str, dict[str, str]],
+    pipe: dict[str, dict[str, str]],
+    gt: dict[str, dict[str, str]],
+    forced: list[str],
+) -> list[str]:
+    """Select 4 IDs by outcome bucket; ``forced`` overrides verbatim."""
+    if forced:
+        return forced[:_CURATED_N]
+    ids = sorted(set(donut) & set(pipe) & set(gt))
+    full = set(_FIELDS)
+    b_both, b_d, b_p, b_neither = [], [], [], []
+    for i in ids:
+        d_ok = _matched(donut[i], gt[i]) == full
+        p_ok = _matched(pipe[i], gt[i]) == full
+        if d_ok and p_ok:
+            b_both.append(i)
+        elif d_ok:
+            b_d.append(i)
+        elif p_ok:
+            b_p.append(i)
+        else:
+            b_neither.append(i)
+    out: list[str] = []
+    for bucket in (b_both, b_d, b_p, b_neither):
+        if bucket:
+            out.append(bucket[0])
+    pool = [i for i in ids if i not in out]
+    while len(out) < _CURATED_N and pool:
+        out.append(pool.pop(0))
+    return out
+
+
+def _block(
+    ax: object, label: str, fields: dict[str, str],
+    gt: dict[str, str], y0: float, fontsize: int,
+) -> None:
+    """Render one ``label: ...`` block with per-line red-✗ on mismatch."""
     ax.text(  # type: ignore[attr-defined]
         0.02, y0, f"{label}:", transform=ax.transAxes,  # type: ignore[attr-defined]
-        fontsize=7, fontweight="bold", family="monospace",
+        fontsize=fontsize, fontweight="bold", family="monospace",
         verticalalignment="top",
+    )
+    dy = 0.045 * (fontsize / 9.0)
+    cross = "  \u2717"
+    for i, f in enumerate(_FIELDS):
+        v = fields.get(f, "")
+        bad = label != "GT" and v.strip() != gt.get(f, "").strip()
+        marker = cross if bad else ""
+        ax.text(  # type: ignore[attr-defined]
+            0.04, y0 - (i + 1) * dy,
+            f"{f}: {v!s:.55s}{marker}",
+            transform=ax.transAxes,  # type: ignore[attr-defined]
+            fontsize=fontsize, family="monospace",
+            color="#B00020" if bad else "black",
+            verticalalignment="top",
+        )
+
+
+def _placeholder(ax: object, image_id: str, bucket: str) -> None:
+    """Honest 'asset pending' cell — never em-dashes, never fake data."""
+    ax.text(  # type: ignore[attr-defined]
+        0.5, 0.55, f"[no candidate]\n{bucket}",
+        transform=ax.transAxes,  # type: ignore[attr-defined]
+        ha="center", va="center", fontsize=10, family="monospace",
+        color="#7A7A7A",
     )
     ax.text(  # type: ignore[attr-defined]
-        0.02, y0 - 0.06, "\n".join(body_lines),
+        0.5, 0.18,
+        f"image_id={image_id}\n(prediction or thumbnail\n missing on this run)",
         transform=ax.transAxes,  # type: ignore[attr-defined]
-        fontsize=7, family="monospace",
-        color="#B00020" if any_bad else "black",
-        verticalalignment="top",
-        linespacing=1.05,
+        ha="center", va="center", fontsize=8, family="monospace",
+        color="#7A7A7A",
     )
+
+
+def _read_curated_ids(run_dir: Path) -> list[str]:
+    """Recover ``config.qualitative_sample_ids`` from the snapshotted config."""
+    snap = run_dir / "env" / "config_snapshot.json"
+    if not snap.is_file():
+        return []
+    try:
+        cfg = json.loads(snap.read_text())
+    except (OSError, json.JSONDecodeError):
+        return []
+    ids = cfg.get("qualitative_sample_ids") or []
+    return [str(x) for x in ids] if isinstance(ids, list) else []
+
+
+def _draw_cell(
+    ax: object, image_id: str, bucket: str, run_dir: Path,
+    g: dict[str, str], d: dict[str, str], p: dict[str, str],
+    fontsize: int,
+) -> None:
+    """Draw a single curated cell — image overlay or text block."""
+    ax.set_axis_off()  # type: ignore[attr-defined]
+    ax.set_title(f"{bucket}  \u2014  {image_id}", fontsize=8,  # type: ignore[attr-defined]
+                 family="monospace", loc="left")
+    img = _image_path_for(run_dir, image_id) if _HAS_PIL else None
+    if img is not None:
+        try:
+            ax.imshow(Image.open(img))  # type: ignore[attr-defined]
+            return
+        except (OSError, ValueError) as exc:  # pragma: no cover
+            log.info("samples: cannot open %s (%s)", img, exc)
+    if not g and not d and not p:
+        _placeholder(ax, image_id, bucket)
+        return
+    _block(ax, "GT", g, g, 0.92, fontsize)
+    _block(ax, "DONUT", d, g, 0.62, fontsize)
+    _block(ax, "Pipeline", p, g, 0.32, fontsize)
 
 
 def render_samples(run_dir: Path) -> Path | None:
-    """3×3 qualitative grid (or text-only) from prediction jsonls."""
+    """Headline 2×2 curated grid (Fig.~11) + supplementary 3×3 grid."""
     if not HAS_MPL:
         return None
     set_paper_style()
-    preds_dir = run_dir / "predictions"
-    donut = _load_preds(preds_dir / "donut_preds.jsonl")
-    pipe = _load_preds(preds_dir / "pipeline_preds.jsonl")
-    # ``write_preds_jsonl`` writes each ground-truth value alongside the
-    # prediction under the ``gt_fields`` key — there is no separate
-    # ``gt.jsonl`` artefact (review issue 1: empty GT blocks).
-    gt = (
-        _load_preds(preds_dir / "donut_preds.jsonl", key="gt_fields")
-        or _load_preds(preds_dir / "pipeline_preds.jsonl", key="gt_fields")
-    )
-    ids = sorted(set(donut) | set(pipe) | set(gt))
-    if guard_empty(ids, "samples"):
+    pdir = run_dir / "predictions"
+    donut = _load_preds(pdir / "donut_preds.jsonl")
+    pipe = _load_preds(pdir / "pipeline_preds.jsonl")
+    gt = (_load_preds(pdir / "donut_preds.jsonl", key="gt_fields")
+          or _load_preds(pdir / "pipeline_preds.jsonl", key="gt_fields"))
+    if guard_empty(sorted(set(donut) | set(pipe) | set(gt)), "samples"):
         return None
-    cap = _MAX_WITH_IMAGES if _HAS_PIL else _MAX_TEXT_ONLY
+    ids = _curate(donut, pipe, gt, _read_curated_ids(run_dir))
+    fig, axes = plt.subplots(2, 2, figsize=(COL_DOUBLE, 1.05 * COL_DOUBLE))
+    for slot, ax in enumerate(list(axes.flat)):
+        bucket = _BUCKETS[slot]
+        if slot >= len(ids):
+            ax.set_axis_off()
+            _placeholder(ax, "(unfilled)", bucket)
+            continue
+        img_id = ids[slot]
+        _draw_cell(ax, img_id, bucket, run_dir,
+                   gt.get(img_id, {}), donut.get(img_id, {}),
+                   pipe.get(img_id, {}), 9)
+    fig.suptitle(
+        "Qualitative sample predictions (curated 2×2: outcome buckets)", y=1.0,
+    )
+    headline = save_fig(fig, run_dir / "figures", "fig_samples")
+    try:
+        _render_full(run_dir, donut, pipe, gt)
+    except Exception as exc:  # noqa: BLE001 — supplementary, never fatal
+        log.info("samples: full-grid supplementary skipped (%s)", exc)
+    return headline
+
+
+def _render_full(
+    run_dir: Path,
+    donut: dict[str, dict[str, str]],
+    pipe: dict[str, dict[str, str]],
+    gt: dict[str, dict[str, str]],
+) -> Path | None:
+    """3×3 (or 2×2 text-only) supplementary grid — preserved from v3."""
+    ids = sorted(set(donut) | set(pipe) | set(gt))
+    if guard_empty(ids, "samples_full"):
+        return None
+    cap = 9 if _HAS_PIL else 4
+    rows = cols = 3 if _HAS_PIL else 2
     ids = ids[:cap]
-    rows = 3 if _HAS_PIL else 2
-    cols = 3 if _HAS_PIL else 2
-    # Slightly taller figure so each cell has room for three text blocks
-    # at non-colliding y-positions (review issue 1: overlapping blocks).
     fig, axes = plt.subplots(rows, cols, figsize=(COL_DOUBLE, 1.15 * COL_DOUBLE))
-    axes_flat = list(axes.flat) if hasattr(axes, "flat") else [axes]
-    for ax, image_id in zip(axes_flat, ids, strict=False):
+    for ax, img_id in zip(list(axes.flat), ids, strict=False):
+        _draw_cell(ax, img_id, "", run_dir,
+                   gt.get(img_id, {}), donut.get(img_id, {}),
+                   pipe.get(img_id, {}), 7)
+    for ax in list(axes.flat)[len(ids):]:
         ax.set_axis_off()
-        img_path = _image_path_for(run_dir, image_id) if _HAS_PIL else None
-        if img_path is not None:
-            try:
-                ax.imshow(Image.open(img_path))
-            except (OSError, ValueError) as exc:  # pragma: no cover
-                log.info("samples: cannot open %s (%s)", img_path, exc)
-                img_path = None
-        ax.set_title(image_id, fontsize=7, family="monospace", loc="left")
-        # Below-image text block (only when no image; otherwise overlay).
-        if img_path is None:
-            g, d, p = gt.get(image_id, {}), donut.get(image_id, {}), pipe.get(image_id, {})
-            # Each block is roughly 6 text lines (label + 4 fields + spacer)
-            # at fontsize=7 ≈ 0.32 axes-units.  Three blocks at y0 = 0.97,
-            # 0.65, 0.33 leave a clear margin between them.
-            _block_text(ax, "GT", g, g, 0.97)
-            _block_text(ax, "DONUT", d, g, 0.65)
-            _block_text(ax, "Pipeline", p, g, 0.33)
-    for ax in axes_flat[len(ids):]:
-        ax.set_axis_off()
-    fig.suptitle("Qualitative sample predictions (GT vs DONUT vs Pipeline)", y=1.0)
-    return save_fig(fig, run_dir / "figures", "fig_samples")
+    fig.suptitle(
+        "Qualitative sample predictions — full grid (supplementary)", y=1.0,
+    )
+    return save_fig(fig, run_dir / "figures", "fig_samples_full")
