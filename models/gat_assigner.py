@@ -46,12 +46,12 @@ class FieldAssignment:
 
 def _build_model(
     hidden: int, n_heads: int, n_text_priors: int, n_fields: int,
-) -> torch.nn.Module:
+) -> object:
     """Construct the ~120K-param GAT assigner lazily (torch optional)."""
     import torch
     from torch import nn
 
-    class _GATAssigner(nn.Module):
+    class _GATAssigner(nn.Module):  # type: ignore[misc]
         def __init__(self) -> None:
             super().__init__()
             self.text_proj = nn.Linear(768, hidden)
@@ -94,10 +94,11 @@ def gat_assign(feats: AssignerInput, config: object) -> FieldAssignment:
     """
     try:
         import torch
+        from torch import nn
     except ImportError:  # pragma: no cover — torch optional
         return FieldAssignment(values={f: "" for f in feats.fields}, attn=None)
     n_text_priors = int(feats.priors.shape[-1]) if feats.priors.ndim > 0 else 1
-    model = _build_model(
+    model: nn.Module = _build_model(
         _HIDDEN, _N_HEADS, n_text_priors, len(feats.fields),
     )
     model.eval()

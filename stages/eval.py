@@ -61,7 +61,7 @@ def _emit_foundation_metrics(config: ExpConfig, test: list) -> None:  # type: ig
         return
     preds = [foundation_predict(r.image_path, config) for r in test]
     bundle = EvalBundle(
-        predictions=preds, receipts=test, fields=tuple(config.fields),
+        predictions=preds, receipts=test, fields=list(config.fields),
     )
     m = compute_metrics(bundle)
     Path(config.output_dir).mkdir(parents=True, exist_ok=True)

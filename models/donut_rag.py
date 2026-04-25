@@ -49,7 +49,7 @@ def _build_rag_prefix(neighbours: list[Receipt]) -> str:
     return f"{_RAG_OPEN}{body}{_RAG_CLOSE}"
 
 
-class _RAGSROIEDataset(_SROIEDataset):  # type: ignore[misc,valid-type]
+class _RAGSROIEDataset(_SROIEDataset):
     """Training dataset with retrieved-neighbour prefix prepended.
 
     Subclasses ``_SROIEDataset`` so the pixel-values path stays shared;

@@ -22,7 +22,7 @@ from pathlib import Path
 from typing import Any
 
 from core.errors import EvalError
-from core.types import ExpConfig, Receipt
+from core.types import ExpConfig, Prediction
 
 
 def _image_hash(path: Path) -> str:
@@ -112,16 +112,16 @@ def _parse_json_fields(text: str) -> dict[str, str]:
     return {k: str(obj.get(k, "")) for k in ("company", "date", "address", "total")}
 
 
-def foundation_predict(image_path: Path, config: ExpConfig) -> Receipt:
+def foundation_predict(image_path: Path, config: ExpConfig) -> Prediction:
     """Predict a Receipt using the foundation-model arm (cached).
 
-    Returns an empty Receipt (fields=[]) when the arm is disabled so
+    Returns an empty Prediction (fields=[]) when the arm is disabled so
     callers can fold the result into the standard metrics pipeline
     without branching.  Any SDK failure raises EvalError with the
     underlying cause chained.
     """
     if not config.foundation_enabled:
-        return Receipt(image_path=image_path, fields=[])
+        return Prediction(receipt_id=image_path.stem, fields=[])
     cache_path = Path(config.foundation_cache_path)
     cache = _load_cache(cache_path)
     key = _image_hash(image_path)
@@ -140,4 +140,4 @@ def foundation_predict(image_path: Path, config: ExpConfig) -> Receipt:
     from core.types import Field
 
     fields = [Field(name=k, value=v) for k, v in fields_dict.items()]
-    return Receipt(image_path=image_path, fields=fields)
+    return Prediction(receipt_id=image_path.stem, fields=fields)

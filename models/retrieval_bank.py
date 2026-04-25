@@ -15,14 +15,12 @@ done at import time; the Swin encoder is loaded lazily only if
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import Any
+
+import numpy as np
+from numpy.typing import NDArray
 
 from core.types import DataSplit, ExpConfig, Receipt
-
-if TYPE_CHECKING:  # pragma: no cover — import-time only
-    import numpy.typing as npt
-
-    NDArray = npt.NDArray[Any]
 
 
 @dataclass
@@ -34,10 +32,9 @@ class RetrievalBank:
     dim: int
 
 
-def _encode_images(paths: list[str], base_model: str) -> NDArray:
+def _encode_images(paths: list[str], base_model: str) -> NDArray[Any]:
     """Batch-encode receipt JPEGs with DONUT's Swin encoder → CLS-token."""
     # Lazy imports — keep module import cheap on CPU-only CI.
-    import numpy as np
     import torch
     from PIL import Image
     from transformers import DonutProcessor, VisionEncoderDecoderModel
@@ -47,13 +44,13 @@ def _encode_images(paths: list[str], base_model: str) -> NDArray:
     device = "cuda" if torch.cuda.is_available() else "cpu"
     model.to(device)
     model.eval()
-    feats: list[NDArray] = []
+    feats: list[NDArray[Any]] = []
     with torch.no_grad():
         for p in paths:
             img = Image.open(p).convert("RGB")
             pv = processor(img, return_tensors="pt").pixel_values.to(device)
             out = model.encoder(pv).last_hidden_state  # (1, N, 1024)
-            cls = out[:, 0, :].cpu().numpy().astype("float32")
+            cls: NDArray[Any] = out[:, 0, :].cpu().numpy().astype("float32")
             feats.append(cls)
     return np.vstack(feats)
 
@@ -63,17 +60,15 @@ class _NumpyIndex:
 
     def __init__(self, dim: int) -> None:
         self.dim = dim
-        self._data: NDArray | None = None
+        self._data: NDArray[Any] | None = None
 
-    def add(self, x: NDArray) -> None:
-        import numpy as np
-
+    def add(self, x: NDArray[Any]) -> None:
         x = x / (np.linalg.norm(x, axis=1, keepdims=True) + 1e-12)
         self._data = x.astype("float32")
 
-    def search(self, q: NDArray, k: int) -> tuple[NDArray, NDArray]:
-        import numpy as np
-
+    def search(
+        self, q: NDArray[Any], k: int,
+    ) -> tuple[NDArray[Any], NDArray[Any]]:
         if self._data is None:
             raise ValueError("Index is empty; call add() first.")
         qn = q / (np.linalg.norm(q, axis=1, keepdims=True) + 1e-12)
@@ -105,8 +100,6 @@ def build_bank(data: DataSplit, config: ExpConfig) -> RetrievalBank:
 
         idx = faiss.IndexFlatIP(dim)
         # faiss expects L2-normalised vectors for cosine similarity.
-        import numpy as np
-
         feats = feats / (np.linalg.norm(feats, axis=1, keepdims=True) + 1e-12)
         idx.add(feats.astype("float32"))
     except ImportError:

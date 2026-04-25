@@ -73,8 +73,9 @@ def merge_foundation_metrics(config: ExpConfig, metrics: dict[str, object]) -> N
         ("global_ned", "foundation_ned"),
         ("global_em", "foundation_em"),
     ):
-        if src in data and isinstance(data[src], int | float):
-            metrics.setdefault(dst, float(data[src]))
+        val = data.get(src)
+        if val is not None and isinstance(val, int | float):
+            metrics.setdefault(dst, float(val))
     per_field = data.get("per_field_f1") or {}
     if isinstance(per_field, dict):
         for field_name, value in per_field.items():
