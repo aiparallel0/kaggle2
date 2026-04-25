@@ -74,9 +74,14 @@ def render_missing_cell(key: str) -> str:
     Reviewers see immediately which producer did not write to
     ``runs/<run_id>/metrics/`` and the build can be configured (via
     ``KAGGLE2_STRICT``) to fail on its presence.
+
+    Underscores are escaped as ``\_`` because ``_`` is the math-mode
+    subscript operator in LaTeX/tectonic and causes ``Missing $ inserted``
+    when it appears in text mode inside the macro argument.
     """
     safe = re.sub(r"[^A-Za-z0-9_]", "_", key)[:48]
-    return f"\\MissingCell{{{safe}}}"
+    safe_tex = safe.replace("_", r"\_")  # _ invalid in text mode; escape for tectonic
+    return f"\\MissingCell{{{safe_tex}}}"
 
 
 def is_strict() -> bool:
