@@ -27,7 +27,7 @@ def _compile_tectonic(tex_path: Path) -> Path:
     result = _run(
         [
             "tectonic", "--keep-intermediates", "--keep-logs",
-            "--chatter", "minimal", tex_path.name,
+            "--chatter", "minimal", "--continue-on-errors", tex_path.name,
         ],
         cwd=tex_path.parent,
     )

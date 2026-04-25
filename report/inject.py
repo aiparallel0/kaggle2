@@ -41,12 +41,18 @@ def expand_inputs(template: str, base: Path, max_depth: int = 4) -> str:
 
 
 def _format_lr(value: float) -> str:
-    """Render learning rate in scientific notation so small LRs don't round
-    to ``0.0001`` under a generic ``{:.4f}`` formatter (e.g. ``5e-5``)."""
+    """Render learning rate in scientific notation (raw math-mode content, no outer ``$...$``).
+
+    Callers in appendix.tex already sit inside ``$...$``; text-mode usages in
+    experiments.tex wrap with their own ``$...$``.  Adding ``$...$`` here
+    produces nested dollar-sign delimiters which cause ``Missing $ inserted``
+    in tectonic/pdflatex (same issue that :func:`_format_pvalue` deliberately
+    avoids).
+    """
     if value == 0.0:
         return "0"
     mantissa, exp = f"{value:.0e}".split("e")
-    return f"${mantissa}\\times 10^{{{int(exp)}}}$"
+    return f"{mantissa}\\times 10^{{{int(exp)}}}"
 
 
 def _format_pvalue(value: float) -> str:
