@@ -859,9 +859,10 @@ $\Delta$ & $+0.110$ \\
 \IfFileExists{../results/fig_attention_heatmap.pdf}{%
   \begin{figure}[!t]\centering
   \includegraphics[width=\columnwidth]{../results/fig_attention_heatmap.pdf}
-  \caption{Cross-attention of the \texttt{AttentionAssigner} for three
-    randomly sampled test receipts: rows are the four learned field
-    queries, columns are the detected text lines (ordered
+  \caption{Cross-attention of the \texttt{AttentionAssigner} for the
+    first three successfully processed test receipts (deterministic
+    test-set order, for reproducibility): rows are the four learned
+    field queries, columns are the detected text lines (ordered
     top-to-bottom).  Successful field assignments correspond to a
     single bright column; the address query distributes mass across
     several contiguous columns, which the multi-instance pos-mass
