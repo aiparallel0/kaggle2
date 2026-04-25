@@ -82,15 +82,30 @@ def test_all_new_keys_resolve_with_metrics() -> None:
     assert "---" not in result, "No key should fall back to --- when metrics are complete"
 
 
-def test_absent_keys_fallback_to_dashes() -> None:
-    """Keys absent from the metrics dict fall back to '---', not a LaTeX error."""
+def test_absent_keys_fallback_to_missing_cell_markers() -> None:
+    """Keys absent from metrics render as typed ``\\MissingCell`` markers.
+
+    The v4 engine replaced the silent ``---`` em-dash backstop with a
+    typed ``\\MissingCell{key}`` sentinel that survives compile and
+    is counted by :mod:`report.check_artefacts` as a hard build
+    blocker (unless the key is on the
+    :data:`report.missing.MISSING_OK_PREFIXES` / ``MISSING_OK_KEYS``
+    allow-list).  This test pins that contract so future regressions
+    cannot silently re-introduce em-dashes.
+    """
     from report.inject import inject_results
 
     template = _build_template(_NEW_KEYS)
     result = inject_results(template, {})
     assert "\\VAR{" not in result, "Unreplaced \\VAR{} tokens remain"
-    assert result.count("---") == len(_NEW_KEYS), (
-        f"Each absent key should become '---'; got {result.count('---')} dashes"
+    assert "---" not in result, "v4 engine: no silent em-dashes anywhere"
+    # Every absent key produces exactly one \MissingCell{...} (or, if
+    # the key is on the allow-list, the inject layer still emits the
+    # marker — the build gate consults the allow-list itself).
+    marker = "\\MissingCell{"
+    assert result.count(marker) == len(_NEW_KEYS), (
+        f"Each absent key should become a {marker}}} marker; "
+        f"got {result.count(marker)} markers vs {len(_NEW_KEYS)} keys"
     )
 
 

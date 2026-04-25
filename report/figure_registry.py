@@ -63,7 +63,9 @@ FIGURE_CATALOG: tuple[FigureSpec, ...] = (
     FigureSpec("fig_gpu_series", "figures_gpu",
                "curves/gpu_util.csv time series"),
     FigureSpec("fig_samples", "figures_samples",
-               "predictions/*.jsonl 12-receipt qualitative grid"),
+               "predictions/*.jsonl curated 2x2 outcome-bucket grid (Fig.~11)"),
+    FigureSpec("fig_samples_full", "figures_samples",
+               "predictions/*.jsonl 9-receipt supplementary grid"),
 )
 
 

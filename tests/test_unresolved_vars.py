@@ -27,11 +27,15 @@ def test_collect_unresolved_sorted_output() -> None:
 
 
 def test_inject_results_keeps_no_raw_vars() -> None:
-    """Unresolved keys must not leak to the PDF."""
+    """Unresolved keys must not leak to the PDF as ``\\VAR{...}``."""
     template = "resolved=\\VAR{a}, missing=\\VAR{b}"
     out = inject_results(template, {"a": "X"})
     assert "\\VAR" not in out
-    assert "---" in out  # missing keys backstopped to ``---``.
+    # v4 contract: missing keys render as typed \MissingCell{key},
+    # not silent ``---`` em-dashes.  ``check_artefacts`` then flags
+    # them at build time.
+    assert "---" not in out
+    assert "\\MissingCell{b}" in out
     assert "X" in out
 
 

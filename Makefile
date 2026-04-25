@@ -1,15 +1,25 @@
 .PHONY: all train eval paper check test clean serve \
         train-pipeline eval-pipeline pipeline \
-        pack pack-full unpack runs-list latest clean-runs
+        pack pack-full unpack runs-list latest clean-runs \
+        check_artefacts
 
 .DELETE_ON_ERROR:
 
-all: check train eval paper
+all: check train eval paper check_artefacts
 
 check:
 	mypy --strict core/ data/ models/ report/ stages/ main.py
 	ruff check .
 	python -c "from core.types import Receipt, Metrics; from core.config import load_config"
+
+# v4 build gate: scans the rendered paper.tex for unresolved \VAR{},
+# dangling Sec.~?? / Fig.~?? refs, undefined-citation [?] markers,
+# unresolved \MissingCell{} in strict mode, and zero-byte PDFs in
+# the figures dir.  Non-zero exit fails ``make all`` so a half-empty
+# PDF can never silently ship.  Uses the latest runs/<run_id>/ by
+# default; override via ``make check_artefacts PAPER=path FIGS=dir``.
+check_artefacts:
+	python -m report.check_artefacts $(if $(PAPER),--paper $(PAPER)) $(if $(FIGS),--figures $(FIGS))
 
 test:
 	python -m pytest tests/ -v

@@ -44,9 +44,10 @@ streams before any attention:
       bias exposed to gradient descent.
 \end{itemize}
 The three projections are summed, LayerNorm'd, and passed through a
-2-layer pre-norm Transformer encoder (GELU, 8 heads, $d{=}128$), so the
-assigner can reason about line-to-line context (subtotal immediately
-below grand total, multi-line address block).  Four learnable
+$\VAR{assigner_n_layers_level2}$-layer pre-norm Transformer encoder
+(GELU, 8 heads, $d{=}\VAR{assigner_hidden}$), so the assigner can
+reason about line-to-line context (subtotal immediately below grand
+total, multi-line address block).  Four learnable
 \emph{field queries} (\texttt{company}, \texttt{date}, \texttt{address},
 \texttt{total}) then cross-attend to the encoder outputs via
 \texttt{nn.MultiheadAttention}; a residual + LayerNorm feeds an MLP
@@ -54,9 +55,15 @@ classifier (Linear\,$\to$\,GELU\,$\to$\,Linear) that emits a scalar
 logit per field.  The cross-attention weights
 $A \in \mathbb{R}^{4\times N}$ are surfaced as the soft assignment and
 visualised in Fig.~\figref{fig:attn_heatmap}.
-The module totals $\approx\VAR{assigner_params_k}\,$K parameters
-(measured exactly from \texttt{sum(p.numel() for p in assigner.parameters())}
-and persisted to \texttt{assigner\_metrics.json}).
+The shipped configuration ($d{=}\VAR{assigner_hidden}$,
+$L{=}\VAR{assigner_n_layers_level2}$) totals
+$\VAR{assigner_params_k}$\,K parameters
+(measured exactly from \texttt{sum(p.numel() for p in
+assigner.parameters())} and persisted to
+\texttt{assigner\_metrics.json}); a smaller $d{=}128$, $L{=}2$ variant
+that reaches comparable F1 with $\sim$161\,K parameters is preserved
+in source and surfaced through the \texttt{assigner\_hidden} /
+\texttt{assigner\_n\_layers\_level2} config knobs for ablation.
 
 \textbf{Multi-instance pos-mass loss.}
 A single field may map to a \emph{set} of target lines (the address

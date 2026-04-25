@@ -187,6 +187,12 @@ def stage_eval(config: ExpConfig, seeds: list[int] | None = None) -> None:
     donut_f1s: list[float] = []
     pipeline_f1s: list[float] = []
     gtocr_rulebased_f1s: list[float] = []
+    # v4 — track per-field, NED, and EM across seeds so the inject
+    # layer can render ``mean ± std`` for every headline cell, not
+    # just the global F1.  Indexed by metric key (e.g. ``donut_ned``,
+    # ``donut_f1_company``); values are the per-seed point estimates
+    # collected across the loop below.
+    extra_seed_metrics: dict[str, list[float]] = {}
     last: dict[str, object] = {}
     last_donut_preds: list[Prediction] = []
     last_pipeline_preds: list[Prediction] = []
@@ -216,6 +222,18 @@ def stage_eval(config: ExpConfig, seeds: list[int] | None = None) -> None:
         donut_f1s.append(dm.global_f1)
         pipeline_f1s.append(pm.assigner.global_f1)
         gtocr_rulebased_f1s.append(gtocr_rb.global_f1)
+        # v4 — record per-field F1 + NED + EM for every seed so the
+        # downstream aggregator can emit mean ± std for each cell.
+        # Keyed identically to the headline metric keys (so
+        # ``\VAR{donut_f1_company:mean_std_pct1}`` resolves directly).
+        for sysname, m in (("donut", dm), ("pipeline", pm.assigner),
+                           ("rulebased", gtocr_rb)):
+            extra_seed_metrics.setdefault(f"{sysname}_ned", []).append(m.global_ned)
+            extra_seed_metrics.setdefault(f"{sysname}_em", []).append(m.global_em)
+            for fld in ("company", "date", "address", "total"):
+                extra_seed_metrics.setdefault(
+                    f"{sysname}_f1_{fld}", [],
+                ).append(m.per_field_f1.get(fld, 0.0))
         last = build_combined(config, dm, pm, gtocr_rb)
         last["oracle_patch_f1_if_applied"] = round(patched_assigner.global_f1, 4)
         last_donut_preds = dp
@@ -227,6 +245,13 @@ def stage_eval(config: ExpConfig, seeds: list[int] | None = None) -> None:
     _aggregate_seed_variance(donut_f1s, "donut_f1", last)
     _aggregate_seed_variance(pipeline_f1s, "pipeline_f1", last)
     _aggregate_seed_variance(gtocr_rulebased_f1s, "gtocr_rulebased_f1", last)
+    # v4 — aggregate the per-field / NED / EM seed series the same way.
+    # Note ``rulebased_*`` keys map to the ``gtocr_rulebased_*`` namespace
+    # the rest of the paper uses; rename on emit to keep the inject keys
+    # consistent.
+    for key, seq in extra_seed_metrics.items():
+        out_key = key.replace("rulebased_", "gtocr_rulebased_")
+        _aggregate_seed_variance(seq, out_key, last)
     # Per-image bootstrap CI + paired McNemar: uses the last run's
     # per-image vectors populated by ``compute_metrics`` via
     # ``build_combined``.  The McNemar test runs on the binary

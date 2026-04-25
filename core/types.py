@@ -259,4 +259,39 @@ class ExpConfig:
     foundation_enabled: bool = False
     foundation_api: str = "anthropic"
     foundation_cache_path: str = "./runs/foundation_cache.json"
+    # v4 — Canonical SROIE 347-image test split.  When
+    # ``canonical_sroie_enabled`` is True the eval stage runs each
+    # trained model on the canonical ICDAR-2019 SROIE test (347
+    # receipts) in addition to the 63-image held-out split, and emits
+    # ``metrics/canonical_<system>.json`` so Table~IV-bis resolves.
+    # ``canonical_sroie_test_path`` is the absolute path to a directory
+    # containing ``img/<id>.jpg`` and ``box/<id>.txt`` (or the SROIE
+    # task-3 archive layout); ``""`` defers detection to runtime.
+    canonical_sroie_enabled: bool = False
+    canonical_sroie_test_path: str = ""
+    # v4 — LayoutLMv3 baseline.  Off by default so the headline run is
+    # bit-for-bit reproducible against v3; flip to True on the first
+    # GPU box that has the public HF checkpoint cached.
+    layoutlmv3_enabled: bool = False
+    layoutlmv3_model: str = "microsoft/layoutlmv3-base"
+    # v4 — Inference-latency producer.  When True the eval loop times
+    # each forward pass and writes ``metrics/latency_<system>.json``
+    # so Table~X (the latency table) resolves.  Off by default to keep
+    # eval-time deterministic; flip on for the latency-focused profile.
+    measure_latency: bool = False
+    # v4 — Curated qualitative-sample IDs for Fig.~11 (4-receipt grid:
+    # both-correct / DONUT-wins / pipeline-wins / both-fail).  Empty
+    # list defers selection to ``report.figures_samples`` which then
+    # picks the first 4 IDs that have predictions stored for both
+    # systems.  Authors override this list to fix the curated set.
+    qualitative_sample_ids: list[str] = field(default_factory=list)
+    # v4 — Single representative receipt id for Fig.~1 (architecture
+    # diagram with the SAME receipt flowing through both panels).
+    # Empty defers to the first qualitative sample ID.
+    fig1_receipt_id: str = ""
+    # v4 — Strict paper-stage gate.  When True the paper stage raises
+    # an EvalError if any unresolved \VAR{} key is not on the
+    # ``MISSING_OK`` allow-list.  Default False keeps current behaviour
+    # (warn + render \MissingCell{}).  CI gates should flip to True.
+    strict_paper: bool = False
     extra: dict[str, object] = field(default_factory=dict)

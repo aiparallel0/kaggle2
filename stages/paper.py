@@ -20,6 +20,7 @@ from pathlib import Path
 from core.errors import EvalError
 from core.manifest import write_manifest
 from core.types import ExpConfig
+from report.best_epoch import merge_best_epochs
 from report.combine import (
     merge_assigner_metrics,
     merge_cost_json,
@@ -131,6 +132,10 @@ def stage_paper(config: ExpConfig) -> None:
     merge_ablation_report(config, metrics)
     merge_foundation_metrics(config, metrics)
     merge_rag_metrics(config, metrics)
+    # v4 — surface each stage's own best epoch (YOLO, TrOCR, assigner)
+    # so the training table no longer prints ``\\textit{n/a}`` for
+    # those cells.  Idempotent / best-effort.
+    merge_best_epochs(config, metrics)
     # Materialise auto-generated tabular blocks for the new Section-D
     # tables.  Each key is a ``table_*`` identifier the LaTeX section
     # files reference as ``\\VAR{table_headline_f1}`` etc. — so the

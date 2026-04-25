@@ -31,7 +31,12 @@ import re
 
 log = logging.getLogger("kaggle2")
 
-_VAR_RE = re.compile(r"\\VAR\{([A-Za-z_][A-Za-z0-9_]*):([a-z0-9]+)\}")
+# Match ``\VAR{key:directive}`` where the directive name can contain
+# lowercase letters, digits, and underscores.  Underscores were added
+# in v4 so composite directives like ``mean_std_pct1`` parse —
+# previously the regex was ``[a-z0-9]+`` which silently fell through to
+# the unresolved-VAR audit on any directive containing ``_``.
+_VAR_RE = re.compile(r"\\VAR\{([A-Za-z_][A-Za-z0-9_]*):([a-z0-9_]+)\}")
 
 
 def _to_float(value: object) -> float | None:
@@ -103,9 +108,34 @@ def apply_formatters(template: str, metrics: dict[str, object]) -> str:
     replaces them as regular ``\\VAR{key}`` (ignoring the directive).
     Missing keys are left intact too so the unresolved-VAR audit in
     :func:`report.inject.collect_unresolved` can count them.
+
+    v4 — adds ``mean_std_<base>`` directives (``mean_std_pct1``,
+    ``mean_std_pct2``, ``mean_std_sig3``) which read ``<key>_mean``
+    and ``<key>_std`` and render ``85.2 \\pm 0.7\\%`` for multi-seed
+    runs.  When ``<key>_std`` is absent or zero (single-seed run),
+    only the mean is rendered so n=1 builds remain readable.
     """
     def _replace(match: re.Match[str]) -> str:
         key, directive = match.group(1), match.group(2)
+        # v4 — mean ± std composite directive: ``mean_std_<base>`` reads
+        # ``key_mean`` + ``key_std`` from metrics directly.
+        if directive.startswith("mean_std_"):
+            base = directive[len("mean_std_"):]
+            mean_key, std_key = f"{key}_mean", f"{key}_std"
+            if mean_key not in metrics:
+                return match.group(0)  # let unresolved-audit flag it
+            mean_str = apply_directive(metrics[mean_key], base)
+            if mean_str is None:
+                return f"\\VAR{{{key}_mean}}"
+            std_val = metrics.get(std_key)
+            std_f = std_val if isinstance(std_val, int | float) else None
+            if std_f is None or std_f <= 0.0:
+                # Single-seed run or zero spread — just emit the mean.
+                return mean_str
+            std_str = apply_directive(std_val, base)
+            if std_str is None:
+                return mean_str
+            return f"{mean_str} \\pm {std_str}"
         if key not in metrics:
             # Leave intact; the base injector's audit will flag it.
             return match.group(0)

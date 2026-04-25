@@ -90,6 +90,14 @@ def build_combined(
         "seeds_configured": list(config.seeds),
         "bootstrap_n_iter": config.bootstrap_n_iter,
         "bootstrap_ci_level": config.bootstrap_ci_level,
+        # Assigner architecture knobs — exposed so §IV.C's
+        # parameter-count description and the d / L numbers can be
+        # rendered by the inject layer rather than hard-coded literals
+        # (which historically drifted from the shipped checkpoint as
+        # the assigner was scaled from the 161K-parameter d=128, L=2
+        # variant to the 1.16M-parameter d=384, L=6 variant).
+        "assigner_hidden": config.assigner_hidden,
+        "assigner_n_layers_level2": config.assigner_n_layers_level2,
         # Per-image correctness vectors (all-fields EM per receipt):
         # consumed by stages/eval.py for the McNemar test and the
         # ``*_em_*`` paired-bootstrap CIs.

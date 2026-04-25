@@ -20,12 +20,24 @@ _FIELDS = ("company", "date", "address", "total")
 
 
 def _fmt(metrics: dict[str, Any], key: str, directive: str = "sig3") -> str:
-    """Format ``metrics[key]`` per ``directive``; ``---`` if missing."""
+    """Format ``metrics[key]`` per ``directive``; ``\\MissingCell`` if missing.
+
+    Replaces the legacy ``---`` em-dash backstop with a typed marker that
+    is red in the PDF and counted by ``check_artefacts`` as a build
+    blocker — unless the key is on the
+    :data:`report.missing.MISSING_OK_KEYS` / ``MISSING_OK_PREFIXES``
+    allow-list, in which case the cell renders ``\\textit{n/a}`` to
+    document an intentional skip without inflating the blocker count.
+    """
     if key not in metrics:
-        return "---"
+        from report.missing import is_missing_ok, render_missing_cell
+        return "\\textit{n/a}" if is_missing_ok(key) else render_missing_cell(key)
     from report.inject_format import apply_directive
     out = apply_directive(metrics[key], directive)
-    return out if out is not None else "---"
+    if out is not None:
+        return out
+    from report.missing import render_missing_cell
+    return render_missing_cell(key)
 
 
 def render_f1_table(metrics: dict[str, Any]) -> str:
@@ -91,10 +103,30 @@ def render_latency_table(metrics: dict[str, Any]) -> str:
 
 
 def _fmt_raw(metrics: dict[str, Any], key: str) -> str:
-    """Return ``metrics[key]`` as a LaTeX-safe string; ``---`` if missing."""
-    if key not in metrics:
-        return "---"
-    return str(metrics[key])
+    """Return ``metrics[key]`` as a LaTeX-safe string.
+
+    Resolves through the env-snapshot key naming used by
+    :func:`report.combine_ext.merge_env`, which prefixes top-level
+    fields with ``env_`` and host-info fields with ``host_``.  We
+    therefore consult ``key`` first (back-compat / direct writers),
+    then ``env_<key>``, then ``host_<key>`` before declaring the
+    cell missing — closing the v3 regression where every Table~XIV
+    cell rendered as ``---`` despite the producer running.
+
+    Missing values render as a typed ``\\MissingCell`` (red, audited
+    by ``check_artefacts``) rather than the silent ``---`` em-dash.
+    """
+    for candidate in (key, f"env_{key}", f"host_{key}"):
+        if candidate in metrics:
+            v = metrics[candidate]
+            # Empty strings count as missing — an env-snapshot writer
+            # logs a warning when nvidia-smi is unavailable; we don't
+            # want a blank cell silently rendering as "everything ok".
+            if v in (None, ""):
+                continue
+            return str(v)
+    from report.missing import is_missing_ok, render_missing_cell
+    return "\\textit{n/a}" if is_missing_ok(key) else render_missing_cell(key)
 
 
 def render_env_table(metrics: dict[str, Any]) -> str:
@@ -129,10 +161,19 @@ def render_training_table(metrics: dict[str, Any]) -> str:
     """
     rows: list[str] = []
     for system in ("donut", "pipeline"):
+        # ``best_epoch`` for the headline pipeline row is genuinely
+        # composite (three sub-stages with three separate bests); the
+        # cell therefore reads from ``pipeline_best_epoch_label`` —
+        # a raw LaTeX string — when present, falling back to the
+        # numeric ``{system}_best_epoch`` for DONUT's single stage.
+        if system == "pipeline" and "pipeline_best_epoch_label" in metrics:
+            best_cell = str(metrics["pipeline_best_epoch_label"])
+        else:
+            best_cell = _fmt(metrics, f"{system}_best_epoch", "int")
         rows.append(
             f"{system} "
             f"& {_fmt(metrics, f'{system}_epochs', 'int')} "
-            f"& {_fmt(metrics, f'{system}_best_epoch', 'int')} "
+            f"& {best_cell} "
             f"& {_fmt(metrics, f'{system}_wall_clock_s', 'sig4')} "
             f"& {_fmt(metrics, f'{system}_peak_vram_gb', 'gb1')} "
             f"& {_fmt(metrics, f'{system}_cost_usd', 'usd')} "
@@ -141,9 +182,19 @@ def render_training_table(metrics: dict[str, Any]) -> str:
         )
     rows.append("\\midrule")
     for stage in ("yolo", "trocr", "assigner"):
+        # Each stage HAS its own best-checkpoint epoch — YOLO via
+        # Ultralytics' ``best.pt`` / ``results.csv`` argmax over
+        # mAP\textsubscript{50-95}, TrOCR via HF Trainer's
+        # ``load_best_model_at_end`` + ``trainer_state.best_metric``,
+        # and the assigner via its early-stopping val-loss tracker.
+        # ``report.best_epoch.merge_best_epochs`` extracts all three at
+        # paper-stage time and folds the values into ``metrics`` under
+        # ``{stage}_best_epoch`` / ``{stage}_epochs_run`` so the cells
+        # below resolve to real measurements rather than ``n/a``.
         rows.append(
             f"\\quad {stage} "
-            f"& --- & --- "
+            f"& {_fmt(metrics, f'{stage}_epochs_run', 'int')} "
+            f"& {_fmt(metrics, f'{stage}_best_epoch', 'int')} "
             f"& {_fmt(metrics, f'{stage}_train_minutes', 'sig4')} "
             f"& {_fmt(metrics, f'{stage}_peak_vram_gb', 'gb1')} "
             f"& {_fmt(metrics, f'{stage}_cost_usd', 'usd')} "
