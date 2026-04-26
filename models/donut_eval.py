@@ -5,7 +5,9 @@ Article: "End-to-End vs. Pipeline Receipt KIE: DONUT Against
     YOLO+TrOCR+Attention on SROIE" (IEEE/ICDAR submission).
 Role: runs DONUT inference with decoder_start_token_id=<s_sroie> (Bug 2),
     flattens token2json output (Bug 3/8), disables forced EOS (Bug 9),
-    and normalizes TOTAL values for symmetric metric comparison.
+    normalizes TOTAL values for symmetric metric comparison, and persists
+    per-receipt diagnostics to donut_eval_diag.json so forensics survive
+    truncated operator logs (see _write_eval_diag).
 """
 from __future__ import annotations
 
@@ -122,6 +124,50 @@ def _resolve_start_eos(processor: Any, model: Any) -> tuple[int, int | None]:
     return start_id, eos_id
 
 
+def _write_eval_diag(
+    processor: Any,
+    model: Any,
+    start_id: int,
+    eos_id: int | None,
+    samples: list[dict[str, Any]],
+    out_dir: str,
+) -> None:
+    """Write donut_eval_diag.json with model/tokenizer metadata + 5 sample receipts.
+
+    Persists lm_head_out_features (Bug 1 indicator), both token ids (Bug 2),
+    raw token2json output (Bug 3/8), and per-receipt parsed vs. GT comparison
+    so forensics are available even when the operator log is truncated.
+    """
+    tok = processor.tokenizer
+    lm = model.decoder.lm_head
+    gc = model.generation_config
+    s_id = tok.convert_tokens_to_ids(["<s_sroie>"])[0]
+    diag: dict[str, Any] = {
+        "image_processor_size": processor.image_processor.size,
+        "decoder_start_token_id": start_id,
+        "eos_token_id": eos_id,
+        "pad_token_id": model.config.pad_token_id,
+        "tokenizer_has_s_sroie": s_id != tok.unk_token_id,
+        "tokenizer_s_sroie_id": s_id,
+        "tokenizer_eos_s_sroie_id": tok.convert_tokens_to_ids(["</s_sroie>"])[0],
+        "model_config_vocab_size": model.config.decoder.vocab_size,
+        "tokenizer_vocab_size": len(tok),
+        "lm_head_out_features": lm.weight.shape[0],
+        "generation_config": {
+            "forced_bos_token_id": gc.forced_bos_token_id,
+            "forced_eos_token_id": gc.forced_eos_token_id,
+            "decoder_start_token_id": gc.decoder_start_token_id,
+            "eos_token_id": gc.eos_token_id,
+            "bos_token_id": getattr(gc, "bos_token_id", None),
+        },
+        "samples": samples,
+    }
+    out_path = os.path.join(out_dir, "donut_eval_diag.json")
+    with open(out_path, "w") as fh:
+        json.dump(diag, fh, indent=2, default=str)
+    _log.info("donut_eval_diag written → %s", out_path)
+
+
 def eval_donut(
     config: ExpConfig, test: list[Receipt],
 ) -> tuple[Metrics, list[Prediction]]:
@@ -142,6 +188,7 @@ def eval_donut(
         "height": config.image_size[1], "width": config.image_size[0],
     }
     predictions: list[Prediction] = []
+    diag_samples: list[dict[str, Any]] = []
     from PIL import Image
 
     # P2 (RAG, inference mirror): build (or no-op) a bank and use it to
@@ -208,16 +255,25 @@ def eval_donut(
                     tokens[:200],
                     sorted(parsed.keys()),
                 )
+            if i < 5:
+                diag_samples.append({
+                    "image_id": rec.image_path.stem,
+                    "tokens_full": tokens,
+                    "raw_token2json": processor.token2json(tokens),
+                    "parsed": parsed,
+                    "gt": {f.name.lower(): f.value for f in rec.fields},
+                })
             fields = [Field(name=k, value=v) for k, v in parsed.items()]
             predictions.append(Prediction(receipt_id=rec.image_path.stem, fields=fields))
     # Symmetric numeric normalization for the TOTAL field (DONUT only):
     # matches the paper's "normalized numeric comparison for the Total field"
     # so F1/EM/NED measure semantic match rather than incidental formatting.
+    out_dir = os.path.dirname(model_path)
+    _write_eval_diag(processor, model, start_id, eos_id, diag_samples, out_dir)
     norm_preds, norm_test = _apply_total_normalizer(predictions, test)
     metrics = compute_metrics(EvalBundle(
         predictions=norm_preds, receipts=norm_test, fields=config.fields,
     ))
-    out_dir = os.path.dirname(model_path)
     with open(os.path.join(out_dir, "donut_metrics.json"), "w") as f:
         json.dump(
             {

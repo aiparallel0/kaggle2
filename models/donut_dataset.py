@@ -3,9 +3,18 @@
 Project: kaggle2 — End-to-End vs. Pipeline Receipt KIE on SROIE.
 Article: "End-to-End vs. Pipeline Receipt KIE: DONUT Against
     YOLO+TrOCR+Attention on SROIE" (IEEE/ICDAR submission).
-Role: wraps SROIE receipts in <s_sroie>...<s_field>value</s_field>...</s_sroie>
-    labels for DONUT training.  The collator supplies decoder_input_ids so
-    HF Trainer's label-smoothing path does not crash the mBART decoder.
+Role: wraps SROIE receipts in <s_field>value</s_field>...</s_sroie> labels
+    for DONUT training.  The collator supplies decoder_input_ids so HF
+    Trainer's label-smoothing path does not crash the mBART decoder.
+
+Label invariant (Bug 8 fix): labels do NOT include the leading <s_sroie>
+start tag.  The _DonutCollator's prepare_decoder_input_ids_from_labels (or
+_shift_right) prepends decoder_start_token_id=<s_sroie> automatically.
+Including it in the labels would produce a duplicated <s_sroie><s_sroie>
+wrapper at training time, causing the model to learn the wrong prefix and
+returning {} from token2json at inference for any receipt where the beam
+deviates from the duplicated wrapper.  The closing </s_sroie> is kept as
+the EOS sentinel (consistent with eos_token_id=</s_sroie>).
 """
 from __future__ import annotations
 
@@ -25,8 +34,16 @@ except ImportError:  # lightweight CI — torch/transformers not installed
 
 
 def _build_label(receipt: Receipt) -> str:
-    """Wrap receipt fields in <s_sroie><s_field>value</s_field></s_sroie>."""
-    parts = ["<s_sroie>"]
+    """Wrap receipt fields in <s_field>value</s_field>...</s_sroie>.
+
+    The leading <s_sroie> start tag is intentionally omitted (Bug 8 fix):
+    _DonutCollator.prepare_decoder_input_ids_from_labels prepends
+    decoder_start_token_id=<s_sroie> via shift_tokens_right, so including
+    it here would produce a duplicated <s_sroie><s_sroie> prefix during
+    training that mismatches the single-token seed used at inference time.
+    The closing </s_sroie> is kept as the EOS sentinel.
+    """
+    parts = []
     for fld in receipt.fields:
         t = fld.name.lower()
         parts.append(f"<s_{t}>{fld.value}</s_{t}>")
