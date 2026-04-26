@@ -157,6 +157,31 @@ def _aggregate_seed_variance(
         out[f"{key}_std"] = 0.0
 
 
+def _zero_metrics(fields: list[str]) -> Metrics:
+    """A no-information Metrics placeholder (used when an arm is skipped)."""
+    return Metrics(
+        global_f1=0.0, global_ned=0.0, global_em=0.0,
+        per_field_f1={f: 0.0 for f in fields},
+        per_field_ned={f: 0.0 for f in fields},
+        per_field_em={f: 0.0 for f in fields},
+    )
+
+
+# Keys that exist *only* because the GT-OCR-rulebased baseline ran.  When
+# the canonical 347-image test set is in use the GT-OCR arm cannot run
+# (no GT box files in the Task-3 archive), so these keys are stripped
+# rather than emitted as zeros — the paper's basic vs advanced templates
+# read different key sets and never reference the missing ones.
+_GTOCR_STRIP_PREFIXES: tuple[str, ...] = (
+    "gtocr_rulebased_", "rulebased_", "oracle_patch_",
+)
+
+
+def _strip_gtocr_keys(d: dict[str, object]) -> None:
+    for k in [k for k in d if k.startswith(_GTOCR_STRIP_PREFIXES)]:
+        d.pop(k, None)
+
+
 def stage_eval(config: ExpConfig, seeds: list[int] | None = None) -> None:
     """Run eval across one or more seeds; aggregate mean/std/CI.
 
@@ -184,6 +209,11 @@ def stage_eval(config: ExpConfig, seeds: list[int] | None = None) -> None:
     data = load_or_create_split(config, data_path)
     run_seeds = list(seeds) if seeds else list(config.seeds[: config.n_trials])
     log.info("Eval harness: n_trials=%d seeds=%s", len(run_seeds), run_seeds)
+    canonical = bool(getattr(config, "canonical_sroie_enabled", False))
+    if canonical:
+        log.info("Canonical SROIE 347-image test set active — skipping "
+                 "GT-OCR-rulebased baseline and oracle-patch diagnostic "
+                 "(no GT boxes available in the Task-3 archive).")
     donut_f1s: list[float] = []
     pipeline_f1s: list[float] = []
     gtocr_rulebased_f1s: list[float] = []
@@ -211,23 +241,32 @@ def stage_eval(config: ExpConfig, seeds: list[int] | None = None) -> None:
         warn_pipeline_diagnostics(config)
         log.info("Pipeline (hybrid)              F1=%.4f", pm.assigner.global_f1)
         log.info("Pipeline (TrOCR-regex)         F1=%.4f", pm.rulebased.global_f1)
-        gtocr_rb = eval_gtocr_rulebased(config, data.test)
-        log.info("Baseline (GT-OCR-stream regex) F1=%.4f", gtocr_rb.global_f1)
-        assert_hybrid_beats_gtocr_rulebased(pm.assigner, gtocr_rb)
-        # Fix A (follow-up): oracle_patch_hybrid is DIAGNOSTIC-ONLY.
-        # Its post-patch F1 is surfaced as ``oracle_patch_f1_if_applied``
-        # further down; the headline ``pipeline_f1`` key stays bound to
-        # the real hybrid ``pm.assigner.global_f1``.
-        patched_assigner = oracle_patch_hybrid(pm, gtocr_rb, config, data.test)
+        if canonical:
+            gtocr_rb = _zero_metrics(list(config.fields))
+            patched_assigner = pm.assigner
+        else:
+            gtocr_rb = eval_gtocr_rulebased(config, data.test)
+            log.info("Baseline (GT-OCR-stream regex) F1=%.4f", gtocr_rb.global_f1)
+            assert_hybrid_beats_gtocr_rulebased(pm.assigner, gtocr_rb)
+            # Fix A (follow-up): oracle_patch_hybrid is DIAGNOSTIC-ONLY.
+            # Its post-patch F1 is surfaced as ``oracle_patch_f1_if_applied``
+            # further down; the headline ``pipeline_f1`` key stays bound to
+            # the real hybrid ``pm.assigner.global_f1``.
+            patched_assigner = oracle_patch_hybrid(pm, gtocr_rb, config, data.test)
         donut_f1s.append(dm.global_f1)
         pipeline_f1s.append(pm.assigner.global_f1)
-        gtocr_rulebased_f1s.append(gtocr_rb.global_f1)
+        if not canonical:
+            gtocr_rulebased_f1s.append(gtocr_rb.global_f1)
         # v4 — record per-field F1 + NED + EM for every seed so the
         # downstream aggregator can emit mean ± std for each cell.
         # Keyed identically to the headline metric keys (so
         # ``\VAR{donut_f1_company:mean_std_pct1}`` resolves directly).
-        for sysname, m in (("donut", dm), ("pipeline", pm.assigner),
-                           ("rulebased", gtocr_rb)):
+        per_seed_arms: tuple[tuple[str, Metrics], ...] = (
+            ("donut", dm), ("pipeline", pm.assigner),
+        )
+        if not canonical:
+            per_seed_arms = per_seed_arms + (("rulebased", gtocr_rb),)
+        for sysname, m in per_seed_arms:
             extra_seed_metrics.setdefault(f"{sysname}_ned", []).append(m.global_ned)
             extra_seed_metrics.setdefault(f"{sysname}_em", []).append(m.global_em)
             for fld in ("company", "date", "address", "total"):
@@ -235,7 +274,10 @@ def stage_eval(config: ExpConfig, seeds: list[int] | None = None) -> None:
                     f"{sysname}_f1_{fld}", [],
                 ).append(m.per_field_f1.get(fld, 0.0))
         last = build_combined(config, dm, pm, gtocr_rb)
-        last["oracle_patch_f1_if_applied"] = round(patched_assigner.global_f1, 4)
+        if canonical:
+            _strip_gtocr_keys(last)
+        else:
+            last["oracle_patch_f1_if_applied"] = round(patched_assigner.global_f1, 4)
         last_donut_preds = dp
         last_pipeline_preds = pm.assigner_preds
         last_donut_metrics = dm
@@ -244,13 +286,16 @@ def stage_eval(config: ExpConfig, seeds: list[int] | None = None) -> None:
     # (paper \VAR{}, log dashboards) should not branch on seed count.
     _aggregate_seed_variance(donut_f1s, "donut_f1", last)
     _aggregate_seed_variance(pipeline_f1s, "pipeline_f1", last)
-    _aggregate_seed_variance(gtocr_rulebased_f1s, "gtocr_rulebased_f1", last)
+    if not canonical:
+        _aggregate_seed_variance(gtocr_rulebased_f1s, "gtocr_rulebased_f1", last)
     # v4 — aggregate the per-field / NED / EM seed series the same way.
     # Note ``rulebased_*`` keys map to the ``gtocr_rulebased_*`` namespace
     # the rest of the paper uses; rename on emit to keep the inject keys
     # consistent.
     for key, seq in extra_seed_metrics.items():
         out_key = key.replace("rulebased_", "gtocr_rulebased_")
+        if canonical and out_key.startswith(_GTOCR_STRIP_PREFIXES):
+            continue
         _aggregate_seed_variance(seq, out_key, last)
     # Per-image bootstrap CI + paired McNemar: uses the last run's
     # per-image vectors populated by ``compute_metrics`` via
@@ -313,6 +358,15 @@ def stage_eval(config: ExpConfig, seeds: list[int] | None = None) -> None:
     last["n_trials"] = len(run_seeds)
     last["bootstrap_n_iter"] = config.bootstrap_n_iter
     last["bootstrap_ci_level"] = config.bootstrap_ci_level
+    # Surface the eval split in combined_metrics so the paper template
+    # (basic vs advanced variant) can branch on it without parsing
+    # config.json again.  ``test_set_kind`` ∈ {"canonical_347", "internal_63"}.
+    last["test_set_kind"] = "canonical_347" if canonical else "internal_63"
+    last["test_set_size"] = 347 if canonical else 63
+    if canonical:
+        # Final defensive strip — any merge above must not reintroduce
+        # GT-OCR-rulebased / oracle-patch keys when canonical is active.
+        _strip_gtocr_keys(last)
     # P4 — foundation-model ceiling arm (Claude Sonnet / GPT-4V zero-shot).
     # Opt-in via ``config.foundation_enabled``; API keys + caching are
     # owned by :mod:`models.foundation_oracle`.  Written as a side-car

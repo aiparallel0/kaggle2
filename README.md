@@ -18,6 +18,22 @@ A6000. The pipeline (YOLO+TrOCR+Attention) typically achieves
 F1 is a stochastic training outcome that depends on GPU availability,
 Hugging Face weight snapshots at download time, and SROIE label noise.
 
+### Two paper variants
+
+The repo bifurcates into two **paper variants** that share one codebase:
+
+| variant     | test set                                               | arms                                                | leaderboard-comparable | template                       |
+|-------------|--------------------------------------------------------|-----------------------------------------------------|------------------------|--------------------------------|
+| `advanced`  | 347 official ICDAR-2019 Task-3 (auto-downloaded)       | DONUT vs YOLO+TrOCR+**Attention assigner**           | **yes**                | `report/template_advanced.tex` |
+| `basic`     | 63-image internal (from 500/63/63 of 626 train)        | DONUT vs YOLO+TrOCR+**regex** vs **GT-OCR+regex**    | no                     | `report/template_basic.tex`    |
+
+The advanced variant is the **default**.  `data/sroie_canonical.py`
+sha256-verifies and extracts the 347 Task-3 images on first run
+(primary: `rrc.cvc.uab.es`; fallback: docTR mirror).  Switch variants
+via CLI: `python main.py --paper-variant basic --stage all`.  See
+[`report/overleaf/README.md`](report/overleaf/README.md) for one-shot
+Overleaf upload instructions.
+
 `validate_f1()` in `main.py` enforces two levels:
 
 | level            | threshold                           | behaviour |
@@ -285,6 +301,11 @@ All hyperparameters live in `config.json`. F1-affecting knobs:
 | `yolo_img_size` | 1024 | MUST match training and inference (Bug 5). |
 | `epochs_trocr` | 12 | Floor of 5 enforced in config.py (Bug 6). |
 | `expected_f1_warn` | 0.75 | Soft WARN threshold (non-fatal). |
+| `canonical_sroie_enabled` | true | When true, `data.sroie_canonical.ensure_canonical_test_set` auto-downloads the official ICDAR-2019 SROIE Task-3 test set (347 images + KIE GT) from `rrc.cvc.uab.es` (sha256-pinned docTR mirror as fallback) and replaces the 500/63/63 internal test split with it.  Numbers become directly comparable to the public SROIE leaderboard.  Set `false` for the basic 500/63/63 study. |
+| `canonical_sroie_test_url` | `https://rrc.cvc.uab.es/downloads/SROIE_test_images_task_3.zip` | Primary download URL for the 347 test images. |
+| `canonical_sroie_gt_url` | `https://rrc.cvc.uab.es/downloads/SROIE_test_gt_task_3.zip` | Primary download URL for the Task-3 GT entities. |
+| `canonical_sroie_mirror_url` | docTR | Fallback mirror used when the RRC primary fails (sha256 verified before extraction). |
+| `paper_variant` | `advanced` | `advanced` → `report/template_advanced.tex` (DONUT vs YOLO+TrOCR+Assigner on 626 train + 347 canonical test); `basic` → `report/template_basic.tex` (DONUT vs YOLO+TrOCR+regex vs GT-OCR+regex on 500/63/63 internal split).  CLI override: `--paper-variant {advanced,basic}` — flips `canonical_sroie_enabled` to match. |
 
 ### Assigner-fix knobs (strategies B / C / E / F / G / I from `docs/assigner_fix_plan.md`)
 

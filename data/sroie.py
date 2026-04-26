@@ -153,19 +153,31 @@ def _canonical_test_split(
 ) -> DataSplit | None:
     """Return canonical 347-image SROIE test split when test labels exist.
 
-    The ICDAR 2019 SROIE competition labels for the 347 held-out test
-    images were not released with the original dataset; most public mirrors
-    (e.g. zzzDavid/ICDAR-2019-SROIE) only contain the 626 training images.
-    If ``data_path/test/entities/`` is present (user-provided or a future
-    release that includes them), this function uses all 626 training images
-    as the training split and the 347 test images as the test split, which
-    matches the evaluation protocol reported on the SROIE leaderboard.
+    When ``config.canonical_sroie_enabled`` is True this function will
+    auto-download the ICDAR-2019 SROIE Task-3 test archive (347 images
+    + GT) into ``data_path/test/{img,entities}/`` via
+    :func:`data.sroie_canonical.ensure_canonical_test_set` (sha256-
+    verified, with a docTR mirror fallback) before reading.  All 626
+    training images become the train pool; the canonical 347 images
+    become the test set; ``_N_VAL`` images are reserved from the
+    training pool for early-stopping.
 
-    Returns ``None`` when the canonical test labels are not available so
-    callers can fall back to the custom 500/63/63 partition.
+    Returns ``None`` when the canonical test labels are not available
+    AND auto-download is disabled, so callers fall back to the custom
+    500/63/63 partition.
     """
     test_img_dir = data_path / "test" / "img"
     test_ent_dir = data_path / "test" / "entities"
+    if getattr(config, "canonical_sroie_enabled", False):
+        from data.sroie_canonical import ensure_canonical_test_set
+        try:
+            ensure_canonical_test_set(config, data_path)
+        except DataError as exc:
+            logging.getLogger("kaggle2").warning(
+                "canonical-SROIE auto-download failed (%s); falling back to "
+                "the 500/63/63 internal split.", exc,
+            )
+            return None
     if not (test_img_dir.exists() and test_ent_dir.exists()):
         return None
     test_receipts = _load_receipts(test_img_dir, test_ent_dir)
@@ -176,9 +188,29 @@ def _canonical_test_split(
     )
     if not train_receipts:
         return None
+    # Bug 7 (extension to canonical-test boundary): the original Bug 7
+    # guard in :func:`split_sroie` ensures val and test slices of the
+    # 626-receipt training pool are disjoint.  When the canonical 347-
+    # image test set replaces the internal 63-image test slice, a NEW
+    # leakage surface appears at the train/val ↔ canonical-test boundary
+    # because SROIE training and Task-3 test pools share a small number
+    # of duplicate receipts post-correction (this is exactly what the
+    # HF "v2" deduplication exists for).  Silent overlap would re-
+    # introduce val≡test leakage on the canonical run.  Drop overlaps
+    # and log loudly; never fail closed (vast.ai operators rerun this
+    # path on every fresh instance).
+    test_stems = {r.image_path.stem for r in test_receipts}
+    overlap = [r for r in train_receipts if r.image_path.stem in test_stems]
+    if overlap:
+        logging.getLogger("kaggle2").warning(
+            "canonical-SROIE: dropping %d train images that overlap test set "
+            "(Bug 7 guard): %s", len(overlap),
+            [r.image_path.stem for r in overlap[:5]],
+        )
+        train_receipts = [
+            r for r in train_receipts if r.image_path.stem not in test_stems
+        ]
     random.Random(config.seed).shuffle(train_receipts)
-    # Reserve _N_VAL images from the training pool for early-stopping;
-    # the test set is the canonical held-out set — not drawn from train.
     val = train_receipts[:_N_VAL]
     train = train_receipts[_N_VAL:]
     return DataSplit(train=train, val=val, test=test_receipts)

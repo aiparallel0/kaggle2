@@ -1,0 +1,73 @@
+\section{Extended Results Tables}
+\label{sec:results_tables}
+
+This section collects the detailed quantitative tables that
+Section~V cites for the \textbf{advanced} (canonical-test) variant
+of this paper.  Every number is sourced from
+\texttt{runs/<run\_id>/metrics/} sidecars via the
+\texttt{report.inject} substitution layer --- no literal constants
+appear in this file.  All tables here are scoped to the
+\emph{347-image canonical SROIE Task-3 test set}; the GT-OCR
+$+$\,regex baseline that appears in the basic variant is omitted by
+design, because Task-3 ships KIE entities only (no GT box / OCR
+streams to feed a rule-based extractor).  An empty cell renders as
+a typed \texttt{\textbackslash MissingCell\{key\}} marker --- never
+a silent em-dash --- and every unresolved key is enumerated in
+\texttt{metrics/unresolved\_vars.json} for audit.
+
+\begin{table}[t]
+\centering
+\caption{Headline per-field F1 (\%) on the canonical SROIE Task-3
+         test set (347 images).  DONUT (end-to-end,
+         $\approx$\,200\,M parameters) vs.\ the
+         YOLO+TrOCR+Attention-Assigner pipeline
+         ($\approx$\,65\,M$+$\,\VAR{assigner_params_k}\,K
+         parameters).  The GT-OCR baseline column is intentionally
+         absent --- see Section~\ref{sec:limitations}.}
+\label{tab:headline_f1}
+\small
+\VAR{table_headline_f1}
+\end{table}
+
+\begin{table}[t]
+\centering
+\caption{Extended per-field metrics (P, R, F1, exact-match) for
+         DONUT and the learned-assigner pipeline on the
+         347-image Task-3 test set.  Bootstrap 95\% CIs are
+         paired across the two systems
+         (CI \VAR{delta_f1_ci_lo}--\VAR{delta_f1_ci_hi} on the
+         $\Delta$F1 row); McNemar $p=$\VAR{mcnemar_p:p}.}
+\label{tab:extended}
+\scriptsize
+\VAR{table_extended}
+\end{table}
+
+\begin{table}[t]
+\centering
+\caption{Latency and cost per image, per system.  Mean and
+         percentiles in ms; throughput images/s at batch size~1;
+         USD/image is the amortised cost on the reported hardware.
+         Cells render as a typed \texttt{\textbackslash
+         MissingCell\{$\cdot$\}} marker when the latency producer
+         (\texttt{core.metrics\_latency}) did not run on this build.}
+\label{tab:latency}
+\small
+\resizebox{\columnwidth}{!}{%
+\VAR{table_latency}%
+}
+\end{table}
+
+\begin{table}[t]
+\centering
+\caption{Training-run summary: number of epochs, best-checkpoint
+         epoch, wall-clock seconds, peak VRAM, total USD, and total
+         energy --- the inputs to the parameter-efficiency claim.
+         The advanced variant adds the parameter-budget ratio
+         (\VAR{donut_params_m}\,M\,/\,\VAR{pipeline_params_m}\,M
+         $\approx$\,3$\times$) that the abstract cites.}
+\label{tab:training}
+\small
+\resizebox{\columnwidth}{!}{%
+\VAR{table_training}%
+}
+\end{table}

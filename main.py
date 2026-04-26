@@ -56,6 +56,16 @@ def main() -> None:
         help="Override the auto-derived <UTC-timestamp>-<git-sha> run_id. "
         "Use this to resume a specific run or to pin a human-readable name.",
     )
+    parser.add_argument(
+        "--paper-variant",
+        choices=["advanced", "basic"],
+        default=None,
+        help="Select the paper template: 'advanced' (default, 626 train + 347 "
+        "canonical test, DONUT vs YOLO+TrOCR+Assigner) or 'basic' (500/63/63 "
+        "internal split, DONUT vs YOLO+TrOCR+regex vs GT-OCR+regex baseline). "
+        "Overrides config.paper_variant; flips canonical_sroie_enabled to "
+        "match.",
+    )
     args = parser.parse_args()
     logging.basicConfig(
         level=args.log_level.upper(),
@@ -66,6 +76,8 @@ def main() -> None:
         os.environ["KAGGLE2_RUNS_ROOT"] = args.runs_root
     if args.run_id is not None:
         os.environ["KAGGLE2_RUN_ID"] = args.run_id
+    if args.paper_variant is not None:
+        os.environ["KAGGLE2_PAPER_VARIANT"] = args.paper_variant
     os.environ["KAGGLE2_CONFIG_PATH"] = args.config
     # Pre-read raw config once so auto-resume and load_config share the same
     # I/O.  load_config re-parses it below; this peek only extracts runs_root.
@@ -108,6 +120,15 @@ def main() -> None:
     config = load_config(args.config)
     if args.skip_donut:
         config.skip_donut = True
+    # CLI --paper-variant flips both the template choice (via env in
+    # load_config) AND the canonical_sroie_enabled toggle so the basic
+    # variant always evaluates on the 500/63/63 internal split.
+    if args.paper_variant == "basic":
+        config.paper_variant = "basic"
+        config.canonical_sroie_enabled = False
+    elif args.paper_variant == "advanced":
+        config.paper_variant = "advanced"
+        config.canonical_sroie_enabled = True
     # CLI --seeds wins over config.seeds; config.seeds wins over legacy config.seed.
     # config.seeds and config.n_trials are the durable way to switch to n=5 etc.
     seeds = (

@@ -1,0 +1,29 @@
+\section{Conclusion}
+
+On a 500\,/\,63\,/\,63 internal split drawn from the 626 official
+ICDAR-2019 SROIE training receipts, three KIE arms are
+statistically close: DONUT (end-to-end,
+\VAR{donut_f1:mean_std_pct1}), YOLO+TrOCR+regex
+(\VAR{pipeline_f1:mean_std_pct1}), and the
+GT-OCR$+$regex baseline that bypasses YOLO+TrOCR entirely
+(\VAR{gtocr_rulebased_f1:mean_std_pct1}).  The narrow gap between
+the regex pipeline and the GT-OCR baseline localises the bulk of
+remaining error to the \emph{deterministic regex extractor}
+rather than the upstream OCR stack --- a signal the canonical
+347-image variant cannot recover (Task-3 ships no GT box files).
+The \VAR{f1_gap} F1 gap to DONUT (paired bootstrap 95\% CI
+\VAR{delta_f1_ci_lo}--\VAR{delta_f1_ci_hi}; McNemar
+$p=$\VAR{mcnemar_p:p}) is within the $\pm 0.05$ width of the
+63-image bootstrap CI, so the basic variant cannot \emph{itself}
+demonstrate parameter efficiency at high confidence; for that
+claim see the advanced (canonical-test) variant.  We catalogue
+thirteen silent F1-destroying implementation bugs and publish GPU
+telemetry alongside every reported number.
+
+\textbf{Future work.}
+Run the seed-parametric harness at $n{=}5$ to tighten the 63-image
+CIs; scale the test set to the canonical 347 images
+(\texttt{--paper-variant advanced}); evaluate on multilingual
+receipts (WildReceipt, CORD); quantify attention faithfulness with
+deletion/insertion; investigate on-device int8 quantisation of the
+assigner.
