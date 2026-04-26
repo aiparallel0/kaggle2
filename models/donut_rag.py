@@ -84,9 +84,11 @@ class _RAGSROIEDataset(_SROIEDataset):
 
         r = self._r[idx]
         img = Image.open(r.image_path).convert("RGB")
+        # See _SROIEDataset.__getitem__ — image size is pinned on
+        # processor.image_processor.size; the per-call size= kwarg is
+        # misrouted by transformers 4.48's ProcessorMixin.__call__.
         pv = self._p(
             images=img, return_tensors="pt", legacy=False,
-            size={"height": self._c.image_size[1], "width": self._c.image_size[0]},
         ).pixel_values.squeeze(0)
         prefix = _build_rag_prefix(self._neighbours[idx])
         label_text = prefix + _build_label(r)

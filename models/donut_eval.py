@@ -10,6 +10,7 @@ Role: runs DONUT inference with decoder_start_token_id=<s_sroie> (Bug 2),
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 from pathlib import Path
@@ -20,6 +21,8 @@ from core.metrics import compute_metrics
 from core.types import EvalBundle, ExpConfig, Field, Metrics, Prediction, Receipt
 from models.donut_parse import _flatten_token2json
 from models.donut_parse import token2json_safe as _token2json_safe
+
+_log = logging.getLogger("kaggle2")
 
 _import_error: ImportError | None = None
 try:
@@ -58,14 +61,9 @@ def normalize_total(s: str) -> str:
 def _apply_total_normalizer(preds: list[Prediction], gts: list[Receipt]) -> tuple[
     list[Prediction], list[Receipt],
 ]:
-    """Return normalized copies with every field routed through its paired
-    ``normalize_*`` — preds and GT both, so metric is symmetric and token-F1
-    stops penalising pred/GT pairs that differ only in SROIE-GT-inconsistent
-    punctuation (``SDN BHD.`` vs ``SDN BHD``, ``NO 12, BLOCK 3,`` vs
-    ``NO 12 BLOCK 3``).  Mirrors ``pipeline_eval._nt``; keeps DONUT and
-    pipeline F1 directly comparable."""
-    # Lazy import to keep the DONUT eval importable in the torch-free CI
-    # environment (pipeline_normalize pulls in rule_regex only).
+    """Symmetric per-field normalisation (preds + GT) so token-F1 measures
+    semantic match. Mirrors ``pipeline_eval._nt`` for DONUT/pipeline parity."""
+    # Lazy import — keeps DONUT eval importable in torch-free CI.
     from models.pipeline_normalize import (
         normalize_address,
         normalize_company,
@@ -99,10 +97,8 @@ def _load(model_path: str) -> tuple[Any, Any, str]:
     device = "cuda" if torch.cuda.is_available() else "cpu"
     model = model.to(device)
     model.eval()
-    # Bug 9 (eval side): donut-base ships a generation_config with
-    # ``forced_eos_token_id`` pointing at mBART's ``</s>`` (id 2). HF applies
-    # forcing after picking the next token, so generation emits token 2 at
-    # the second-to-last position and our ``</s_sroie>`` is never produced.
+    # Bug 9 (eval side): clear donut-base's forced_*_token_id so generation
+    # can emit </s_sroie> instead of mBART's </s> (id 2).
     model.generation_config.forced_bos_token_id = None
     model.generation_config.forced_eos_token_id = None
     return processor, model, device
@@ -140,11 +136,8 @@ def eval_donut(
     start_id, eos_id = _resolve_start_eos(processor, model)
     num_beams = config.num_beams
     max_len = config.max_length
-    # Pin inference image size to the training size (stale checkpoints can
-    # silently fall back to the model-card default and lose ~0.05 F1).
-    # Set on the image_processor once at load — mirrors donut_train.py and
-    # avoids transformers 4.48's ProcessorMixin.__call__ misrouting a per-call
-    # ``size=`` kwarg (which crashed eval right after model load).
+    # Pin inference image size on the image_processor (mirrors donut_train);
+    # avoids transformers 4.48's per-call size= kwarg misrouting (PR #87).
     processor.image_processor.size = {
         "height": config.image_size[1], "width": config.image_size[0],
     }
@@ -166,7 +159,7 @@ def eval_donut(
     else:
         rag_bank = empty_bank()
     with torch.no_grad():
-        for rec in test:
+        for i, rec in enumerate(test):
             img = Image.open(rec.image_path).convert("RGB")
             pv = processor(
                 images=img, return_tensors="pt", legacy=False,
@@ -188,12 +181,8 @@ def eval_donut(
                     max_length=max_len, num_beams=num_beams, early_stopping=True,
                 )
             tokens = processor.batch_decode(out, skip_special_tokens=False)[0]
-            # Bug 3 (gate): token2json list→dict merge via _flatten_token2json.
-            # Bug 12 (gate): outer <s_sroie> wrapper flattening, also handled
-            # by _flatten_token2json (recursively merges nested dicts).
-            # Guards off → call processor.token2json directly and best-effort
-            # coerce; silently degrades to {} when the output is a list (Bug 3)
-            # or an {"sroie": {...}} wrapper (Bug 12).
+            # Bug 3/12 gates: _token2json_safe handles list→dict merge and
+            # outer <s_sroie> wrapper flattening; degrades to {} when off.
             if (
                 config.bug_flags.get("bug_3", True)
                 and config.bug_flags.get("bug_12", True)
@@ -206,6 +195,19 @@ def eval_donut(
             else:
                 raw = processor.token2json(tokens)
                 parsed = raw if isinstance(raw, dict) else {}
+            if i == 0:
+                # One-shot diagnostic: catches preprocessor pin loss, Bug 2
+                # regression (start/eos ids), lm_head/gen-config corruption
+                # (raw tokens), and Bug 3/8/12 parser regressions (parsed).
+                _log.info(
+                    "donut_eval diag: image_size=%s start_id=%d eos_id=%s "
+                    "tokens[:200]=%r parsed_keys=%s",
+                    processor.image_processor.size,
+                    int(model.config.decoder_start_token_id),
+                    model.config.eos_token_id,
+                    tokens[:200],
+                    sorted(parsed.keys()),
+                )
             fields = [Field(name=k, value=v) for k, v in parsed.items()]
             predictions.append(Prediction(receipt_id=rec.image_path.stem, fields=fields))
     # Symmetric numeric normalization for the TOTAL field (DONUT only):

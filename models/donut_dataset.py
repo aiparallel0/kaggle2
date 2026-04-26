@@ -47,9 +47,13 @@ class _SROIEDataset(_DATASET_BASE):  # type: ignore[misc]
         r = self._r[idx]
         from PIL import Image
         img = Image.open(r.image_path).convert("RGB")
+        # NOTE: do NOT pass size=... here — transformers 4.48
+        # ProcessorMixin.__call__ misroutes top-level size= away from
+        # DonutImageProcessor.preprocess (same root cause as PR #87 eval-side
+        # fix). Image size is pinned once on processor.image_processor.size
+        # in donut_train.py::_prepare_model.
         pv = self._p(
             images=img, return_tensors="pt", legacy=False,
-            size={"height": self._c.image_size[1], "width": self._c.image_size[0]},
         ).pixel_values.squeeze(0)
         tok = self._p.tokenizer(
             _build_label(r), max_length=self._c.max_length,
