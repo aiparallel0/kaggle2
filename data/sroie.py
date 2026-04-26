@@ -93,7 +93,11 @@ def download_sroie(config: ExpConfig) -> Path:
 def _parse_entities_txt(path: Path) -> dict[str, str]:
     """Parse key:value entity files; preserve colons inside values."""
     out: dict[str, str] = {}
-    for line in path.read_text().splitlines():
+    try:
+        content = path.read_text(encoding="utf-8")
+    except UnicodeDecodeError:
+        content = path.read_text(encoding="latin-1")
+    for line in content.splitlines():
         if ":" not in line:
             continue
         # partition splits at the FIRST colon only; anything after (including

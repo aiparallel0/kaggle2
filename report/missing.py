@@ -48,6 +48,15 @@ MISSING_OK_PREFIXES: tuple[str, ...] = (
     # Per-bug CI when single-seed (deltas resolve from bug_timeline.json
     # but CI bounds collapse — the heal path leaves them populated, but
     # the CI fields themselves are advisory).
+    # Latency stage scoped-out (TRACKING.md): requires a dedicated
+    # --stage latency that measures per-inference timing; absent on
+    # standard train+eval runs.  Latency cells render \textit{n/a} so
+    # the table compiles without a build blocker. Applies to both
+    # template_basic.tex and template_advanced.tex.
+    "donut_latency_",
+    "pipeline_latency_",
+    "donut_throughput_",
+    "pipeline_throughput_",
 )
 
 MISSING_OK_KEYS: frozenset[str] = frozenset({
@@ -56,6 +65,16 @@ MISSING_OK_KEYS: frozenset[str] = frozenset({
     # ``inject._has_multi_seed``).
     "donut_f1_std", "pipeline_f1_std",
     "donut_f1_mean", "pipeline_f1_mean",
+    # CostDiagnostics schema keys (wall_seconds + energy_wh) are
+    # defined in core/schemas.py but the producer (--stage latency or
+    # the new CostDiagnostics writer) is scoped-out.  Until that stage
+    # lands, the training table renders these cells as \textit{n/a}.
+    # Applies to both template_basic.tex and template_advanced.tex.
+    "donut_wall_clock_s", "pipeline_wall_clock_s",
+    "donut_energy_wh", "pipeline_energy_wh",
+    # Per-image inference cost — emitted by the latency stage alongside
+    # throughput measurements; scoped-out on standard train+eval runs.
+    "donut_usd_per_img", "pipeline_usd_per_img",
 })
 
 

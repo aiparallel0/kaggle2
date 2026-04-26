@@ -35,6 +35,7 @@ def test_results_is_fixtures_only() -> None:
         "results/bug_timeline.json",
         "results/foundation_baseline.json",
         "results/README.md",
+        "results/sroie_task3_competitors.json",
     }
     assert set(tracked) <= allowed, f"unexpected tracked files: {set(tracked) - allowed}"
 
