@@ -114,7 +114,11 @@ def _load_receipts(img_dir: Path, ent_dir: Path) -> list[Receipt]:
         if not ent.exists():
             continue
         try:
-            raw = json.loads(ent.read_text())
+            try:
+                text = ent.read_text(encoding="utf-8")
+            except UnicodeDecodeError:
+                text = ent.read_text(encoding="latin-1")
+            raw = json.loads(text)
         except json.JSONDecodeError:
             raw = _parse_entities_txt(ent)
         receipts.append(Receipt(
