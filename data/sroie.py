@@ -188,10 +188,17 @@ def _canonical_test_split(
     )
     if not train_receipts:
         return None
-    # Bug 7 (gate): drop any train/val stems that overlap the canonical
-    # test set; SROIE training and test pools share a few duplicate
-    # receipts post-correction (this is what the HF "v2" deduplication
-    # exists for).  Silent overlap would re-introduce val≡test leakage.
+    # Bug 7 (extension to canonical-test boundary): the original Bug 7
+    # guard in :func:`split_sroie` ensures val and test slices of the
+    # 626-receipt training pool are disjoint.  When the canonical 347-
+    # image test set replaces the internal 63-image test slice, a NEW
+    # leakage surface appears at the train/val ↔ canonical-test boundary
+    # because SROIE training and Task-3 test pools share a small number
+    # of duplicate receipts post-correction (this is exactly what the
+    # HF "v2" deduplication exists for).  Silent overlap would re-
+    # introduce val≡test leakage on the canonical run.  Drop overlaps
+    # and log loudly; never fail closed (vast.ai operators rerun this
+    # path on every fresh instance).
     test_stems = {r.image_path.stem for r in test_receipts}
     overlap = [r for r in train_receipts if r.image_path.stem in test_stems]
     if overlap:

@@ -109,14 +109,18 @@ def load_config(path: str, defaults: dict[str, Any] | None = None) -> ExpConfig:
             "extend the `seeds` list or reduce `n_trials`.",
         )
     # Paper-variant template selection.  The repo ships:
-    #   * ``report/template.tex``           — basic 500/63/63 baseline
-    #     study (current default content; serves as the fallback).
-    #   * ``report/template_advanced.tex``  — 626-train + 347-canonical-
-    #     test variant (DONUT vs YOLO+TrOCR+Attention, no GT-OCR arm).
-    #   * ``report/template_basic.tex``     — explicit alias for the
-    #     basic variant; falls back to ``template.tex`` when absent.
-    # Env override ``KAGGLE2_PAPER_VARIANT`` wins so CLI --paper-variant
-    # can flip the choice without editing config.json.
+    #   * ``report/template.tex``           — generic baseline (current
+    #     default content); used as the fallback when no variant-
+    #     specific sibling exists.
+    #   * ``report/template_basic.tex``     — explicit basic variant
+    #     (500/63/63 internal split, three arms incl. GT-OCR baseline).
+    #   * ``report/template_advanced.tex``  — explicit advanced variant
+    #     (626-train + 347-canonical-test, DONUT vs YOLO+TrOCR+Attention,
+    #     no GT-OCR arm; competitors table).
+    # Logic: if ``template_<paper_variant>.tex`` sits next to
+    # ``paper_template``, swap to it; else keep ``paper_template``
+    # as-is.  Env override ``KAGGLE2_PAPER_VARIANT`` wins so CLI
+    # --paper-variant can flip the choice without editing config.json.
     paper_variant = (
         os.environ.get("KAGGLE2_PAPER_VARIANT")
         or str(raw.get("paper_variant", "advanced"))

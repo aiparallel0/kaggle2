@@ -26,15 +26,22 @@ _FIXTURE = (
 )
 
 
+def _is_finite_number(v: object) -> bool:
+    """True iff ``v`` is a finite int/float (rejects None, NaN, inf)."""
+    if not isinstance(v, int | float) or isinstance(v, bool):
+        return False
+    return v == v and v not in (float("inf"), float("-inf"))
+
+
 def _fmt_f1(v: object) -> str:
-    if isinstance(v, int | float) and v == v:  # noqa: PLR0124 — NaN guard
-        return f"{float(v):.3f}"
+    if _is_finite_number(v):
+        return f"{float(v):.3f}"  # type: ignore[arg-type]  # narrowed by guard
     return "\\textit{n/a}"
 
 
 def _fmt_params(v: object) -> str:
-    if isinstance(v, int | float) and v == v:  # noqa: PLR0124
-        return f"{float(v):.0f}"
+    if _is_finite_number(v):
+        return f"{float(v):.0f}"  # type: ignore[arg-type]  # narrowed by guard
     return "\\textit{n/a}"
 
 
@@ -43,10 +50,10 @@ def _resolve_this_work(row: dict[str, Any], metrics: dict[str, Any]) -> float | 
     notes = str(row.get("notes", ""))
     if "donut_f1" in notes:
         v = metrics.get("donut_f1")
-        return float(v) if isinstance(v, int | float) else None
+        return float(v) if _is_finite_number(v) else None  # type: ignore[arg-type]
     if "pipeline_f1" in notes:
         v = metrics.get("pipeline_f1")
-        return float(v) if isinstance(v, int | float) else None
+        return float(v) if _is_finite_number(v) else None  # type: ignore[arg-type]
     return None
 
 
