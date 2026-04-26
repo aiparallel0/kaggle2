@@ -90,14 +90,10 @@ def download_sroie(config: ExpConfig) -> Path:
     return cache
 
 
-def _parse_entities_txt(path: Path) -> dict[str, str]:
-    """Parse key:value entity files; preserve colons inside values."""
+def _parse_entities_txt(text: str) -> dict[str, str]:
+    """Parse key:value entity text; preserve colons inside values."""
     out: dict[str, str] = {}
-    try:
-        content = path.read_text(encoding="utf-8")
-    except UnicodeDecodeError:
-        content = path.read_text(encoding="latin-1")
-    for line in content.splitlines():
+    for line in text.splitlines():
         if ":" not in line:
             continue
         # partition splits at the FIRST colon only; anything after (including
@@ -124,7 +120,7 @@ def _load_receipts(img_dir: Path, ent_dir: Path) -> list[Receipt]:
                 text = ent.read_text(encoding="latin-1")
             raw = json.loads(text)
         except json.JSONDecodeError:
-            raw = _parse_entities_txt(ent)
+            raw = _parse_entities_txt(text)
         receipts.append(Receipt(
             image_path=img_path,
             fields=[Field(name=k, value=str(v)) for k, v in raw.items()],
