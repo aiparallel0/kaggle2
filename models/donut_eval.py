@@ -142,9 +142,12 @@ def eval_donut(
     max_len = config.max_length
     # Pin inference image size to the training size (stale checkpoints can
     # silently fall back to the model-card default and lose ~0.05 F1).
-    size_kwargs: dict[str, Any] = {"size": {
+    # Set on the image_processor once at load — mirrors donut_train.py and
+    # avoids transformers 4.48's ProcessorMixin.__call__ misrouting a per-call
+    # ``size=`` kwarg (which crashed eval right after model load).
+    processor.image_processor.size = {
         "height": config.image_size[1], "width": config.image_size[0],
-    }}
+    }
     predictions: list[Prediction] = []
     from PIL import Image
 
@@ -166,7 +169,7 @@ def eval_donut(
         for rec in test:
             img = Image.open(rec.image_path).convert("RGB")
             pv = processor(
-                images=img, return_tensors="pt", legacy=False, **size_kwargs,
+                images=img, return_tensors="pt", legacy=False,
             ).pixel_values.to(device)
             prompt_ids = build_rag_prompt(
                 rag_bank, (str(rec.image_path), config, processor.tokenizer),
