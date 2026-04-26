@@ -108,19 +108,23 @@ def load_config(path: str, defaults: dict[str, Any] | None = None) -> ExpConfig:
             f"n_trials={n_trials} exceeds len(seeds)={len(seeds_list)}; "
             "extend the `seeds` list or reduce `n_trials`.",
         )
-    # Paper-variant template selection: when ``paper_variant=basic`` and a
-    # sibling ``template_basic.tex`` exists next to ``paper_template``, use
-    # it.  Env override ``KAGGLE2_PAPER_VARIANT`` wins so CLI --paper-variant
+    # Paper-variant template selection.  The repo ships:
+    #   * ``report/template.tex``           — basic 500/63/63 baseline
+    #     study (current default content; serves as the fallback).
+    #   * ``report/template_advanced.tex``  — 626-train + 347-canonical-
+    #     test variant (DONUT vs YOLO+TrOCR+Attention, no GT-OCR arm).
+    #   * ``report/template_basic.tex``     — explicit alias for the
+    #     basic variant; falls back to ``template.tex`` when absent.
+    # Env override ``KAGGLE2_PAPER_VARIANT`` wins so CLI --paper-variant
     # can flip the choice without editing config.json.
     paper_variant = (
         os.environ.get("KAGGLE2_PAPER_VARIANT")
         or str(raw.get("paper_variant", "advanced"))
     )
     template_path = str(raw["paper_template"])
-    if paper_variant == "basic":
-        candidate = Path(template_path).with_name("template_basic.tex")
-        if candidate.exists():
-            template_path = str(candidate)
+    candidate = Path(template_path).with_name(f"template_{paper_variant}.tex")
+    if candidate.exists():
+        template_path = str(candidate)
     # Route output_dir + paper_output through runs_root/run_id layout
     # when configured (back-compat: raw config values survive unchanged).
     output_dir, paper_output = derive_paths(

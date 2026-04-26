@@ -28,6 +28,8 @@ producers available.
 | `core.env_snapshot.write_env_snapshot` | `env/hostinfo.json`, `env/git_sha.txt`, … | `git_sha`, `config_sha256`, `torch_version`, `cuda_version`, `gpu_model`, `driver_version`, `seed`, `run_id` |
 | `report.inject_tables.inject_tables` | — (in-memory dict) | `table_headline_f1`, `table_extended`, `table_latency`, `table_env`, `table_training` |
 | `core.manifest.write_manifest` | `MANIFEST.json` | (not a `\VAR{}` producer — the file itself) |
+| `data.sroie_canonical.ensure_canonical_test_set` | `<data_dir>/test/{img,entities}/` (×347 each) | (data producer, not a `\VAR{}` key — but powers `test_set_kind=canonical_347` and the `\VAR{donut_f1}` / `\VAR{pipeline_f1}` measured under the canonical Task-3 split when `canonical_sroie_enabled=true`) |
+| `stages.eval.stage_eval` (canonical-active branch) | `combined_metrics.json` | `test_set_kind`, `test_set_size` |
 
 ## Scoped-out keys (intentionally unwired in this PR)
 
@@ -37,6 +39,7 @@ producers available.
 | `trocr_cer`, `trocr_wer` | current pipeline does not thread per-crop (gold_text, pred_text) pairs through `pipeline_eval.py` | would require instrumenting `_detect_and_read` to return intermediate OCR outputs alongside final fields |
 | `lat_donut_p50`, `lat_donut_p95`, `lat_donut_p99`, same for `pipeline` | per-inference timing requires a dedicated timing-burst stage (cold-start, batch-1, batch-8) separate from the F1-critical eval loop | add `stages.latency` + `--stage latency` flag |
 | per-epoch `curves/*.csv` (loss, LR, grad-norm, GPU util) | requires threading the `core.tracking.Tracker` into `models/donut_train.py`, `models/yolo_train.py`, `models/trocr_train.py` | mechanical instrumentation pass in a follow-up PR |
+| `gtocr_rulebased_*`, `rulebased_*`, `oracle_patch_*` (canonical run only) | the SROIE Task-3 archive ships KIE entities only — no GT box / OCR streams — so the GT-OCR-rulebased baseline and oracle-patch diagnostic cannot be measured against the canonical 347-image test set | switch to `--paper-variant basic` (500/63/63 internal split) where SROIE training-set GT boxes are available; both runs ship side-by-side via the bifurcated `template_basic.tex` / `template_advanced.tex` |
 
 Scoped-out keys appear in `metrics/unresolved_vars.json` after a
 successful run.  The corresponding LaTeX figures (e.g.

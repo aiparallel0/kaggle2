@@ -8,16 +8,29 @@ replicators can weigh our conclusions against the evidence base.
   \item \emph{Single training seed.}  The headline numbers in
         Tables~\ref{tab:headline}--\ref{tab:ablation} are for a
         single seed ($n_{\text{trials}}=\VAR{n_trials}$); the
-        63-image test yields a bootstrap 95\% CI of roughly
-        $\pm 0.05$ F1, and observed inter-system differences
-        smaller than this are not resolvable.  The released harness
-        is seed-parametric (Appendix~\ref{app:repro}).
-  \item \emph{Non-canonical split.}  We draw the 500\,/\,63\,/\,63
-        split from the 626 SROIE training receipts rather than the
-        canonical 347-image public test set, so our F1 values are
-        not directly comparable to SROIE leaderboard numbers.
+        \VAR{test_set_size}-image test yields a bootstrap 95\% CI
+        of roughly $\pm 0.05$ F1, and observed inter-system
+        differences smaller than this are not resolvable.  The
+        released harness is seed-parametric (Appendix~\ref{app:repro}).
+  \item \emph{Evaluation split.}  This run used
+        \VAR{test_set_kind} (\VAR{test_set_size} test images).  The
+        \texttt{advanced} paper variant evaluates on the canonical
+        ICDAR-2019 SROIE Task-3 test set (347 images, auto-downloaded
+        and sha256-verified from \texttt{rrc.cvc.uab.es} with the
+        docTR mirror as fallback) so numbers are directly comparable
+        to the public SROIE leaderboard; the \texttt{basic} variant
+        evaluates on a 500\,/\,63\,/\,63 internal split drawn from
+        the 626-receipt training pool, where the GT-OCR$+$regex
+        baseline can be measured but leaderboard comparison is not
+        valid.  The advanced variant additionally reports
+        side-by-side numbers with published Task-3 entries
+        (DONUT~\cite{kim2022donut}, LayoutLMv3~\cite{huang2022layoutlmv3},
+        TILT~\cite{powalski2021tilt}, BROS~\cite{hong2022bros}, etc.)
+        in its dedicated competitors section.
   \item \emph{No LayoutLMv2/v3, TILT, UDOP, StrucTexT, PICK, or
-        zero-shot VLM baseline} is reimplemented here.
+        zero-shot VLM baseline} is reimplemented here; the advanced
+        variant cites their published Task-3 numbers as references
+        in its competitors section but does not retrain them.
   \item \emph{Assigner ablation is not decomposed.}
         Table~\ref{tab:ablation} reports the learned-vs-rule-based
         $\Delta$ but not the per-component contribution.

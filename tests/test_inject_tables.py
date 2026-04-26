@@ -96,10 +96,30 @@ def test_training_table_full_values() -> None:
 
 def test_inject_tables_returns_all_five_blocks() -> None:
     blocks = inject_tables({})
+    # Six emitters now: the original five tabular blocks plus
+    # ``table_competitors`` which is non-empty only under the advanced
+    # variant (test_set_kind=canonical_347); with empty metrics it
+    # renders as ``""`` and is excluded from the tabular-shape check.
     assert set(blocks) == {
         "table_headline_f1", "table_extended",
         "table_latency", "table_env", "table_training",
+        "table_competitors",
     }
-    for block in blocks.values():
+    for key, block in blocks.items():
+        if key == "table_competitors":
+            assert block == "", "competitors block must be empty without canonical_347"
+            continue
         assert block.startswith("\\begin{tabular}")
         assert block.rstrip().endswith("\\end{tabular}")
+
+
+def test_inject_tables_competitors_emits_under_canonical() -> None:
+    blocks = inject_tables({
+        "test_set_kind": "canonical_347",
+        "donut_f1": 0.83, "pipeline_f1": 0.79,
+    })
+    comp = blocks["table_competitors"]
+    assert comp.startswith("\\begin{tabular}")
+    assert "\\textbf{this work}" in comp
+    assert "0.830" in comp and "0.790" in comp
+    assert "\\cite{kim2022donut}" in comp

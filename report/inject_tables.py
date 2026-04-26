@@ -217,6 +217,13 @@ _TABLES = {
 }
 
 
+def _competitors() -> Any:  # lazy import keeps the LOC budget here
+    from report.inject_competitors import render_competitors_table
+    return render_competitors_table
+
+
 def inject_tables(metrics: dict[str, Any]) -> dict[str, str]:
     """Return ``{key: tabular_block}`` for every supported table emitter."""
-    return {name: fn(metrics) for name, fn in _TABLES.items()}
+    out = {name: fn(metrics) for name, fn in _TABLES.items()}
+    out["table_competitors"] = _competitors()(metrics)
+    return out
