@@ -5,14 +5,21 @@ Article: "End-to-End vs. Pipeline Receipt KIE: DONUT Against
     YOLO+TrOCR+Attention on SROIE" (IEEE/ICDAR submission).
 Role: hard-fails when F1 falls below architecture-specific bug floors,
     surfacing the 13 silent F1-destroying bugs documented in
-    report/sections/bugs.tex (Bug 1–13).
+    report/sections/bugs.tex (Bug 1–13).  Set env var
+    KAGGLE2_VALIDATE_F1_WARN_ONLY=1 to downgrade the DONUT hard floor to
+    a warning so forensic artifacts (donut_eval_diag.json,
+    combined_metrics.json) survive a sub-floor run for inspection.
 """
 from __future__ import annotations
 
 import json
+import logging
+import os
 
 from core.errors import EvalError
 from core.types import Metrics
+
+_log = logging.getLogger("kaggle2")
 
 
 def validate_f1(
@@ -23,11 +30,18 @@ def validate_f1(
     """Raise EvalError if F1 falls below bug floor (DONUT 0.50, pipeline >0)."""
     f1 = metrics.global_f1
     if arch == "donut" and f1 < 0.50:
-        raise EvalError(
+        msg = (
             f"DONUT F1={f1:.4f} < 0.50 — likely lm_head dedup (Bug 1), "
             "wrong decoder_start_token_id (Bug 2), token2json list (Bug 3), "
-            "or unflattened <s_sroie> wrapper (Bug 8).",
+            "or unflattened <s_sroie> wrapper (Bug 8)."
         )
+        if os.environ.get("KAGGLE2_VALIDATE_F1_WARN_ONLY", "0") == "1":
+            _log.warning(
+                "KAGGLE2_VALIDATE_F1_WARN_ONLY=1 — downgrading hard floor to "
+                "warning so forensic artifacts survive: %s", msg,
+            )
+            return
+        raise EvalError(msg)
     if arch == "pipeline" and f1 == 0.0:
         diag = ""
         if pipeline_metrics_path is not None:

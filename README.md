@@ -38,8 +38,32 @@ Overleaf upload instructions.
 
 | level            | threshold                           | behaviour |
 |------------------|-------------------------------------|-----------|
-| hard floor       | DONUT < 0.50 / pipeline == 0.0      | raises `TrainError` (indicates a bug, not underperformance) |
+| hard floor       | DONUT < 0.50 / pipeline == 0.0      | raises `EvalError` (indicates a bug, not underperformance) |
 | soft expectation | `config.expected_f1_warn` (def 0.75) | logs a WARNING, does not fail the run |
+
+Set `KAGGLE2_VALIDATE_F1_WARN_ONLY=1` to downgrade the DONUT hard floor
+to a `WARNING` so forensic artifacts (`donut_eval_diag.json`,
+`combined_metrics.json`) are written even when F1 < 0.50:
+
+```bash
+KAGGLE2_VALIDATE_F1_WARN_ONLY=1 python main.py --stage eval
+```
+
+For a targeted one-shot DONUT re-eval that always terminates and writes
+`<run_dir>/donut/donut_eval_diag.json`, use the dedicated console script:
+
+```bash
+# targets the most-recently-modified run under runs/ automatically
+python -m scripts.donut_eval_only
+
+# target a specific run directory
+python -m scripts.donut_eval_only config.json --run-dir runs/<run_id>
+
+# inspect the diag artifact
+jq '.lm_head_out_features, .tokenizer_vocab_size, .decoder_start_token_id' \
+    runs/<run_id>/donut/donut_eval_diag.json
+jq '.samples[0]' runs/<run_id>/donut/donut_eval_diag.json
+```
 
 ## Architecture
 
