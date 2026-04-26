@@ -268,7 +268,7 @@ def eval_donut(
     # Symmetric numeric normalization for the TOTAL field (DONUT only):
     # matches the paper's "normalized numeric comparison for the Total field"
     # so F1/EM/NED measure semantic match rather than incidental formatting.
-    out_dir = os.path.dirname(model_path)
+    out_dir = model_path
     _write_eval_diag(processor, model, start_id, eos_id, diag_samples, out_dir)
     norm_preds, norm_test = _apply_total_normalizer(predictions, test)
     metrics = compute_metrics(EvalBundle(
