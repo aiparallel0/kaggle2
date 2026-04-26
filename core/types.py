@@ -269,6 +269,23 @@ class ExpConfig:
     # task-3 archive layout); ``""`` defers detection to runtime.
     canonical_sroie_enabled: bool = False
     canonical_sroie_test_path: str = ""
+    # Real download endpoints + pinned sha256 (see data/sroie_canonical.py).
+    # Defaults match the official ICDAR Task-3 page; the docTR mirror is the
+    # community-hosted fallback whose digest is publicly pinned upstream.
+    canonical_sroie_test_url: str = (
+        "https://rrc.cvc.uab.es/downloads/SROIE_test_images_task_3.zip"
+    )
+    canonical_sroie_gt_url: str = (
+        "https://rrc.cvc.uab.es/downloads/SROIE_test_gt_task_3.zip"
+    )
+    canonical_sroie_mirror_url: str = (
+        "https://doctr-static.mindee.com/models?id=v0.1.1/sroie2019_test.zip&src=0"
+    )
+    # Two-variant paper bifurcation (see report/template.tex vs
+    # report/template_basic.tex).  ``advanced`` (default) is the headline
+    # 626-train + 347-test comparison; ``basic`` is the reduced-scope
+    # 500/63/63 + GT-OCR baseline study.  CLI flag: --paper-variant.
+    paper_variant: str = "advanced"
     # v4 — LayoutLMv3 baseline.  Off by default so the headline run is
     # bit-for-bit reproducible against v3; flip to True on the first
     # GPU box that has the public HF checkpoint cached.

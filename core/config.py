@@ -11,6 +11,7 @@ Role: single source of truth for every hyperparameter surfaced in the
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from typing import Any
 
@@ -82,6 +83,8 @@ def load_config(path: str, defaults: dict[str, Any] | None = None) -> ExpConfig:
         "runs_root", "run_id",  # runlayout keys (optional; back-compat).
         # v4 — canonical SROIE / LayoutLMv3 / latency / curation keys.
         "canonical_sroie_enabled", "canonical_sroie_test_path",
+        "canonical_sroie_test_url", "canonical_sroie_gt_url",
+        "canonical_sroie_mirror_url", "paper_variant",
         "layoutlmv3_enabled", "layoutlmv3_model",
         "measure_latency",
         "qualitative_sample_ids", "fig1_receipt_id",
@@ -105,6 +108,19 @@ def load_config(path: str, defaults: dict[str, Any] | None = None) -> ExpConfig:
             f"n_trials={n_trials} exceeds len(seeds)={len(seeds_list)}; "
             "extend the `seeds` list or reduce `n_trials`.",
         )
+    # Paper-variant template selection: when ``paper_variant=basic`` and a
+    # sibling ``template_basic.tex`` exists next to ``paper_template``, use
+    # it.  Env override ``KAGGLE2_PAPER_VARIANT`` wins so CLI --paper-variant
+    # can flip the choice without editing config.json.
+    paper_variant = (
+        os.environ.get("KAGGLE2_PAPER_VARIANT")
+        or str(raw.get("paper_variant", "advanced"))
+    )
+    template_path = str(raw["paper_template"])
+    if paper_variant == "basic":
+        candidate = Path(template_path).with_name("template_basic.tex")
+        if candidate.exists():
+            template_path = str(candidate)
     # Route output_dir + paper_output through runs_root/run_id layout
     # when configured (back-compat: raw config values survive unchanged).
     output_dir, paper_output = derive_paths(
@@ -132,7 +148,7 @@ def load_config(path: str, defaults: dict[str, Any] | None = None) -> ExpConfig:
         fields=list(raw["fields"]), new_tokens=list(raw["new_tokens"]),
         sroie_url=str(raw["sroie_url"]), data_dir=str(raw["data_dir"]),
         output_dir=output_dir,
-        paper_template=str(raw["paper_template"]), paper_output=paper_output,
+        paper_template=template_path, paper_output=paper_output,
         yolo_conf=float(raw.get("yolo_conf", 0.25)),
         trocr_max_new_tokens=int(raw.get("trocr_max_new_tokens", 64)),
         max_regions_per_image=int(raw.get("max_regions_per_image", 32)),
@@ -174,6 +190,19 @@ def load_config(path: str, defaults: dict[str, Any] | None = None) -> ExpConfig:
             raw.get("foundation_cache_path", "./runs/foundation_cache.json")),
         canonical_sroie_enabled=bool(raw.get("canonical_sroie_enabled", False)),
         canonical_sroie_test_path=str(raw.get("canonical_sroie_test_path", "")),
+        canonical_sroie_test_url=str(raw.get(
+            "canonical_sroie_test_url",
+            "https://rrc.cvc.uab.es/downloads/SROIE_test_images_task_3.zip",
+        )),
+        canonical_sroie_gt_url=str(raw.get(
+            "canonical_sroie_gt_url",
+            "https://rrc.cvc.uab.es/downloads/SROIE_test_gt_task_3.zip",
+        )),
+        canonical_sroie_mirror_url=str(raw.get(
+            "canonical_sroie_mirror_url",
+            "https://doctr-static.mindee.com/models?id=v0.1.1/sroie2019_test.zip&src=0",
+        )),
+        paper_variant=str(raw.get("paper_variant", "advanced")),
         layoutlmv3_enabled=bool(raw.get("layoutlmv3_enabled", False)),
         layoutlmv3_model=str(raw.get("layoutlmv3_model", "microsoft/layoutlmv3-base")),
         measure_latency=bool(raw.get("measure_latency", False)),
