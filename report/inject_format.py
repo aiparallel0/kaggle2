@@ -23,6 +23,14 @@ Supported directives:
     * ``:sig4`` — 4 significant figures
     * ``:int``  — integer with thousands separator
     * ``:bits`` — bits with one decimal
+    * ``:p``    — p-value for prose/text-mode contexts.  Renders large
+      values as ``0.0432`` and small values (``< 1e-4``) as
+      ``$3.2\\times 10^{-5}$`` (with its own ``$...$`` math wrap so the
+      directive is safe in text mode such as ``$p=$\\VAR{mcnemar_p:p}``).
+      Distinct from the bare ``\\VAR{mcnemar_p}`` renderer in
+      :func:`report.inject._format_pvalue`, which assumes the caller
+      already opened math mode (e.g. ``$p=\\VAR{mcnemar_p}$`` in
+      ``results.tex``) and therefore returns *raw* math content.
 """
 from __future__ import annotations
 
@@ -84,6 +92,20 @@ def apply_directive(value: object, directive: str) -> str | None:
         return _sig_fig(fv, 4)
     if directive == "int":
         return f"{int(round(fv)):,}"
+    if directive == "p":
+        # Text-mode-safe p-value formatter.  Template usage is
+        # ``$p=$\VAR{mcnemar_p:p}`` (math mode CLOSED before VAR), so
+        # this directive must NOT emit raw math content like ``\times``
+        # without its own ``$...$`` wrap — that would trigger
+        # "Missing $ inserted" in tectonic/pdflatex.
+        if fv <= 0.0:
+            # Numerical underflow; IEEE 754 doubles bottom out near 1e-308
+            # so any p that rounds to literal 0.0 is well below 1e-12.
+            return "$<10^{-12}$"
+        if fv < 1e-4:
+            mantissa, exp = f"{fv:.1e}".split("e")
+            return f"${mantissa}\\times 10^{{{int(exp)}}}$"
+        return f"{fv:.4f}"
     return None
 
 
