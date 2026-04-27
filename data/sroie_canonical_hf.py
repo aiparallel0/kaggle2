@@ -34,6 +34,7 @@ upstream schema drift can be diagnosed in seconds.
 """
 from __future__ import annotations
 
+import ast
 import io
 import json
 import logging
@@ -179,7 +180,17 @@ def _extract_gt(row: dict[str, object]) -> dict[str, str] | None:
         try:
             obj = json.loads(raw)
         except json.JSONDecodeError:
-            return None
+            # Upstream mirrors (e.g. Metric-AI/icdar_sroie) sometimes store
+            # `ground_truth` as a Python `str(dict)` repr — single-quoted keys —
+            # which is not valid JSON. ast.literal_eval safely parses Python
+            # literals (no code execution, no name resolution) and round-trips
+            # the exact dict the producer wrote.
+            try:
+                obj = ast.literal_eval(raw)
+            except (ValueError, SyntaxError):
+                return None
+            if not isinstance(obj, dict):
+                return None
     elif isinstance(raw, dict):
         obj = raw
     else:

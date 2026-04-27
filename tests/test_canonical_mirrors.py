@@ -620,6 +620,40 @@ def test_extract_gt_returns_none_for_invalid_json() -> None:
     assert sc_hf._extract_gt(row) is None
 
 
+def test_extract_gt_python_repr_str_dict() -> None:
+    """_extract_gt parses Python str(dict) repr (single-quoted keys/values).
+
+    Metric-AI/icdar_sroie stores ``ground_truth`` as ``str(dict)`` — single
+    quotes, not JSON.  ast.literal_eval must handle both row[0]-style and
+    standard JSON-style rows so the HF fallback materialises all 347 rows.
+    """
+    # Python repr shape (single-quoted) — exactly as emitted by the mirror
+    py_repr = (
+        "{'company': 'UNIHAKKA INTERNATIONAL SDN BHD', "
+        "'date': '26 MAR 2018', "
+        "'address': '12, JALAN TAMPOI 7/4', "
+        "'total': '$8.20'}"
+    )
+    row_repr: dict[str, object] = {"ground_truth": py_repr}
+    out = sc_hf._extract_gt(row_repr)
+    assert out is not None
+    assert out["company"] == "UNIHAKKA INTERNATIONAL SDN BHD"
+    assert out["date"] == "26 MAR 2018"
+    assert out["address"] == "12, JALAN TAMPOI 7/4"
+    assert out["total"] == "$8.20"
+
+    # JSON shape must still work (regression guard)
+    json_str = json.dumps({
+        "company": "SECRET RECIPE RESTAURANT", "date": "4/22/2018",
+        "address": "LOT G16, PERMAS JAYA JUSCO", "total": "RM41.81",
+    })
+    row_json: dict[str, object] = {"ground_truth": json_str}
+    out2 = sc_hf._extract_gt(row_json)
+    assert out2 is not None
+    assert out2["company"] == "SECRET RECIPE RESTAURANT"
+    assert out2["total"] == "RM41.81"
+
+
 def test_extract_gt_flat_column_fallback() -> None:
     """_extract_gt falls back to flat-column extraction (legacy schema)."""
     row: dict[str, object] = {
