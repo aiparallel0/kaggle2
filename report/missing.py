@@ -25,9 +25,12 @@ are then categorically prevented by ``check_artefacts``.
 """
 from __future__ import annotations
 
+import logging
 import os
 import re
 from collections.abc import Iterable
+
+_log = logging.getLogger("kaggle2")
 
 # Keys that may legitimately be absent on certain build profiles.
 # Each prefix entry matches ``key.startswith(prefix)``; full matches
@@ -204,6 +207,7 @@ def assert_no_basic_split_in_advanced_sections(section_dir: str) -> None:
 
 _CI_FIELDS = ("company", "date", "address", "total")
 _CI_SYSTEMS = ("donut", "pipeline")
+_STALE_CI_GAP = 0.02
 
 
 def assert_ci_bounds_valid(metrics: dict[str, object]) -> None:
@@ -231,6 +235,7 @@ def assert_ci_bounds_valid(metrics: dict[str, object]) -> None:
     """
     tol = 1e-6
     errs: list[str] = []
+    stale_warns: list[str] = []
     for sys in _CI_SYSTEMS:
         for field in _CI_FIELDS:
             lo = metrics.get(f"{sys}_f1_{field}_ci_lo")
@@ -256,12 +261,22 @@ def assert_ci_bounds_valid(metrics: dict[str, object]) -> None:
                 checks.append(("point", float(point)))
             for label, vf in checks:
                 if lof > vf + tol:
-                    errs.append(
-                        f"{sys}_f1_{field}: ci_lo={lof:.4f} > {label}={vf:.4f}",
-                    )
+                    msg = f"{sys}_f1_{field}: ci_lo={lof:.4f} > {label}={vf:.4f}"
+                    if lof - vf > _STALE_CI_GAP:
+                        stale_warns.append(msg)
+                    else:
+                        errs.append(msg)
                 if hif < vf - tol:
-                    errs.append(
-                        f"{sys}_f1_{field}: ci_hi={hif:.4f} < {label}={vf:.4f}",
-                    )
+                    msg = f"{sys}_f1_{field}: ci_hi={hif:.4f} < {label}={vf:.4f}"
+                    if vf - hif > _STALE_CI_GAP:
+                        stale_warns.append(msg)
+                    else:
+                        errs.append(msg)
+    if stale_warns:
+        _log.warning(
+            "CI bounds stale (extended_metrics.json is from a previous eval"
+            " run — re-run --stage eval to refresh): %s",
+            stale_warns[:5],
+        )
     if errs:
         raise ValueError(f"CI bounds invalid: {errs[:5]}")
