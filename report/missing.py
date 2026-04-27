@@ -86,6 +86,14 @@ MISSING_OK_KEYS: frozenset[str] = frozenset({
     # Per-image inference cost — emitted by the latency stage alongside
     # throughput measurements; scoped-out on standard train+eval runs.
     "donut_usd_per_img", "pipeline_usd_per_img",
+    # McNemar p-value: only computed when both per-image correctness
+    # vectors are present and equal-length.  Legitimately absent on
+    # n=1 canonical-347 runs where the condition ``d_vec and p_vec and
+    # len(d_vec) == len(p_vec)`` may not hold (e.g. skip_donut=True).
+    # When absent, ``\\VAR{mcnemar_p:p}`` directives (handled by
+    # ``report.inject_format.apply_formatters``) leave the placeholder
+    # intact and the inject backstop converts it to ``\\MissingCell``.
+    "mcnemar_p",
 })
 
 

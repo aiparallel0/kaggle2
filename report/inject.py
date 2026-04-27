@@ -41,18 +41,16 @@ def expand_inputs(template: str, base: Path, max_depth: int = 4) -> str:
 
 
 def _format_lr(value: float) -> str:
-    """Render learning rate in scientific notation (raw math-mode content, no outer ``$...$``).
+    """Render learning rate in scientific notation wrapped in ``\\ensuremath{}``.
 
-    Callers in appendix.tex already sit inside ``$...$``; text-mode usages in
-    experiments.tex wrap with their own ``$...$``.  Adding ``$...$`` here
-    produces nested dollar-sign delimiters which cause ``Missing $ inserted``
-    in tectonic/pdflatex (same issue that :func:`_format_pvalue` deliberately
-    avoids).
+    ``\\ensuremath{}`` makes the output safe in both text and math contexts:
+    it is a no-op inside existing math mode and auto-switches to math mode
+    in text mode.  Mirrors the ``\\ensuremath{\\pm}`` fix in inject_format.py.
     """
     if value == 0.0:
         return "0"
     mantissa, exp = f"{value:.0e}".split("e")
-    return f"{mantissa}\\times 10^{{{int(exp)}}}"
+    return f"\\ensuremath{{{mantissa}\\times 10^{{{int(exp)}}}}}"
 
 
 def _format_pvalue(value: float) -> str:
@@ -61,21 +59,22 @@ def _format_pvalue(value: float) -> str:
     the McNemar test result is not silently contradicted by the bootstrap
     CI in the discussion (review item S5).
 
-    Returns raw math-mode content (no outer ``$...$``) because the only
-    template usage is ``$p=\\VAR{mcnemar_p}$`` in
-    ``report/sections/results.tex`` — already inside math mode.
-    Adding ``$...$`` here produces nested delimiters, causing
-    ``Missing $ inserted`` (tectonic/pdflatex error).
+    Returns ``\\ensuremath{...}``-wrapped math content so the output is safe
+    in both text and math contexts.  ``\\ensuremath`` is a no-op inside an
+    existing math environment and auto-switches to math mode in text mode,
+    preventing ``Missing $ inserted`` when the same key appears both inside
+    ``$p=\\VAR{mcnemar_p}$`` (math) and in prose ``McNemar $p=$\\VAR{mcnemar_p}``
+    (text mode after the closing ``$``).
     """
     if value <= 0.0:
         # Numerical underflow / exact zero — IEEE 754 double precision is
         # ~1e-308; any p-value sufficiently small to round to literal 0.0
         # is far below the 1e-12 threshold typically reported in journals.
-        return "<10^{-12}"
+        return "\\ensuremath{<10^{-12}}"
     if value < 1e-4:
-        # Scientific: e.g. 3.2e-05 → 3.2\times 10^{-5} (no outer $).
+        # Scientific: e.g. 3.2e-05 → \ensuremath{3.2\times 10^{-5}}.
         mantissa, exp = f"{value:.1e}".split("e")
-        return f"{mantissa}\\times 10^{{{int(exp)}}}"
+        return f"\\ensuremath{{{mantissa}\\times 10^{{{int(exp)}}}}}"
     return f"{value:.4f}"
 
 
@@ -105,7 +104,7 @@ def _format_value(key: str, value: Any, metrics: dict[str, Any]) -> str:
     if key in _MEAN_STD_KEYS and _has_multi_seed(metrics, key):
         mean = float(metrics[f"{key}_mean"])
         std = float(metrics[f"{key}_std"])
-        return f"{mean:.4f} $\\pm$ {std:.4f}"
+        return f"{mean:.4f} \\ensuremath{{\\pm}} {std:.4f}"
     if isinstance(value, float):
         return f"{value:.4f}"
     return str(value)
