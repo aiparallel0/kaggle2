@@ -157,7 +157,13 @@ def apply_formatters(template: str, metrics: dict[str, object]) -> str:
             std_str = apply_directive(std_val, base)
             if std_str is None:
                 return mean_str
-            return f"{mean_str} \\pm {std_str}"
+            # ``\pm`` is a math-mode-only command, but template usage is
+            # almost entirely text-mode prose (e.g. "global token-F1 of
+            # \VAR{donut_f1:mean_std_pct1} and ..."). Bare ``\pm`` there
+            # makes tectonic abort with "Missing $ inserted". Wrap with
+            # ``\ensuremath`` so the separator auto-enters math mode in
+            # text contexts and is a no-op in math contexts.
+            return f"{mean_str} \\ensuremath{{\\pm}} {std_str}"
         if key not in metrics:
             # Leave intact; the base injector's audit will flag it.
             return match.group(0)
