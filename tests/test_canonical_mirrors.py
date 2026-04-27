@@ -544,9 +544,11 @@ def test_extract_fields_schema_variants() -> None:
 def test_extract_stem_fallback() -> None:
     """_extract_stem falls back to ``f"X{idx:08d}"`` when no stem column.
 
-    The X-prefixed deterministic stem matches the RRC naming style closely
-    enough that ad-hoc grepping in run artefacts still works; the actual
-    identity guard is the GT content sha256 (see module docstring).
+    The X-prefix is an arbitrary deterministic convention chosen so the
+    resulting filenames remain greppable in run artefacts; it does not
+    encode RRC's actual receipt-id scheme.  Identity preservation is
+    guaranteed by the GT content sha256 in the parent ensurer module
+    (`data.sroie_canonical._RRC_TASK3_GT_SHA256`), not by stem format.
     """
     row: dict[str, object] = {"company": "FOO"}
     assert sc_hf._extract_stem(row, 5) == "X00000005"

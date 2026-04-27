@@ -15,7 +15,8 @@ survives upstream renames without code changes:
 * stem cell   — file_name / id / image_id, else HF image["path"], else
   a deterministic ``f"X{idx:08d}"`` index fallback.  Stem fidelity to RRC
   is best-effort; identity preservation is enforced by
-  ``_RRC_TASK3_GT_SHA256`` (content), not by stem matching alone.
+  :data:`data.sroie_canonical._RRC_TASK3_GT_SHA256` (content), not by
+  stem matching alone.
 * ground_truth cell — JSON string / dict in any of ``ground_truth``,
   ``gt_parse``, ``label``, ``text``; supports the ``{"gt_parse": {...}}``
   and ``{"gt_parses": [{...}]}`` envelopes; falls back to flat columns.
@@ -98,18 +99,28 @@ def _extract_image_bytes(row: dict[str, object]) -> bytes | None:
         if isinstance(v, dict):
             raw = v.get("bytes")
             if isinstance(raw, bytes | bytearray):
-                # Re-encode through PIL so we always emit a valid JPEG even
-                # if upstream packed PNG bytes into a "bytes" field.
+                raw_b = bytes(raw)
+                # Fast path: bytes already carry the JPEG SOI marker → return
+                # as-is (the most common HF-mirrored receipt case).
+                if raw_b[:3] == b"\xff\xd8\xff":
+                    return raw_b
+                # Non-JPEG payload (e.g. PNG): re-encode via PIL so the
+                # ".jpg" filename stays truthful.  When PIL is unavailable
+                # or the bytes cannot be decoded, skip the row (per D3:
+                # any image failure → skip + count) rather than silently
+                # writing a non-JPEG payload to a .jpg file.
                 try:
                     import PIL.Image
-                    img = PIL.Image.open(io.BytesIO(bytes(raw)))
-                    if img.format == "JPEG":
-                        return bytes(raw)
+                    img = PIL.Image.open(io.BytesIO(raw_b))
                     buf = io.BytesIO()
                     img.convert("RGB").save(buf, format="JPEG")
                     return buf.getvalue()
                 except (ImportError, OSError):
-                    return bytes(raw)
+                    log.warning(
+                        "canonical-SROIE HF: non-JPEG image bytes could not "
+                        "be re-encoded; skipping row.",
+                    )
+                    return None
         if isinstance(v, bytes | bytearray):
             return bytes(v)
         # PIL Image object (HF auto-decodes when default features are used)
@@ -239,7 +250,10 @@ def _materialize_rows(snap_dir: Path, img_dir: Path, ent_dir: Path) -> int:
         stem = _extract_stem(row_d, idx)
         try:
             img_bytes = _extract_image_bytes(row_d)
-        except Exception:  # noqa: BLE001  # any per-image decode failure → skip
+        except (OSError, ValueError, KeyError, AttributeError):
+            # Per D3: any failure on a single image → skip + count.  Narrow
+            # to the exception types image decoding can plausibly raise so
+            # programming errors (e.g. wrong row shape) still surface.
             img_bytes = None
         if not img_bytes:
             n_skipped_img += 1
