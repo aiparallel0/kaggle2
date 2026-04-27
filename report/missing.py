@@ -99,6 +99,15 @@ MISSING_OK_KEYS: frozenset[str] = frozenset({
     # measurement — each bug is a separate failure mode, not additive.
     # The table now shows the ceiling baseline (all bugs fixed) only.
     "all_off_delta", "all_off_ci_low", "all_off_ci_high",
+    # Assigner sub-stage cost telemetry (A3): the assigner trains in
+    # under a minute on commodity GPUs and we don't run the cost
+    # collector for it (the collector amortises infrastructure cost
+    # over the dominant DONUT/TrOCR stages).  These cells render
+    # \textit{n/a} on every standard build until a dedicated
+    # --stage cost_assigner producer lands.  Applies to template_basic
+    # and template_advanced (Tables X & XI assigner sub-stage rows).
+    "assigner_train_minutes", "assigner_peak_vram_gb",
+    "assigner_cost_usd", "assigner_energy_kwh", "assigner_co2_kg",
     # Item 5: param ratio is computed from donut_params_m / pipeline_params_m.
     # Missing when either is absent (e.g., lightweight eval-only runs).
     "param_ratio_phrase", "param_ratio_numeric",
@@ -198,26 +207,61 @@ _CI_SYSTEMS = ("donut", "pipeline")
 
 
 def assert_ci_bounds_valid(metrics: dict[str, object]) -> None:
-    """Raise if any per-field CI bound violates lo ≤ mean ≤ hi.
+    """Raise if any per-field CI bound violates lo ≤ point ≤ hi.
 
-    Inspects keys like donut_f1_company_mean, donut_f1_company_ci_lo,
-    donut_f1_company_ci_hi.  Missing keys are silently skipped (single-seed
-    runs emit neither _mean nor CI keys); present keys must satisfy
-    ci_lo ≤ mean ≤ ci_hi (within 1e-6 tolerance for float rounding).
+    Inspects two estimators per field and applies whichever check the
+    sample shape supports:
+
+      * ``<sys>_f1_<field>_mean`` — multi-seed mean-of-seed-means.
+        Always bracketed when present (n>=2 runs).
+      * ``<sys>_f1_<field>`` — bare point estimate written by
+        :func:`report.combine.build_combined`, the per-image arithmetic
+        mean of token-F1 (matched-statistic with the bootstrap in
+        :func:`core.metrics_extended._bootstrap_field`).  On n=1 the
+        bare point IS the bundle mean and must be bracketed; on n>=2
+        the bare point is the last-seed value and is NOT bootstrap-
+        comparable to a cross-seed CI, so the check is skipped (this
+        preserves the multi-seed regression in
+        :func:`tests.test_ci_bounds.test_point_outside_ci_but_mean_inside_does_not_raise`
+        while still enforcing single-seed estimator-CI alignment).
+
+    Both checks tolerate 1e-6 rounding.  Missing keys are silently
+    skipped (single-seed runs may emit ``_ci_lo``/``_ci_hi`` as null).
+    This is the regression check for the B1 producer-side bootstrap fix.
     """
     tol = 1e-6
     errs: list[str] = []
     for sys in _CI_SYSTEMS:
         for field in _CI_FIELDS:
-            mean = metrics.get(f"{sys}_f1_{field}_mean")
             lo = metrics.get(f"{sys}_f1_{field}_ci_lo")
             hi = metrics.get(f"{sys}_f1_{field}_ci_hi")
-            if not all(isinstance(x, int | float) for x in (mean, lo, hi)):
+            if not all(isinstance(x, int | float) for x in (lo, hi)):
                 continue
-            mf, lof, hif = float(mean), float(lo), float(hi)  # type: ignore[arg-type]
-            if lof > mf + tol:
-                errs.append(f"{sys}_f1_{field}: ci_lo={lof:.4f} > mean={mf:.4f}")
-            if hif < mf - tol:
-                errs.append(f"{sys}_f1_{field}: ci_hi={hif:.4f} < mean={mf:.4f}")
+            lof, hif = float(lo), float(hi)  # type: ignore[arg-type]
+            mean = metrics.get(f"{sys}_f1_{field}_mean")
+            point = metrics.get(f"{sys}_f1_{field}")
+            checks: list[tuple[str, float]] = []
+            if isinstance(mean, int | float):
+                checks.append(("mean", float(mean)))
+            # Only check the bare point when it matches the cross-seed
+            # mean (single-seed run) or no mean is present — see docstring.
+            single_seed = (
+                isinstance(point, int | float)
+                and (
+                    not isinstance(mean, int | float)
+                    or abs(float(point) - float(mean)) <= tol
+                )
+            )
+            if single_seed and isinstance(point, int | float):
+                checks.append(("point", float(point)))
+            for label, vf in checks:
+                if lof > vf + tol:
+                    errs.append(
+                        f"{sys}_f1_{field}: ci_lo={lof:.4f} > {label}={vf:.4f}",
+                    )
+                if hif < vf - tol:
+                    errs.append(
+                        f"{sys}_f1_{field}: ci_hi={hif:.4f} < {label}={vf:.4f}",
+                    )
     if errs:
         raise ValueError(f"CI bounds invalid: {errs[:5]}")

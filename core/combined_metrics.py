@@ -97,6 +97,14 @@ class CombinedMetrics(TypedDict, total=False):
     donut_params_m: float
     pipeline_params_m: float
     assigner_params_k: float
+    # Audit C1 — assigner architecture single source of truth: the
+    # transformer-encoder ``d_model`` (hidden size) and ``num_layers``
+    # the shipped checkpoint was trained with.  Sourced from the live
+    # ``ExpConfig`` in ``report.combine.build_combined`` and
+    # over-ridden (when present) by ``assigner_metrics.json`` so the
+    # paper reflects what was actually trained, not what was configured.
+    assigner_d_model: int
+    assigner_n_layers: int
     assigner_best_epoch: int
     assigner_stopped_at: int
     assigner_best_val_loss: float

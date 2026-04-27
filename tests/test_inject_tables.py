@@ -101,14 +101,16 @@ def test_training_table_full_values() -> None:
 
 def test_inject_tables_returns_all_five_blocks() -> None:
     blocks = inject_tables({})
-    # Six emitters now: the original five tabular blocks plus
-    # ``table_competitors`` which is non-empty only under the advanced
-    # variant (test_set_kind=canonical_347); with empty metrics it
-    # renders as ``""`` and is excluded from the tabular-shape check.
+    # Seven emitters now (Audit A2/B2): the original five tabular blocks
+    # plus ``table_competitors`` (non-empty only under canonical_347)
+    # plus ``table_bug_ablation`` (data-driven from
+    # ``results/bug_timeline.json``); with empty metrics the
+    # competitors block is ``""`` and excluded from the tabular-shape
+    # check.
     assert set(blocks) == {
         "table_headline_f1", "table_extended",
         "table_latency", "table_env", "table_training",
-        "table_competitors",
+        "table_competitors", "table_bug_ablation",
     }
     for key, block in blocks.items():
         if key == "table_competitors":

@@ -96,8 +96,15 @@ def build_combined(
         # (which historically drifted from the shipped checkpoint as
         # the assigner was scaled from the 161K-parameter d=128, L=2
         # variant to the 1.16M-parameter d=384, L=6 variant).
+        # Audit C1: also expose the architecture-agnostic aliases
+        # ``assigner_d_model`` / ``assigner_n_layers`` that the
+        # template references — single source of truth, sourced from
+        # the live config object (which itself wraps the actual
+        # assigner ctor args at construction time).
         "assigner_hidden": config.assigner_hidden,
         "assigner_n_layers_level2": config.assigner_n_layers_level2,
+        "assigner_d_model": config.assigner_hidden,
+        "assigner_n_layers": config.assigner_n_layers_level2,
         # Per-image correctness vectors (all-fields EM per receipt):
         # consumed by stages/eval.py for the McNemar test and the
         # ``*_em_*`` paired-bootstrap CIs.
@@ -132,6 +139,18 @@ def merge_assigner_metrics(config: ExpConfig, metrics: dict[str, object]) -> Non
         # ``400.0000\,K`` (paper_corrections.md item 1 — the default
         # float formatter in ``report.inject`` uses ``{:.4f}``).
         metrics["assigner_params_k"] = int(round(float(n_params) / 1000.0))
+    # Audit C1: also surface the architecture-from-checkpoint values
+    # when the assigner trainer recorded them in assigner_metrics.json
+    # (preferred over the config-time copy in ``build_combined`` so
+    # the paper reflects what was actually trained, not what was
+    # configured).
+    for src, dst in (
+        ("d_model", "assigner_d_model"),
+        ("n_layers", "assigner_n_layers"),
+    ):
+        v = am.get(src)
+        if isinstance(v, int):
+            metrics[dst] = v
     for src, dst in (
         ("best_epoch", "assigner_best_epoch"),
         ("stopped_at_epoch", "assigner_stopped_at"),
@@ -168,16 +187,46 @@ def merge_pipeline_diagnostics(
             )
         except Exception as exc:  # noqa: BLE001
             log.warning("Failed to read pipeline_meta.json: %s", exc)
-    # Item 5: single-source param ratio (pipeline / donut).
+    # Item 5 / Audit C2: single-source param ratio (pipeline / donut).
+    # Resolves to a typeset phrase ("one-quarter" / "one-third" / ...)
+    # in lockstep with a numeric LaTeX-safe percentage so the title /
+    # abstract / conclusion all read the same value.  Bands here are
+    # the single source of truth — never duplicate them.
     donut_m = metrics.get("donut_params_m")
     pipe_m = metrics.get("pipeline_params_m")
     if isinstance(donut_m, int | float) and isinstance(pipe_m, int | float):
         ratio = float(pipe_m) / float(donut_m) if float(donut_m) > 0 else 0.0
-        metrics.setdefault("param_ratio_numeric", round(ratio, 2))
-        if 0.29 <= ratio <= 0.37:
-            metrics.setdefault("param_ratio_phrase", "roughly one-third")
-        else:
-            metrics.setdefault("param_ratio_phrase", f"$\\approx${ratio:.0%}")
+        # numeric: ``"25.2\\%"`` so ``\VAR{param_ratio_numeric}`` lands as
+        # a typeset percent in body text without a stray ``%`` comment
+        # marker swallowing the rest of the line.
+        metrics.setdefault("param_ratio_numeric", f"{ratio * 100:.1f}\\%")
+        metrics.setdefault("param_ratio_phrase", _ratio_phrase(ratio))
+
+
+def _ratio_phrase(ratio: float) -> str:
+    """Map a numeric pipeline/donut param ratio to a typeset phrase.
+
+    Audit C2: bands here are the single source of truth for the
+    abstract / title / conclusion / Table-XII row.  Each band covers
+    the open-left, closed-right interval (e.g. (0.20, 0.30] →
+    ``one-quarter``) so a ratio of exactly 0.30 reads as
+    ``one-quarter`` — the strictly-greater-than-third reading.
+    """
+    if ratio <= 0.0:
+        return "a fraction of"
+    if ratio <= 0.20:
+        return "one-fifth"
+    if ratio <= 0.30:
+        return "one-quarter"
+    if ratio <= 0.40:
+        return "one-third"
+    if ratio <= 0.55:
+        return "roughly half"
+    if ratio <= 0.75:
+        return "two-thirds"
+    if ratio <= 0.95:
+        return "roughly four-fifths"
+    return f"$\\approx${ratio:.0%}"
 
 
 def merge_cost_json(config: ExpConfig, metrics: dict[str, object]) -> None:

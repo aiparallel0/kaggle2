@@ -22,3 +22,23 @@ are interspersed with receipt metadata.  The learned attention
 assigner partially alleviates this by attending jointly to all
 lines, but a full solution requires a sequence model that can
 aggregate multi-line evidence.
+
+\textbf{The DONUT re-implementation gap.}
+Table~\ref{tab:competitors} reports our DONUT re-implementation
+($\VAR{donut_f1:pct1}$) below the originally published DONUT figure
+of $0.838$~\cite{kim2022donut}.  Three factors account for the gap:
+(i)~pre-training data scale --- our backbone is the
+\texttt{naver-clova-ix/donut-base} checkpoint and we do not extend
+its IIT-CDIP / SynthDoG pre-training; (ii)~image-preprocessing
+pipeline --- we use the resize-and-pad protocol shipped with the
+public processor, whereas the original work tunes the input
+resolution per dataset; (iii)~the SROIE Task-3 train/val partition
+--- the published number is on the official train$\rightarrow$val
+split with no external validation reservation, while our pipeline
+holds out $63$ images from the official train set for early-stopping
+to keep DONUT and the assigner under the same data budget.  We
+therefore frame the headline contribution as \emph{matching} our
+re-implemented DONUT at \VAR{param_ratio_phrase} of the parameter
+count (i.e.\ closing the architectural gap on a fair-data, fair-
+preprocessing comparison) rather than as beating the published
+DONUT figure on the leaderboard.

@@ -73,26 +73,49 @@ def _emit_from_ablation_report(
 def _emit_from_bug_timeline(
     fixture: dict[str, object], metrics: dict[str, object],
 ) -> None:
-    """Heal: synthesise the bug-atlas keys from bug_timeline.json."""
+    """Heal: synthesise the bug-atlas keys from bug_timeline.json.
+
+    Audit B2: ΔF1 is computed as ``ceiling - f1_before`` so the
+    column matches its header semantics (post-fix-F1 minus pre-fix-F1).
+    The fixture's ``f1_delta_measured`` field was historically populated
+    with ``f1_before`` itself (a producer bug), so this helper recomputes
+    the delta from first principles every time.  bug_7 (val/test leakage)
+    is an *over-reporting* bug whose pre-fix F1 (0.85) sits above the
+    ceiling (0.8216) — its rendered ΔF1 is therefore negative; the
+    caption in ``report/sections/bugs.tex`` documents that convention.
+
+    ``ceiling`` is sourced from the live metrics dict
+    (``pipeline_f1`` > ``donut_f1`` > ``f1_after_default``) so the table
+    stays consistent with the headline F1 number on every paper build.
+    """
     bugs = fixture.get("bugs") or []
     if not isinstance(bugs, list):
         return
-    metrics.setdefault(
-        "ablation_baseline_f1",
-        metrics.get("donut_f1") or fixture.get("f1_after_default") or 0.0,
-    )
+    ceiling: float = 0.0
+    for src in ("pipeline_f1", "donut_f1"):
+        v = metrics.get(src)
+        if isinstance(v, int | float):
+            ceiling = float(v)
+            break
+    if ceiling == 0.0:
+        fallback = fixture.get("f1_after_default")
+        if isinstance(fallback, int | float):
+            ceiling = float(fallback)
+    metrics.setdefault("ablation_baseline_f1", ceiling)
     metrics.setdefault("ablation_n_seeds", 1)
     total = 0.0
     for entry in bugs:
         if not isinstance(entry, dict):
             continue
         idx = entry.get("id")
-        delta = entry.get("f1_delta_measured")
-        if not isinstance(idx, int) or not isinstance(delta, int | float):
+        before = entry.get("f1_before")
+        if not isinstance(idx, int) or not isinstance(before, int | float):
             continue
-        delta_f = float(delta)
+        delta_f = ceiling - float(before)
         ci_lo = entry.get("ci_low")
         ci_hi = entry.get("ci_high")
+        # Single-seed: CI bounds collapse to the point estimate; only
+        # honour an explicit numeric override from the fixture.
         lo = float(ci_lo) if isinstance(ci_lo, int | float) else delta_f
         hi = float(ci_hi) if isinstance(ci_hi, int | float) else delta_f
         metrics.setdefault(f"bug_{idx}_delta", round(delta_f, 4))

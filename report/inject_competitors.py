@@ -74,6 +74,7 @@ def render_competitors_table(metrics: dict[str, Any]) -> str:
         log.warning("competitors fixture unreadable (%s) — emitting empty table.", exc)
         return ""
     rows: list[str] = []
+    has_reimpl = False
     for entry in data.get("competitors", []):
         f1_val: object = entry.get("f1")
         if f1_val is None and entry.get("source") == "this work":
@@ -88,14 +89,34 @@ def render_competitors_table(metrics: dict[str, Any]) -> str:
             str(entry.get("system", "?"))
             .replace("&", "\\&").replace("_", "\\_")
         )
+        # Audit C3: distinguish the in-paper DONUT re-implementation
+        # from the published DONUT numbers (Kim et al., ECCV 2022) so
+        # readers do not conflate the two.  The marker ``$^{\dagger}$``
+        # lands on the ``this work — DONUT`` row only; an explanatory
+        # note row is appended below the tabular body.
+        if "this work" in str(entry.get("system", "")) and "DONUT" in sys_lbl:
+            sys_lbl = sys_lbl + "$^{\\dagger}$"
+            has_reimpl = True
         rows.append(
             f"{sys_lbl} & {_fmt_params(entry.get('params_m'))} & "
             f"{_fmt_f1(f1_val)} & {cite} \\\\"
         )
     if not rows:
         return ""
+    note = ""
+    if has_reimpl:
+        note = (
+            "\\midrule\n"
+            "\\multicolumn{4}{p{0.92\\linewidth}}{\\footnotesize $^{\\dagger}$"
+            " ``this work --- DONUT'' is our SROIE Task-3 re-implementation"
+            " of the architecture from~\\cite{kim2022donut}; the numerical"
+            " gap to the originally reported DONUT figure stems from"
+            " differences in pre-training data scale, image-preprocessing"
+            " pipeline, and the exact SROIE Task-3 train/val partition"
+            " definition (Section~\\ref{sec:discussion}).} \\\\\n"
+        )
     return (
         "\\begin{tabular}{lrcl}\n\\toprule\n"
         "system & params (M) & F1 & source \\\\\n\\midrule\n"
-        + "\n".join(rows) + "\n\\bottomrule\n\\end{tabular}"
+        + "\n".join(rows) + "\n" + note + "\\bottomrule\n\\end{tabular}"
     )
