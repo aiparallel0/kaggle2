@@ -1,22 +1,35 @@
-"""HuggingFace Task-3 SROIE materialiser — schema-agnostic column resolution.
+"""HuggingFace Task-3 SROIE materialiser — schema-agnostic, Donut-aware.
 
 Called by :func:`data.sroie_canonical.ensure_canonical_test_set` when the
 RRC primary fails.  Downloads ``Metric-AI/icdar_sroie`` (or the repo
 configured via ``canonical_sroie_hf_repo``) using
-``huggingface_hub.snapshot_download``, reads parquet test shards, and
-writes ``<stem>.jpg`` + ``<stem>.json`` files into
-``workdir/hf/{img,entities}/``.
+``huggingface_hub.snapshot_download``, picks the split that has exactly
+347 rows (the canonical Task-3 test count), parses the Donut-style
+``ground_truth`` JSON cell on each row, and writes ``<stem>.jpg`` +
+``<stem>.json`` files into ``workdir/hf/{img,entities}/``.
 
-Schema-agnostic: handles multiple plausible column-name variants so the
-materialiser survives upstream renames without code changes.
-  image cell  — raw bytes, PIL Image, HF ``{"bytes":…}`` struct, or path string.
-  stem cell   — id, receipt_id, stem, file_name, …
-  field cells — company/COMPANY/Company, date/DATE/Date, etc.
+Schema is **content-driven**, not column-name-driven, so the materialiser
+survives upstream renames without code changes:
+
+* image cell  — raw bytes, PIL Image, HF ``{"bytes": …}`` struct, path str.
+* stem cell   — file_name / id / image_id, else HF image["path"], else
+  a deterministic ``f"X{idx:08d}"`` index fallback.  Stem fidelity to RRC
+  is best-effort; identity preservation is enforced by
+  ``_RRC_TASK3_GT_SHA256`` (content), not by stem matching alone.
+* ground_truth cell — JSON string / dict in any of ``ground_truth``,
+  ``gt_parse``, ``label``, ``text``; supports the ``{"gt_parse": {...}}``
+  and ``{"gt_parses": [{...}]}`` envelopes; falls back to flat columns.
 
 Public entry point
 ------------------
 ``try_huggingface(workdir, repo_id, revision)``  — called by
 :func:`~data.sroie_canonical.ensure_canonical_test_set`.
+
+Operator sanity script
+----------------------
+``python -m data.sroie_canonical_hf --peek <repo> <revision>`` prints the
+split sizes, column names, and the first row's ``ground_truth`` value so
+upstream schema drift can be diagnosed in seconds.
 """
 from __future__ import annotations
 
@@ -24,15 +37,23 @@ import io
 import json
 import logging
 from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
 from core.errors import DataError
 
+if TYPE_CHECKING:
+    from datasets import Dataset
+
 log = logging.getLogger("kaggle2")
+
+_TASK3_TEST_COUNT = 347
 
 # ── schema-agnostic column resolution ───────────────────────────────────────
 _IMAGE_COLS = ("image", "img", "image_bytes", "receipt_image", "jpg")
-_STEM_COLS = ("id", "receipt_id", "stem", "file_name", "filename", "image_id")
-_FIELD_COLS: dict[str, tuple[str, ...]] = {
+_STEM_COLS = ("file_name", "filename", "id", "image_id", "receipt_id", "stem")
+_GT_JSON_COLS = ("ground_truth", "gt_parse", "label", "text")
+_FIELD_KEYS = ("company", "date", "address", "total")
+_FIELD_KEY_VARIANTS: dict[str, tuple[str, ...]] = {
     "company": ("company", "COMPANY", "Company"),
     "date":    ("date",    "DATE",    "Date"),
     "address": ("address", "ADDRESS", "Address"),
@@ -40,9 +61,6 @@ _FIELD_COLS: dict[str, tuple[str, ...]] = {
 }
 
 # Guard against missing huggingface_hub at import time (mypy-strict safe).
-# _HF_AVAILABLE lets try_huggingface short-circuit before touching network.
-# Per A9: _snapshot_download = None in the except branch; the type:ignore
-# suppresses the None-to-callable assignment that mypy correctly flags.
 try:
     from huggingface_hub import snapshot_download as _snapshot_download
     _HF_AVAILABLE = True
@@ -52,13 +70,22 @@ except ImportError:  # pragma: no cover
 
 
 def _extract_stem(row: dict[str, object], idx: int) -> str:
-    """Derive a file stem from *row*, falling back to a zero-padded index."""
+    """Derive a file stem from *row*, falling back to ``f"X{idx:08d}"``.
+
+    Tries explicit stem columns first, then HF image-struct ``path``, then
+    the deterministic index fallback.  See module docstring on stem fidelity.
+    """
     for col in _STEM_COLS:
         v = row.get(col)
         if v and str(v).strip():
             stem = str(v).strip()
             return stem.rsplit(".", 1)[0] if "." in stem else stem
-    return f"receipt_{idx:05d}"
+    img = row.get("image")
+    if isinstance(img, dict):
+        path = img.get("path")
+        if isinstance(path, str) and path.strip():
+            return Path(path).stem
+    return f"X{idx:08d}"
 
 
 def _extract_image_bytes(row: dict[str, object]) -> bytes | None:
@@ -71,15 +98,26 @@ def _extract_image_bytes(row: dict[str, object]) -> bytes | None:
         if isinstance(v, dict):
             raw = v.get("bytes")
             if isinstance(raw, bytes | bytearray):
-                return bytes(raw)
+                # Re-encode through PIL so we always emit a valid JPEG even
+                # if upstream packed PNG bytes into a "bytes" field.
+                try:
+                    import PIL.Image
+                    img = PIL.Image.open(io.BytesIO(bytes(raw)))
+                    if img.format == "JPEG":
+                        return bytes(raw)
+                    buf = io.BytesIO()
+                    img.convert("RGB").save(buf, format="JPEG")
+                    return buf.getvalue()
+                except (ImportError, OSError):
+                    return bytes(raw)
         if isinstance(v, bytes | bytearray):
             return bytes(v)
-        # PIL Image object (pillow installed on most training hosts)
+        # PIL Image object (HF auto-decodes when default features are used)
         try:
             import PIL.Image
             if isinstance(v, PIL.Image.Image):
                 buf = io.BytesIO()
-                v.save(buf, format="JPEG")
+                v.convert("RGB").save(buf, format="JPEG")
                 return buf.getvalue()
         except ImportError:
             pass
@@ -92,9 +130,9 @@ def _extract_image_bytes(row: dict[str, object]) -> bytes | None:
 
 
 def _extract_fields(row: dict[str, object]) -> dict[str, str]:
-    """Extract the four KIE fields, trying variant column spellings."""
+    """Extract the four KIE fields from a flat-column row (variant casing)."""
     out: dict[str, str] = {}
-    for field, variants in _FIELD_COLS.items():
+    for field, variants in _FIELD_KEY_VARIANTS.items():
         for col in variants:
             v = row.get(col)
             if v is not None:
@@ -105,59 +143,137 @@ def _extract_fields(row: dict[str, object]) -> dict[str, str]:
     return out
 
 
-def _check_schema(col_names: list[str]) -> None:
-    """Raise DataError if ALL four KIE fields are absent from the dataset schema."""
-    lower = {c.lower() for c in col_names}
-    missing = [f for f in ("company", "date", "address", "total") if f not in lower]
-    if len(missing) == 4:
-        raise DataError(
-            "canonical-SROIE HF: dataset has none of the required KIE fields "
-            f"(company/date/address/total). Observed columns: {col_names[:10]}",
-        )
+def _extract_gt(row: dict[str, object]) -> dict[str, str] | None:
+    """Return ``{company,date,address,total}`` from a Donut-style row, or None.
+
+    Accepts ``str`` (parse JSON), ``dict`` (use directly), and the
+    ``{"gt_parse": {...}}`` / ``{"gt_parses": [{...}]}`` envelopes Donut
+    fine-tuners commonly emit.  Falls back to flat-column extraction so
+    legacy mirrors keep working.  Returns ``None`` only when the row
+    cannot be coerced into all four fields with non-empty string values.
+    """
+    raw: object = None
+    for col in _GT_JSON_COLS:
+        if col in row and row[col]:
+            raw = row[col]
+            break
+    obj: object
+    if raw is None:
+        # No JSON-style cell — try flat-column fallback (legacy schema).
+        flat = _extract_fields(row)
+        if all(flat.get(k) for k in _FIELD_KEYS):
+            return flat
+        return None
+    if isinstance(raw, str):
+        try:
+            obj = json.loads(raw)
+        except json.JSONDecodeError:
+            return None
+    elif isinstance(raw, dict):
+        obj = raw
+    else:
+        return None
+    # Donut convention: {"gt_parse": {...}} or {"gt_parses": [{...}]}.
+    if isinstance(obj, dict) and "gt_parse" in obj and isinstance(obj["gt_parse"], dict):
+        obj = obj["gt_parse"]
+    if (
+        isinstance(obj, dict)
+        and "gt_parses" in obj
+        and isinstance(obj["gt_parses"], list)
+        and obj["gt_parses"]
+        and isinstance(obj["gt_parses"][0], dict)
+    ):
+        obj = obj["gt_parses"][0]
+    if not isinstance(obj, dict):
+        return None
+    obj_lower = {str(k).lower(): str(v) for k, v in obj.items()}
+    out: dict[str, str] = {}
+    for canonical, variants in _FIELD_KEY_VARIANTS.items():
+        for v in variants:
+            if v.lower() in obj_lower and obj_lower[v.lower()]:
+                out[canonical] = obj_lower[v.lower()]
+                break
+        if canonical not in out:
+            return None  # missing field — row is unusable
+    return out
+
+
+def _select_canonical_split(snap_path: Path) -> Dataset:
+    """Pick the split (test/validation/train) with exactly 347 rows."""
+    from datasets import load_dataset
+    data_dir = snap_path / "data"
+    if not data_dir.is_dir():
+        # Some snapshots ship parquet at the repo root.
+        data_dir = snap_path
+    ds_dict = load_dataset("parquet", data_dir=str(data_dir))
+    for split_name in ("test", "validation", "train"):
+        if split_name in ds_dict and len(ds_dict[split_name]) == _TASK3_TEST_COUNT:
+            log.info(
+                "canonical-SROIE HF: using split=%s (%d rows)",
+                split_name, len(ds_dict[split_name]),
+            )
+            return ds_dict[split_name]
+    sizes = {k: len(v) for k, v in ds_dict.items()}
+    raise DataError(
+        f"canonical-SROIE HF: no split with exactly {_TASK3_TEST_COUNT} rows. "
+        f"Splits seen: {sizes}",
+    )
 
 
 def _materialize_rows(snap_dir: Path, img_dir: Path, ent_dir: Path) -> int:
-    """Read parquet test shards from *snap_dir* → write jpg+json. Returns row count."""
+    """Read the canonical split from *snap_dir* → write jpg+json. Returns row count."""
     try:
-        from datasets import Dataset
+        ds = _select_canonical_split(snap_dir)
     except ImportError:
         log.warning(
             "canonical-SROIE HF: 'datasets' library not installed "
             "(pip install datasets).",
         )
         return 0
-    test_pqs = sorted(snap_dir.rglob("*test*.parquet"))
-    if not test_pqs:
-        test_pqs = sorted(snap_dir.rglob("*.parquet"))
-    if not test_pqs:
-        log.warning("canonical-SROIE HF: no parquet files found in %s", snap_dir)
-        return 0
-    ds = Dataset.from_parquet([str(p) for p in test_pqs])
-    _check_schema(list(getattr(ds, "column_names", [])))
-    n = 0
+    n_extracted = 0
+    n_skipped_img = 0
+    n_skipped_gt = 0
+    bad_gt_samples: list[str] = []
     for idx, row in enumerate(ds):
         row_d: dict[str, object] = dict(row)
         stem = _extract_stem(row_d, idx)
-        img_bytes = _extract_image_bytes(row_d)
-        if img_bytes:
-            (img_dir / f"{stem}.jpg").write_bytes(img_bytes)
-        fields = _extract_fields(row_d)
+        try:
+            img_bytes = _extract_image_bytes(row_d)
+        except Exception:  # noqa: BLE001  # any per-image decode failure → skip
+            img_bytes = None
+        if not img_bytes:
+            n_skipped_img += 1
+            continue
+        fields = _extract_gt(row_d)
+        if fields is None:
+            n_skipped_gt += 1
+            if len(bad_gt_samples) < 3:
+                raw_gt = next(
+                    (str(row_d[c])[:200] for c in _GT_JSON_COLS if c in row_d), "<absent>",
+                )
+                bad_gt_samples.append(f"row[{idx}]: {raw_gt!r}")
+            continue
+        (img_dir / f"{stem}.jpg").write_bytes(img_bytes)
         (ent_dir / f"{stem}.json").write_text(
             json.dumps(fields, ensure_ascii=False), encoding="utf-8",
         )
-        n += 1
-    return n
+        n_extracted += 1
+    if n_extracted < _TASK3_TEST_COUNT:
+        sample_blob = "\n  ".join(bad_gt_samples) or "<none captured>"
+        raise DataError(
+            f"canonical-SROIE HF: only materialised {n_extracted}/{_TASK3_TEST_COUNT} "
+            f"rows (skipped {n_skipped_img} for missing image, {n_skipped_gt} for "
+            f"unparseable ground_truth). First unparseable rows:\n  {sample_blob}",
+        )
+    return n_extracted
 
 
 def try_huggingface(workdir: Path, repo_id: str, revision: str) -> Path | None:
-    """Download *repo_id* test split and materialise img+entities dirs.
+    """Download *repo_id* canonical split and materialise img+entities dirs.
 
     Returns ``workdir/hf`` on success, *None* on import/download/parse
     failure.  Re-raises :class:`~core.errors.DataError` on schema
     violations (caller must treat those as hard failures, not retries).
-
-    Logs an ``INFO`` line before the network call so firewalled operators
-    know which host is being contacted.
     """
     if not _HF_AVAILABLE:
         log.warning(
@@ -194,3 +310,54 @@ def try_huggingface(workdir: Path, repo_id: str, revision: str) -> Path | None:
         log.warning("canonical-SROIE HF: 0 rows materialised from %s", snap_path)
         return None
     return work_hf
+
+
+# --------------------------------------------------------------------------- #
+# Operator sanity script — diagnose upstream schema drift in 5 seconds.        #
+# Usage: python -m data.sroie_canonical_hf --peek <repo_id> <revision>         #
+# --------------------------------------------------------------------------- #
+
+def _peek(repo_id: str, revision: str) -> int:  # pragma: no cover
+    """Print split sizes, column names, and first row's ground_truth."""
+    if not _HF_AVAILABLE:
+        print("huggingface_hub not installed; pip install huggingface_hub")
+        return 2
+    import tempfile
+
+    from datasets import load_dataset
+    with tempfile.TemporaryDirectory() as td:
+        snap = _snapshot_download(
+            repo_id=repo_id, revision=revision,
+            repo_type="dataset", local_dir=td,
+        )
+        snap_p = Path(snap)
+        data_dir = snap_p / "data" if (snap_p / "data").is_dir() else snap_p
+        ds_dict = load_dataset("parquet", data_dir=str(data_dir))
+        print(f"repo={repo_id} revision={revision}")
+        for split_name, ds in ds_dict.items():
+            print(f"  split={split_name}: rows={len(ds)} columns={list(ds.column_names)}")
+            if len(ds) > 0:
+                first: dict[str, Any] = dict(ds[0])
+                gt: object = next(
+                    (first[c] for c in _GT_JSON_COLS if c in first), "<no gt-style col>",
+                )
+                gt_str = str(gt)
+                if len(gt_str) > 400:
+                    gt_str = gt_str[:400] + "…"
+                print(f"    first ground_truth: {gt_str}")
+    return 0
+
+
+if __name__ == "__main__":  # pragma: no cover
+    import argparse
+    import sys
+
+    ap = argparse.ArgumentParser(
+        description="Peek at HF SROIE schema (sizes, columns, first ground_truth).",
+    )
+    ap.add_argument(
+        "--peek", nargs=2, metavar=("REPO", "REVISION"), required=True,
+        help="HuggingFace dataset repo id + revision (e.g. Metric-AI/icdar_sroie main).",
+    )
+    args = ap.parse_args()
+    sys.exit(_peek(args.peek[0], args.peek[1]))

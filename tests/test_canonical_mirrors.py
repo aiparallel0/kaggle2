@@ -542,9 +542,20 @@ def test_extract_fields_schema_variants() -> None:
 
 
 def test_extract_stem_fallback() -> None:
-    """_extract_stem falls back to zero-padded index when no stem column."""
+    """_extract_stem falls back to ``f"X{idx:08d}"`` when no stem column.
+
+    The X-prefixed deterministic stem matches the RRC naming style closely
+    enough that ad-hoc grepping in run artefacts still works; the actual
+    identity guard is the GT content sha256 (see module docstring).
+    """
     row: dict[str, object] = {"company": "FOO"}
-    assert sc_hf._extract_stem(row, 5) == "receipt_00005"
+    assert sc_hf._extract_stem(row, 5) == "X00000005"
+
+
+def test_extract_stem_from_hf_image_path() -> None:
+    """_extract_stem derives stem from HF image-struct ``path`` field."""
+    row: dict[str, object] = {"image": {"path": "X51005200938.jpg"}}
+    assert sc_hf._extract_stem(row, 0) == "X51005200938"
 
 
 def test_extract_image_bytes_hf_struct() -> None:
@@ -553,11 +564,180 @@ def test_extract_image_bytes_hf_struct() -> None:
     assert sc_hf._extract_image_bytes(row) == _JPEG_SOI
 
 
-def test_check_schema_raises_when_all_fields_missing() -> None:
-    """_check_schema raises DataError when none of the four KIE fields exist."""
-    from data.sroie_canonical_hf import _check_schema
-    with pytest.raises(DataError, match="none of the required KIE fields"):
-        _check_schema(["col_a", "col_b", "image"])
+def test_extract_gt_donut_style_string() -> None:
+    """_extract_gt parses Donut-style ``ground_truth`` JSON string with gt_parse envelope."""
+    row: dict[str, object] = {
+        "ground_truth": json.dumps({
+            "gt_parse": {
+                "company": "ACME", "date": "01/01/2020",
+                "address": "1 Main St", "total": "9.99",
+            },
+        }),
+    }
+    out = sc_hf._extract_gt(row)
+    assert out == {
+        "company": "ACME", "date": "01/01/2020",
+        "address": "1 Main St", "total": "9.99",
+    }
+
+
+def test_extract_gt_gt_parses_list_envelope() -> None:
+    """_extract_gt unwraps {"gt_parses": [{...}]} list envelope (multi-annotator)."""
+    row: dict[str, object] = {
+        "ground_truth": json.dumps({
+            "gt_parses": [
+                {"company": "A", "date": "d", "address": "x", "total": "1"},
+                {"company": "B", "date": "d2", "address": "y", "total": "2"},
+            ],
+        }),
+    }
+    out = sc_hf._extract_gt(row)
+    assert out is not None and out["company"] == "A"
+
+
+def test_extract_gt_dict_input() -> None:
+    """_extract_gt accepts a pre-parsed dict (HF JSON-typed columns)."""
+    row: dict[str, object] = {
+        "gt_parse": {"COMPANY": "X", "DATE": "d", "ADDRESS": "a", "TOTAL": "t"},
+    }
+    out = sc_hf._extract_gt(row)
+    assert out == {"company": "X", "date": "d", "address": "a", "total": "t"}
+
+
+def test_extract_gt_returns_none_for_missing_field() -> None:
+    """_extract_gt returns None when a required field is absent."""
+    row: dict[str, object] = {
+        "ground_truth": json.dumps({"company": "A", "date": "d"}),  # no address/total
+    }
+    assert sc_hf._extract_gt(row) is None
+
+
+def test_extract_gt_returns_none_for_invalid_json() -> None:
+    """_extract_gt returns None on malformed JSON (per-row skip + count)."""
+    row: dict[str, object] = {"ground_truth": "this is not json {{{"}
+    assert sc_hf._extract_gt(row) is None
+
+
+def test_extract_gt_flat_column_fallback() -> None:
+    """_extract_gt falls back to flat-column extraction (legacy schema)."""
+    row: dict[str, object] = {
+        "company": "FOO", "date": "01/01/2024",
+        "address": "X", "total": "1.00",
+    }
+    out = sc_hf._extract_gt(row)
+    assert out == {
+        "company": "FOO", "date": "01/01/2024",
+        "address": "X", "total": "1.00",
+    }
+
+
+def test_hf_donut_style_ground_truth_parses_correctly(tmp_path: Path) -> None:
+    """End-to-end: 347 Donut-style rows → 347/347 jpg+json with all four fields.
+
+    Exercises the real :func:`_materialize_rows` (not the stub) by writing a
+    parquet shard that mimics ``Metric-AI/icdar_sroie``'s schema (image bytes,
+    ``ground_truth`` as a JSON string with the ``gt_parse`` envelope) and
+    asserting the post-parse outputs satisfy D6's acceptance criterion.
+    """
+    pa = pytest.importorskip("pyarrow")
+    pa_pq = pytest.importorskip("pyarrow.parquet")
+    pytest.importorskip("datasets")
+    snap_dir = tmp_path / "snap"
+    data_dir = snap_dir / "data"
+    data_dir.mkdir(parents=True)
+    rows_company: list[str] = []
+    rows_image: list[dict[str, object]] = []
+    rows_gt: list[str] = []
+    for i in range(_TASK3_TEST_COUNT):
+        company = f"COMPANY_{i:03d}"
+        rows_company.append(company)
+        rows_image.append({"bytes": _JPEG_SOI, "path": f"X{i:08d}.jpg"})
+        rows_gt.append(json.dumps({
+            "gt_parse": {
+                "company": company, "date": "01/01/2024",
+                "address": f"{i} Main St", "total": f"{i}.99",
+            },
+        }))
+    table = pa.table({
+        "image": rows_image,
+        "question": ["What is the total?"] * _TASK3_TEST_COUNT,
+        "ground_truth": rows_gt,
+    })
+    pa_pq.write_table(table, data_dir / "test-00000-of-00001.parquet")
+    img_dir = tmp_path / "img"
+    ent_dir = tmp_path / "entities"
+    img_dir.mkdir()
+    ent_dir.mkdir()
+    n = sc_hf._materialize_rows(snap_dir, img_dir, ent_dir)
+    assert n == _TASK3_TEST_COUNT
+    assert len(list(img_dir.glob("*.jpg"))) == _TASK3_TEST_COUNT
+    json_files = sorted(ent_dir.glob("*.json"))
+    assert len(json_files) == _TASK3_TEST_COUNT
+    # Spot-check one entity file: all four canonical fields, non-empty strings.
+    sample = json.loads(json_files[42].read_text())
+    assert set(sample) == {"company", "date", "address", "total"}
+    for k, v in sample.items():
+        assert isinstance(v, str) and v, f"empty field {k}"
+
+
+def test_hf_materialize_raises_on_unparseable_ground_truth(tmp_path: Path) -> None:
+    """_materialize_rows raises DataError with sample bad rows when count < 347."""
+    pa = pytest.importorskip("pyarrow")
+    pa_pq = pytest.importorskip("pyarrow.parquet")
+    pytest.importorskip("datasets")
+    snap_dir = tmp_path / "snap"
+    data_dir = snap_dir / "data"
+    data_dir.mkdir(parents=True)
+    table = pa.table({
+        "image": [{"bytes": _JPEG_SOI, "path": "x.jpg"}] * _TASK3_TEST_COUNT,
+        "ground_truth": ["not-valid-json {{{"] * _TASK3_TEST_COUNT,
+    })
+    pa_pq.write_table(table, data_dir / "test-00000-of-00001.parquet")
+    img_dir = tmp_path / "img"
+    ent_dir = tmp_path / "entities"
+    img_dir.mkdir()
+    ent_dir.mkdir()
+    with pytest.raises(DataError, match="unparseable"):
+        sc_hf._materialize_rows(snap_dir, img_dir, ent_dir)
+
+
+def test_select_canonical_split_picks_347_row_split(tmp_path: Path) -> None:
+    """_select_canonical_split prefers the split with exactly 347 rows."""
+    pa = pytest.importorskip("pyarrow")
+    pa_pq = pytest.importorskip("pyarrow.parquet")
+    pytest.importorskip("datasets")
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+    # train has 500 rows (wrong), test has 347 (correct), validation has 63.
+    pa_pq.write_table(
+        pa.table({"ground_truth": ["{}"] * 500}),
+        data_dir / "train-00000-of-00001.parquet",
+    )
+    pa_pq.write_table(
+        pa.table({"ground_truth": ["{}"] * _TASK3_TEST_COUNT}),
+        data_dir / "test-00000-of-00001.parquet",
+    )
+    pa_pq.write_table(
+        pa.table({"ground_truth": ["{}"] * 63}),
+        data_dir / "validation-00000-of-00001.parquet",
+    )
+    ds = sc_hf._select_canonical_split(tmp_path)
+    assert len(ds) == _TASK3_TEST_COUNT
+
+
+def test_select_canonical_split_raises_when_no_split_matches(tmp_path: Path) -> None:
+    """_select_canonical_split raises DataError when no split has 347 rows."""
+    pa = pytest.importorskip("pyarrow")
+    pa_pq = pytest.importorskip("pyarrow.parquet")
+    pytest.importorskip("datasets")
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+    pa_pq.write_table(
+        pa.table({"ground_truth": ["{}"] * 100}),
+        data_dir / "train-00000-of-00001.parquet",
+    )
+    with pytest.raises(DataError, match="no split with exactly 347 rows"):
+        sc_hf._select_canonical_split(tmp_path)
 
 
 def test_stems_sha256_deterministic(tmp_path: Path) -> None:
