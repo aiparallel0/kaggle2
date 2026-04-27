@@ -198,26 +198,26 @@ _CI_SYSTEMS = ("donut", "pipeline")
 
 
 def assert_ci_bounds_valid(metrics: dict[str, object]) -> None:
-    """Raise if any per-field CI bound violates lo ≤ point ≤ hi.
+    """Raise if any per-field CI bound violates lo ≤ mean ≤ hi.
 
-    Inspects keys like donut_f1_company, donut_f1_company_ci_lo,
-    donut_f1_company_ci_hi.  Missing keys are silently skipped;
-    present keys must satisfy ci_lo ≤ point ≤ ci_hi (within 1e-6
-    tolerance for float rounding).
+    Inspects keys like donut_f1_company_mean, donut_f1_company_ci_lo,
+    donut_f1_company_ci_hi.  Missing keys are silently skipped (single-seed
+    runs emit neither _mean nor CI keys); present keys must satisfy
+    ci_lo ≤ mean ≤ ci_hi (within 1e-6 tolerance for float rounding).
     """
     tol = 1e-6
     errs: list[str] = []
     for sys in _CI_SYSTEMS:
         for field in _CI_FIELDS:
-            point = metrics.get(f"{sys}_f1_{field}")
+            mean = metrics.get(f"{sys}_f1_{field}_mean")
             lo = metrics.get(f"{sys}_f1_{field}_ci_lo")
             hi = metrics.get(f"{sys}_f1_{field}_ci_hi")
-            if not all(isinstance(x, int | float) for x in (point, lo, hi)):
+            if not all(isinstance(x, int | float) for x in (mean, lo, hi)):
                 continue
-            pf, lof, hif = float(point), float(lo), float(hi)  # type: ignore[arg-type]
-            if lof > pf + tol:
-                errs.append(f"{sys}_f1_{field}: ci_lo={lof:.4f} > point={pf:.4f}")
-            if hif < pf - tol:
-                errs.append(f"{sys}_f1_{field}: ci_hi={hif:.4f} < point={pf:.4f}")
+            mf, lof, hif = float(mean), float(lo), float(hi)  # type: ignore[arg-type]
+            if lof > mf + tol:
+                errs.append(f"{sys}_f1_{field}: ci_lo={lof:.4f} > mean={mf:.4f}")
+            if hif < mf - tol:
+                errs.append(f"{sys}_f1_{field}: ci_hi={hif:.4f} < mean={mf:.4f}")
     if errs:
         raise ValueError(f"CI bounds invalid: {errs[:5]}")
