@@ -19,7 +19,7 @@ def test_config_roundtrip_flags() -> None:
     assert cfg.rag_enabled is False
     assert cfg.gat_enabled is False
     assert cfg.foundation_enabled is False
-    assert len(cfg.bug_flags) == 13
+    assert len(cfg.bug_flags) == 17  # PR-C added bugs 14–17
     assert all(cfg.bug_flags[f"bug_{i}"] for i in range(1, 14))
 
 

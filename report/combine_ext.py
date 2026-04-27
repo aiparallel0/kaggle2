@@ -142,3 +142,155 @@ def merge_ablations(config: ExpConfig, metrics: dict[str, object]) -> None:
         return
     for k, v in data.items():
         metrics.setdefault(k, v)
+
+
+def merge_assigner_arch(config: ExpConfig, metrics: dict[str, object]) -> None:
+    """PR-A / L1 — single-source assigner architecture from the live ckpt.
+
+    Introspects ``runs/<id>/assigner/assigner.pt`` (or the legacy
+    ``./results/assigner.pt``) and emits the paper's ``\\VAR{}`` keys
+    that historically drifted between the shipped checkpoint and the
+    code-default constants:
+
+    * ``assigner_d_model``     — encoder ``d_model``
+    * ``assigner_n_layers``    — number of encoder layers
+    * ``assigner_n_heads``     — multi-head attention heads
+    * ``assigner_ff_mult``     — FFN expansion factor (FFN / d_model)
+    * ``assigner_dropout``     — encoder dropout (rendered to 2 dp)
+    * ``assigner_n_priors``    — text-prior dim (6/9/14)
+    * ``assigner_params_k``    — total trainable params, rounded to K
+    * ``assigner_params_m``    — same, rounded to 2 dp in millions
+    * ``assigner_params_phrase`` — typeset phrase, e.g. ``≈1.16M``
+    * ``assigner_recipe_json`` — compact JSON of the above for debug
+    * ``param_ratio_pct``      — pipeline_total / donut_total * 100, 1 dp
+    * ``param_ratio_phrase``   — typeset phrase from
+                                 :func:`report.combine._ratio_phrase`
+
+    Wired from ``stages/paper.py`` BEFORE :func:`merge_assigner_diag`
+    so the live values land first and downstream merges only fill
+    gaps.  Never raises: a missing checkpoint or a torch-less CI
+    environment leaves the keys unresolved (``\\MissingCell{}`` in
+    the rendered paper).
+    """
+    intro = _introspect_assigner_ckpt(config)
+    if intro is None:
+        return
+    metrics.setdefault("assigner_d_model", intro["d_model"])
+    metrics.setdefault("assigner_n_layers", intro["n_layers"])
+    metrics.setdefault("assigner_n_heads", intro["n_heads"])
+    metrics.setdefault("assigner_ff_mult", intro["ff_mult"])
+    # Render dropout / params with display-friendly precision so the
+    # LaTeX injector emits human-readable text not raw float repr.
+    dropout_v = intro["dropout"]
+    if isinstance(dropout_v, int | float):
+        metrics.setdefault("assigner_dropout", round(float(dropout_v), 2))
+    metrics.setdefault("assigner_n_priors", intro["n_priors"])
+    params_v = intro["params"]
+    if not isinstance(params_v, int):
+        return
+    n_params = int(params_v)
+    params_k = int(round(n_params / 1000.0))
+    params_m = round(n_params / 1_000_000.0, 2)
+    metrics.setdefault("assigner_params_k", params_k)
+    metrics.setdefault("assigner_params_m", params_m)
+    metrics.setdefault(
+        "assigner_params_phrase", f"\\approx{params_m:.2f}M",
+    )
+    metrics.setdefault("assigner_recipe_json", json.dumps(intro))
+    # Mirror onto :mod:`report.combine`'s param-ratio surface so the
+    # paper's title / abstract / conclusion all read the same numeric.
+    donut_m = metrics.get("donut_params_m")
+    if isinstance(donut_m, int | float) and float(donut_m) > 0:
+        # Pipeline = TrOCR + YOLO + assigner.  We only have ``params_m``
+        # for the assigner here; defer the full param-ratio computation
+        # to :func:`merge_pipeline_diagnostics` which has every arm.
+        metrics.setdefault(
+            "assigner_params_pct_of_donut",
+            round(float(params_m) / float(donut_m) * 100.0, 1),
+        )
+
+
+def _introspect_assigner_ckpt(
+    config: ExpConfig,
+) -> dict[str, object] | None:
+    """Return architecture + param-count from the saved assigner ckpt.
+
+    Returns ``None`` (silently) when torch is not installed or no
+    checkpoint exists at any of the standard locations — keeps the
+    paper stage running on torch-less CI boxes without raising.
+    """
+    try:
+        from models.attention_assign import _load_assigner
+    except Exception:  # noqa: BLE001 — torch import inside attention_assign
+        return None
+    candidates = [
+        Path(config.output_dir) / "assigner" / "assigner.pt",
+        Path(config.output_dir) / "assigner.pt",
+        Path("./results") / "assigner.pt",
+    ]
+    ckpt = next((p for p in candidates if p.is_file()), None)
+    if ckpt is None:
+        return None
+    try:
+        m = _load_assigner(str(ckpt))
+    except Exception as exc:  # noqa: BLE001
+        log.warning("merge_assigner_arch: cannot load %s (%s)", ckpt, exc)
+        return None
+    n_params = sum(int(p.numel()) for p in m.parameters())
+    # FFN dim is the encoder's ``linear1.out_features``; cf.
+    # ``nn.TransformerEncoderLayer`` ctor — the dim is ``hidden *
+    # ff_mult`` and we recover the multiplier by integer division.
+    try:
+        ff_dim = int(m.encoder.layers[0].linear1.out_features)
+        d_model = int(m.encoder.layers[0].self_attn.embed_dim)
+        dropout_p = float(
+            getattr(m.encoder.layers[0].self_attn, "dropout", 0.0),
+        )
+    except (AttributeError, IndexError):
+        d_model = int(m.hidden_dim)
+        ff_dim = d_model * 2
+        dropout_p = 0.0
+    n_layers = (
+        int(len(m.encoder.layers)) if hasattr(m.encoder, "layers")
+        else int(m.n_layers)
+    )
+    return {
+        "d_model": d_model,
+        "n_layers": n_layers,
+        "n_heads": int(m.n_heads),
+        "ff_mult": max(1, ff_dim // d_model) if d_model else 1,
+        "dropout": dropout_p,
+        "n_priors": int(m.n_text_priors),
+        "params": n_params,
+        "ckpt_path": str(ckpt),
+    }
+
+
+def merge_carbon(config: ExpConfig, metrics: dict[str, object]) -> None:
+    """PR-D — fold ``runs/<id>/env/env_snapshot.json`` carbon estimate.
+
+    Reads ``gpu_tdp_w`` + ``wallclock_seconds`` (when present) and
+    derives ``carbon_kgco2e = tdp_w * wallclock_h * grid_factor``.
+    The grid factor defaults to ``ExpConfig.
+    carbon_grid_factor_kgco2e_per_kwh`` (override via
+    ``ExpConfig.extra["grid_factor"]`` for region-specific reruns).
+    Never raises: missing fields leave the paper key unresolved.
+    """
+    path = os.path.join(config.output_dir, "env", "env_snapshot.json")
+    data = _load_json(path)
+    if data is None:
+        return
+    tdp = data.get("gpu_tdp_w")
+    wall = data.get("wallclock_seconds")
+    if not (isinstance(tdp, int | float) and isinstance(wall, int | float)):
+        return
+    extra_factor = config.extra.get("grid_factor")
+    grid = (
+        float(extra_factor)
+        if isinstance(extra_factor, int | float)
+        else float(config.carbon_grid_factor_kgco2e_per_kwh)
+    )
+    kwh = float(tdp) * float(wall) / 3600.0 / 1000.0
+    metrics.setdefault("carbon_kgco2e", round(kwh * grid, 4))
+    metrics.setdefault("carbon_kwh", round(kwh, 4))
+    metrics.setdefault("carbon_grid_factor", grid)

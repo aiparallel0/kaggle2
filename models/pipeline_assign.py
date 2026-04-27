@@ -6,9 +6,16 @@ Article: "End-to-End vs. Pipeline Receipt KIE: DONUT Against
 Role: performs inference-time field assignment by picking regions whose
     attention exceeds half of max for multi-line fields (address), then
     postprocessing date/total through regex to match SROIE GT format.
+
+PR-A / T-D1 — public dataclasses :class:`AssignerPolicy` and
+:class:`AssignerInputs` collapse the previous 7-kwarg surface of
+``_assign_learned_with_attn`` into the 2-in/1-out contract mandated by
+``AGENTS.md``.  The legacy 7-kwarg signature is preserved for one PR
+as a thin shim so existing callers do not break.
 """
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from models.attention_assign import (
@@ -41,6 +48,55 @@ except ImportError:  # lightweight CI — torch not installed
 
 if TYPE_CHECKING:
     import torch
+
+
+@dataclass(frozen=True)
+class AssignerPolicy:
+    """Inference-time policy knobs for the learned assigner (PR-A / T-D1).
+
+    Promoted from a 7-kwarg surface on :func:`_assign_learned_with_attn`
+    so the inference path matches the 2-in/1-out contract documented in
+    ``AGENTS.md``.  All knobs are typed and immutable; callers pass the
+    same :class:`AssignerPolicy` to every receipt for consistency.
+
+    Field defaults mirror the legacy hard-coded values so an unchanged
+    eval run reproduces bit-for-bit.
+    """
+
+    regex_router: bool = True
+    address_accept_fraction: float = 0.5
+    total_confidence_threshold: float = 0.55
+    multi_line_fraction: float = 0.5
+    total_override_margin: float = 0.10
+    total_override_margin_diffuse: float = 0.05
+    attn_blend_alpha: float = 0.5
+    attn_log_eps: float = 1.0e-6
+    # PR-C / S0 — address-assembly scoring weights (used by the
+    # ``models.pipeline_consensus_score._score_address_assembly`` head
+    # when ``address_score_token_f1_w > 0``).
+    address_score_token_f1_w: float = 1.0
+    address_score_line_count_w: float = 0.25
+    address_score_postcode_w: float = 0.05
+    address_score_money_penalty: float = 0.10
+
+
+@dataclass(frozen=True)
+class AssignerInputs:
+    """Per-receipt inputs to :func:`_assign_learned_with_attn` (PR-A / T-D1).
+
+    Holds the four lists/tensors that previously flowed through the
+    7-kwarg signature.  ``device`` is a ``torch.device`` so callers do
+    not have to remember the legacy ``str`` form.
+    """
+
+    texts: list[str]
+    feats: list[torch.Tensor]
+    bboxes: list[list[float]]
+    fields: list[str]
+    device: str
+
+
+DEFAULT_POLICY = AssignerPolicy()
 
 # Fields whose GT value spans multiple OCR regions (address = street/city/
 # postcode).  Pick every region with ``attn >= _MULTI_LINE_FRACTION * max``
@@ -347,3 +403,26 @@ def _assign_learned_with_attn(
             pv = _apply_date_sanity(pv, texts)
         out[name] = pv
     return out, attn_sample
+
+
+def assign_with_policy(
+    assigner: AttentionAssigner,
+    inputs: AssignerInputs,
+    policy: AssignerPolicy = DEFAULT_POLICY,
+) -> tuple[dict[str, str], torch.Tensor | None]:
+    """PR-A / T-D1 — 2-in/1-out wrapper for :func:`_assign_learned_with_attn`.
+
+    The legacy 7-kwarg signature is preserved for one PR (callers that
+    haven't yet migrated to the dataclass form continue to work);
+    PR-C will delete the 7-kwarg form and route every caller through
+    this entry point.
+
+    Returns ``(values, attn_sample)`` exactly like the legacy form.
+    """
+    return _assign_learned_with_attn(
+        assigner, inputs.texts, inputs.feats, inputs.bboxes,
+        inputs.fields, inputs.device,
+        address_accept_fraction=policy.address_accept_fraction,
+        regex_router=policy.regex_router,
+        total_confidence_threshold=policy.total_confidence_threshold,
+    )

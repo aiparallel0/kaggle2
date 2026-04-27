@@ -32,28 +32,49 @@ except ImportError:  # lightweight CI — torch not installed
 if TYPE_CHECKING:
     from torch import Tensor
 
-# Architecture defaults.  Exposed as constants so save/load stay consistent.
-# 384-d / 6-layer yields ~7–8M parameters — the "capacity compensates for
-# TrOCR/YOLO mistakes" hypothesis.  The live miss table (total F1≈0.62,
-# rule-based F1≈0.73) falsified that hypothesis: on O(500) SROIE receipts
-# the big backbone overfits label noise and is beaten by the regex arm.
-# The assigner plan therefore recommends a shrunk fresh-train config
-# (``assigner_hidden=192``, ``assigner_n_layers_level2=3`` → ~1.4M params)
-# when strategies B/C/E are enabled, to be re-grown only if they plateau.
-# Defaults below are kept at the legacy 384/6 so existing checkpoints
-# load bit-exact; fresh trains should override via ``ExpConfig``.
-DEFAULT_HIDDEN_DIM = 384
-DEFAULT_N_HEADS = 12
-DEFAULT_N_LAYERS = 6
+# Architecture defaults — single-source-of-truth (PR-A / T-A2 / L1).
+#
+# The repo historically carried THREE competing "truths" for the
+# AttentionAssigner architecture:
+#
+#   * legacy 384-d / 6-layer (~7–8M params; ``DEFAULT_*`` constants
+#     here, retained as aliases for back-compat),
+#   * mini    192-d / 3-layer (~1.16M params; previously ``MINI_*``,
+#     now ``SHIPPED_*`` because this is what the published paper
+#     checkpoint uses),
+#   * runtime ``ExpConfig`` 384/6 (matching the legacy defaults).
+#
+# A reviewer who clones the repo and instantiates ``AttentionAssigner()``
+# with no arguments would historically have got the 384/6 model — which
+# does NOT match the shipped checkpoint and therefore does NOT reproduce
+# the paper's numbers.  The single-source-of-truth rule is now: the
+# defaults below match the SHIPPED checkpoint, and the legacy 384/6
+# constants are aliases preserved for code that explicitly opts into the
+# bigger backbone (training scripts, bug-replay).  Existing checkpoints
+# load bit-exact via the saved ``hyperparams`` blob in
+# ``models/attention_assign.py::_load_assigner``.
+#
+# Verified by introspection at commit fd9d7b0 (see
+# ``report/combine_ext.py::merge_assigner_arch``).
+SHIPPED_HIDDEN_DIM = 192
+SHIPPED_N_LAYERS = 3
+SHIPPED_N_HEADS = 8
+LEGACY_HIDDEN_DIM = 384
+LEGACY_N_LAYERS = 6
+LEGACY_N_HEADS = 12
 DEFAULT_DROPOUT = 0.1
 DEFAULT_FF_MULT = 2  # FFN hidden = hidden_dim * DEFAULT_FF_MULT
 
-# Recommended shrunk config for fresh trains with strategies B + C + E
-# enabled (see :mod:`models.assigner_train`).  Not used directly by this
-# module — callers (``ExpConfig``) opt in by setting the corresponding
-# ``assigner_hidden`` / ``assigner_n_layers_level2`` fields.
-MINI_HIDDEN_DIM = 192
-MINI_N_LAYERS = 3
+# Back-compat aliases — used by callers that explicitly want the
+# big-backbone variant (e.g. legacy training scripts, bug-replay).
+# Kept here so external code that imports ``DEFAULT_HIDDEN_DIM`` /
+# ``MINI_HIDDEN_DIM`` does not break.  Prefer the ``SHIPPED_*`` /
+# ``LEGACY_*`` names in new code.
+DEFAULT_HIDDEN_DIM = LEGACY_HIDDEN_DIM
+DEFAULT_N_HEADS = LEGACY_N_HEADS
+DEFAULT_N_LAYERS = LEGACY_N_LAYERS
+MINI_HIDDEN_DIM = SHIPPED_HIDDEN_DIM
+MINI_N_LAYERS = SHIPPED_N_LAYERS
 
 
 def _pick_n_heads(hidden_dim: int, requested: int) -> int:
@@ -71,10 +92,10 @@ class AttentionAssigner(_NN_BASE):  # type: ignore[misc]
 
     def __init__(
         self,
-        hidden_dim: int = DEFAULT_HIDDEN_DIM,
+        hidden_dim: int = SHIPPED_HIDDEN_DIM,
         n_fields: int = 4,
-        n_heads: int = DEFAULT_N_HEADS,
-        n_layers: int = DEFAULT_N_LAYERS,
+        n_heads: int = SHIPPED_N_HEADS,
+        n_layers: int = SHIPPED_N_LAYERS,
         dropout: float = DEFAULT_DROPOUT,
         n_text_priors: int = N_TEXT_PRIORS,
         text_feat_dim: int = 768,
