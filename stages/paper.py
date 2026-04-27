@@ -28,7 +28,9 @@ from report.combine import (
 )
 from report.combine_ext import (
     merge_ablations,
+    merge_assigner_arch,
     merge_assigner_diag,
+    merge_carbon,
     merge_donut_diag,
     merge_env,
     merge_extended_metrics,
@@ -171,11 +173,19 @@ def stage_paper(config: ExpConfig) -> None:
     merge_pipeline_diagnostics(config, metrics)
     merge_yolo_diagnostics(config, metrics)
     merge_trocr_diagnostics(config, metrics)
+    # PR-A / T-A1 — assigner architecture single-source-of-truth: must
+    # run BEFORE merge_assigner_diag so the diag-merger can read back
+    # the introspected ``assigner_d_model`` / ``assigner_n_layers`` /
+    # ``assigner_params_m`` if it cross-checks them.  Idempotent.
+    merge_assigner_arch(config, metrics)
     merge_assigner_diag(config, metrics)
     merge_donut_diag(config, metrics)
     merge_latency(config, metrics)
     merge_extended_metrics(config, metrics)
     merge_env(config, metrics)
+    # PR-D — carbon footprint table; reads ``runs/<id>/env/env_snapshot.json``
+    # so it must follow merge_env (which writes the snapshot).
+    merge_carbon(config, metrics)
     merge_ablations(config, metrics)
     merge_ablation_report(config, metrics)
     merge_foundation_metrics(config, metrics)
