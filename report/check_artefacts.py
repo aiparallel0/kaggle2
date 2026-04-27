@@ -38,6 +38,15 @@ _DANGLING_REF_RE = re.compile(
 )
 _DANGLING_CITE_RE = re.compile(r"\[\?\]")
 _FIG_ABSENT_RE = re.compile(r"\[figure absent\]")
+# The ``\figref`` macro defined in our LaTeX templates contains the literal
+# string ``[figure absent]`` as its fallback body — that text is only
+# *emitted* by LaTeX at compile time when the label is undefined, but it
+# physically appears in the .tex source on this exact line.  We strip
+# that one line before scanning so the checker becomes precise (without
+# the strip it fires on every successful build).
+_FIGREF_BODY_RE = re.compile(
+    r"\\@ifundefined\{r@#1\}\{\\textit\{\[figure absent\]\}\}\{\\ref\{#1\}\}",
+)
 
 
 def scan_paper(paper_tex: Path) -> dict[str, list[str]]:
@@ -59,7 +68,12 @@ def scan_paper(paper_tex: Path) -> dict[str, list[str]]:
         findings["dangling_refs"] = ctx
     if _DANGLING_CITE_RE.search(text):
         findings["dangling_citations"] = ["[?]"]
-    if _FIG_ABSENT_RE.search(text):
+    # Strip the ``\figref`` macro definition before searching: its body
+    # legitimately contains the literal ``[figure absent]`` sentinel
+    # text, which LaTeX expands at compile time when a label is
+    # undefined.  Without the strip, the check fires on every build.
+    text_without_macro = _FIGREF_BODY_RE.sub("", text)
+    if _FIG_ABSENT_RE.search(text_without_macro):
         findings["figure_absent_markers"] = ["[figure absent]"]
     return findings
 

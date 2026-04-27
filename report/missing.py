@@ -57,6 +57,17 @@ MISSING_OK_PREFIXES: tuple[str, ...] = (
     "pipeline_latency_",
     "donut_throughput_",
     "pipeline_throughput_",
+    # Canonical-SROIE mode (``config.canonical_sroie_enabled=True``) runs
+    # on the 347-image official ICDAR-2019 Task-3 test set, which ships
+    # *without* GT bounding boxes.  ``stages/eval.py`` therefore skips
+    # the GT-OCR rule-based baseline and oracle-patch diagnostic — see
+    # ``_GTOCR_STRIP_PREFIXES`` there — and the matching ``\VAR{}`` keys
+    # legitimately go missing on those builds.  Mirror the strip-prefix
+    # tuple here so the paper compiles with ``\MissingCell{}`` markers
+    # instead of failing the unresolved-VAR audit.
+    "gtocr_rulebased_",
+    "rulebased_",
+    "oracle_patch_",
 )
 
 MISSING_OK_KEYS: frozenset[str] = frozenset({

@@ -22,9 +22,14 @@ def test_f1_table_produces_tabular() -> None:
 
 def test_f1_table_missing_value_renders_missing_cells() -> None:
     out = render_f1_table({})
-    # v4 contract: every absent value renders as \MissingCell{key}, not ---.
-    # 5 rows × 3 system columns = 15 cells.
-    assert out.count("\\MissingCell{") >= 15
+    # v4 contract: every absent value renders as a typed marker, not ---.
+    # 5 rows × 2 always-required columns (DONUT, Pipeline) = 10 hard
+    # \MissingCell{} blockers.  The Rule-based column is intentionally
+    # optional in canonical-SROIE mode (rulebased_* on the missing-OK
+    # allow-list, see report/missing.py) and renders \textit{n/a} when
+    # absent — counted separately so the assertion remains precise.
+    assert out.count("\\MissingCell{") >= 10
+    assert out.count("\\textit{n/a}") >= 5
     assert "---" not in out
 
 

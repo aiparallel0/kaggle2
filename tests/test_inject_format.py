@@ -38,6 +38,27 @@ def test_unknown_directive_returns_none() -> None:
     assert apply_directive(1.0, "bananas") is None
 
 
+def test_p_directive_large_value_is_text_mode() -> None:
+    """Large p-values render as plain text (no ``\\times``, no ``$...$``)."""
+    rendered = apply_directive(0.0432, "p")
+    assert rendered == "0.0432"
+    assert "\\times" not in rendered
+    assert "$" not in rendered
+
+
+def test_p_directive_small_value_is_self_wrapped_math() -> None:
+    """Small p-values include their own ``$...$`` so the directive is
+    safe in a text-mode template like ``$p=$\\VAR{mcnemar_p:p}``."""
+    rendered = apply_directive(3.2e-5, "p")
+    assert rendered is not None
+    assert rendered.startswith("$") and rendered.endswith("$")
+    assert "\\times 10^{-5}" in rendered
+
+
+def test_p_directive_zero_underflows_to_threshold() -> None:
+    assert apply_directive(0.0, "p") == "$<10^{-12}$"
+
+
 def test_non_numeric_value_returns_none() -> None:
     assert apply_directive([1, 2, 3], "pct1") is None
     assert apply_directive("not a float", "pct1") is None
