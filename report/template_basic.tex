@@ -42,6 +42,11 @@
   % loaded) auto-switches to text mode in both math and text contexts.
   \text{{\color{BrickRed}\textbf{\texttt{?}}\textsubscript{\tiny\texttt{#1}}}}%
 }
+% Basic variant evaluates on the 500/63/63 internal split which DOES
+% have GT-OCR streams, so the rulebased / gtocr_rulebased rows are
+% emitted unchanged.  See template_advanced.tex for the row-elision
+% sibling definition.
+\newcommand{\IfRulebased}[1]{#1}
 \setlength{\emergencystretch}{3em}
 \graphicspath{{}{./}{./figures/}{./results/}{../}{../figures/}{../results/}}
 

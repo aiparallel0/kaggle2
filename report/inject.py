@@ -208,14 +208,28 @@ def inject_results(template: str, metrics: dict[str, Any]) -> str:
                 "(intentionally not measured on this profile).",
                 len(unresolved) - len(blockers),
             )
-    # Replace each unresolved \VAR{key} with \MissingCell{key} — a typed,
-    # red marker that survives compile and is counted by the build gate.
-    # The previous "blanket --- em-dash" backstop is gone (silent failure
-    # mode that produced the v1–v3 em-dash regression cycle).
-    from report.missing import render_missing_cell
-    def _to_missing(match: re.Match[str]) -> str:
-        return render_missing_cell(match.group(1))
-    result = re.sub(r"\\VAR\{([^}]+)\}", _to_missing, result)
+    # Replace each unresolved \VAR{key} with either \textit{n/a} (for
+    # keys on the intentional-missing allow-list — A1: the canonical-
+    # SROIE strip prefixes ``rulebased_`` / ``gtocr_rulebased_`` /
+    # ``oracle_patch_`` / latency / single-seed CI keys land here so
+    # they no longer render as red ``\MissingCell{}`` in the PDF) or
+    # \MissingCell{key} (every other key — typed, red, audited by
+    # ``check_artefacts``).  The previous "blanket --- em-dash"
+    # backstop is gone (silent failure mode that produced the v1–v3
+    # em-dash regression cycle).
+    from report.missing import is_missing_ok, render_missing_cell
+
+    def _to_marker(match: re.Match[str]) -> str:
+        key = match.group(1)
+        # Strip directive suffix ``key:directive`` so the allow-list
+        # classifier sees the bare key (e.g. ``rulebased_f1:pct1``
+        # → ``rulebased_f1``) — directives never resolved at this point
+        # are unresolved-key proxies, same allow-list applies.
+        bare = key.split(":", 1)[0]
+        if is_missing_ok(bare):
+            return "\\textit{n/a}"
+        return render_missing_cell(key)
+    result = re.sub(r"\\VAR\{([^}]+)\}", _to_marker, result)
     return result
 
 

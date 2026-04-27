@@ -12,11 +12,23 @@ Role: feed the paper's headline Table I with every column reviewers
 from __future__ import annotations
 
 import random
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 
 from core.metrics import ned, token_f1
 from core.stats_extra import wilson_ci
 from core.types import EvalBundle, Metrics
+
+
+def _mean(values: Sequence[float]) -> float:
+    """Arithmetic mean — the global-statistic used for token-F1 / NED / EM.
+
+    The headline ``donut_f1_<field>`` / ``pipeline_f1_<field>`` numbers
+    are themselves arithmetic means over per-image token-F1
+    (see ``core.metrics.compute_metrics``).  Bootstrapping the same
+    statistic ensures the returned ``(lo, hi)`` brackets the point
+    estimate — see :func:`_bootstrap_field`.
+    """
+    return sum(values) / len(values) if values else 0.0
 
 
 def _pairs(bundle: EvalBundle) -> list[tuple[str, dict[str, str], dict[str, str]]]:
@@ -64,21 +76,36 @@ def per_field_recall(bundle: EvalBundle) -> dict[str, float]:
 
 def _bootstrap_field(
     values: Sequence[float], n_iter: int, level: float, seed: int,
+    statistic_fn: Callable[[Sequence[float]], float] = _mean,
 ) -> tuple[float, float]:
-    """Percentile bootstrap CI for a single per-field scalar vector."""
+    """Percentile bootstrap CI for the *global statistic* over ``values``.
+
+    Resamples the per-image vector ``values`` with replacement ``n_iter``
+    times and records ``statistic_fn(resample)`` on each draw.  The
+    returned ``(lo, hi)`` is the level-``level`` percentile interval of
+    that bootstrap distribution — i.e. the CI of the **global token-F1
+    estimator** itself, *not* of the per-image-mean which would be a
+    different (narrower) statistic.
+
+    Defaulting ``statistic_fn`` to :func:`_mean` keeps the math
+    equivalent to the previous implementation (``donut_f1_<field>`` is
+    a mean-of-per-image-F1) while making the contract explicit so
+    :func:`assert_ci_bounds_valid` can verify
+    ``ci_lo <= <sys>_f1_<field> <= ci_hi`` on every reference run.
+    """
     if not values:
         return (0.0, 0.0)
     rng = random.Random(seed)
     n = len(values)
-    means: list[float] = []
+    stats: list[float] = []
     for _ in range(max(1, n_iter)):
-        idxs = [rng.randrange(n) for _ in range(n)]
-        means.append(sum(values[i] for i in idxs) / n)
-    means.sort()
+        resample = [values[rng.randrange(n)] for _ in range(n)]
+        stats.append(statistic_fn(resample))
+    stats.sort()
     alpha = 1.0 - level
-    lo_idx = int(alpha / 2.0 * len(means))
-    hi_idx = int((1.0 - alpha / 2.0) * len(means)) - 1
-    return (means[max(0, lo_idx)], means[max(0, min(hi_idx, len(means) - 1))])
+    lo_idx = int(alpha / 2.0 * len(stats))
+    hi_idx = int((1.0 - alpha / 2.0) * len(stats)) - 1
+    return (stats[max(0, lo_idx)], stats[max(0, min(hi_idx, len(stats) - 1))])
 
 
 def per_field_bootstrap_ci(
@@ -121,7 +148,20 @@ def per_field_em_wilson(
 def summarise_extended(
     metrics: Metrics, bundle: EvalBundle, n_iter: int = 1000, level: float = 0.95,
 ) -> dict[str, object]:
-    """Flat dict the paper injector can consume — every key reviewer-ready."""
+    """Flat dict the paper injector can consume — every key reviewer-ready.
+
+    The ``f1_<field>_ci_lo`` / ``f1_<field>_ci_hi`` pair is the
+    percentile bootstrap CI of the **global token-F1 estimator**
+    (:func:`_bootstrap_field` resamples the per-image vector and
+    recomputes the same arithmetic-mean statistic that
+    ``core.metrics.compute_metrics`` writes to
+    ``Metrics.per_field_f1[field]``).  This is the matched-statistic
+    estimator-CI invariant that :func:`report.missing.assert_ci_bounds_valid`
+    relies on: the bare point estimate written by
+    ``report.combine.build_combined`` (``<sys>_f1_<field>``) is
+    bracketed by ``[ci_lo, ci_hi]`` because both come from the same
+    statistic over the same sample.
+    """
     p = per_field_precision(bundle)
     r = per_field_recall(bundle)
     cis = per_field_bootstrap_ci(bundle, n_iter=n_iter, level=level)

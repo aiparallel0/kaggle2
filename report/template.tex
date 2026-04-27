@@ -37,6 +37,10 @@
   % loaded) auto-switches to text mode in both math and text contexts.
   \text{{\color{BrickRed}\textbf{\texttt{?}}\textsubscript{\tiny\texttt{#1}}}}%
 }
+% template.tex is the legacy/fallback template; default to "emit"
+% (basic-variant semantics) so the rulebased rows survive when this
+% template is used.  Advanced/basic siblings override the macro.
+\newcommand{\IfRulebased}[1]{#1}
 
 % IEEE two-column justification gets very tight on long technical words
 % (``cross-entropy'', ``hyperparameters'', function names, URLs).  Allow

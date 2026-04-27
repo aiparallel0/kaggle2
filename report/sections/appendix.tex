@@ -43,9 +43,9 @@ want the full precision the harness emits, the underlying seed-42
 values are:
 DONUT F1 $=\VAR{donut_f1}$, NED $=\VAR{donut_ned}$, EM $=\VAR{donut_em}$;
 Pipeline F1 $=\VAR{pipeline_f1}$, NED $=\VAR{pipeline_ned}$, EM $=\VAR{pipeline_em}$;
-Baseline (GT-OCR stream) F1 $=\VAR{gtocr_rulebased_f1}$,
+\IfRulebased{Baseline (GT-OCR stream) F1 $=\VAR{gtocr_rulebased_f1}$,
 NED $=\VAR{gtocr_rulebased_ned}$, EM $=\VAR{gtocr_rulebased_em}$;
-predicted-OCR rule baseline NED $=\VAR{rulebased_ned}$;
+predicted-OCR rule baseline NED $=\VAR{rulebased_ned}$;}
 $\Delta$F1 $=\VAR{f1_gap}$ (DONUT minus pipeline);
 learned-vs-rule $\Delta$F1 $=\VAR{assigner_delta}$.
 Paired-bootstrap CIs at \VAR{bootstrap_ci_level} confidence over

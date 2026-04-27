@@ -83,29 +83,35 @@ def test_all_new_keys_resolve_with_metrics() -> None:
 
 
 def test_absent_keys_fallback_to_missing_cell_markers() -> None:
-    """Keys absent from metrics render as typed ``\\MissingCell`` markers.
+    """Keys absent from metrics render as typed ``\\MissingCell`` *or* ``\\textit{n/a}``.
 
     The v4 engine replaced the silent ``---`` em-dash backstop with a
     typed ``\\MissingCell{key}`` sentinel that survives compile and
     is counted by :mod:`report.check_artefacts` as a hard build
-    blocker (unless the key is on the
+    blocker.  Audit A1 then split the contract: keys on
     :data:`report.missing.MISSING_OK_PREFIXES` / ``MISSING_OK_KEYS``
-    allow-list).  This test pins that contract so future regressions
-    cannot silently re-introduce em-dashes.
+    instead render as ``\\textit{n/a}`` (intentional skip on the
+    current build profile, e.g. ``rulebased_*`` on a canonical SROIE
+    Task-3 build).  This test pins both halves of the contract: every
+    absent key resolves to *one* of those two markers, and the total
+    count exactly equals the input-key count — no silent em-dashes.
     """
     from report.inject import inject_results
+    from report.missing import is_missing_ok
 
     template = _build_template(_NEW_KEYS)
     result = inject_results(template, {})
     assert "\\VAR{" not in result, "Unreplaced \\VAR{} tokens remain"
     assert "---" not in result, "v4 engine: no silent em-dashes anywhere"
-    # Every absent key produces exactly one \MissingCell{...} (or, if
-    # the key is on the allow-list, the inject layer still emits the
-    # marker — the build gate consults the allow-list itself).
-    marker = "\\MissingCell{"
-    assert result.count(marker) == len(_NEW_KEYS), (
-        f"Each absent key should become a {marker}}} marker; "
-        f"got {result.count(marker)} markers vs {len(_NEW_KEYS)} keys"
+    n_missing = result.count("\\MissingCell{")
+    n_na = result.count("\\textit{n/a}")
+    expected_na = sum(1 for k in _NEW_KEYS if is_missing_ok(k))
+    expected_missing = len(_NEW_KEYS) - expected_na
+    assert n_missing == expected_missing, (
+        f"Expected {expected_missing} \\MissingCell{{}} markers; got {n_missing}"
+    )
+    assert n_na == expected_na, (
+        f"Expected {expected_na} \\textit{{n/a}} markers; got {n_na}"
     )
 
 

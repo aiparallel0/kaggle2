@@ -43,8 +43,8 @@ Fine-tuned for \VAR{epochs_trocr} epochs on SROIE crops
 Up to \VAR{epochs_assigner} epochs with patience 7 on held-out
 validation loss (best-by-val checkpointing); AdamW at
 $1\mathrm{e}{-3}$, weight-decay $1\mathrm{e}{-4}$, grad-norm clip 1.0.
-Architecture: 2-layer pre-norm Transformer encoder, 8 heads,
-$d{=}128$, cross-attention with 4 field queries; total
+Architecture: $\VAR{assigner_n_layers}$-layer pre-norm Transformer encoder, 8 heads,
+$d{=}\VAR{assigner_d_model}$, cross-attention with 4 field queries; total
 $\approx$\,\VAR{assigner_params_k}\,K parameters.
 
 \begin{table}[!t]

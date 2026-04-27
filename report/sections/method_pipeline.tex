@@ -44,8 +44,8 @@ streams before any attention:
       bias exposed to gradient descent.
 \end{itemize}
 The three projections are summed, LayerNorm'd, and passed through a
-$\VAR{assigner_n_layers_level2}$-layer pre-norm Transformer encoder
-(GELU, 8 heads, $d{=}\VAR{assigner_hidden}$), so the assigner can
+$\VAR{assigner_n_layers}$-layer pre-norm Transformer encoder
+(GELU, 8 heads, $d{=}\VAR{assigner_d_model}$), so the assigner can
 reason about line-to-line context (subtotal immediately below grand
 total, multi-line address block).  Four learnable
 \emph{field queries} (\texttt{company}, \texttt{date}, \texttt{address},
@@ -55,13 +55,13 @@ classifier (Linear\,$\to$\,GELU\,$\to$\,Linear) that emits a scalar
 logit per field.  The cross-attention weights
 $A \in \mathbb{R}^{4\times N}$ are surfaced as the soft assignment and
 visualised in Fig.~\figref{fig:attn_heatmap}.
-The shipped configuration ($d{=}\VAR{assigner_hidden}$,
-$L{=}\VAR{assigner_n_layers_level2}$) totals
+The shipped configuration ($d{=}\VAR{assigner_d_model}$,
+$L{=}\VAR{assigner_n_layers}$) totals
 $\VAR{assigner_params_k}$\,K parameters
 (measured exactly from \texttt{sum(p.numel() for p in
 assigner.parameters())} and persisted to
-\texttt{assigner\_metrics.json}); a smaller $d{=}128$, $L{=}2$ variant
-that reaches comparable F1 with $\sim$161\,K parameters is preserved
+\texttt{assigner\_metrics.json}); a smaller alternative variant
+that reaches comparable F1 with a fraction of those parameters is preserved
 in source and surfaced through the \texttt{assigner\_hidden} /
 \texttt{assigner\_n\_layers\_level2} config knobs for ablation.
 
@@ -82,7 +82,7 @@ is what allows the learned assigner to beat rules on
 \texttt{address}, where a purely positional heuristic reports
 F1\,=\,0.000.
 
-\begin{algorithm}[t]
+\begin{algorithm}[!t]
 \caption{Multi-instance pos-mass NLL (one receipt).}
 \label{alg:posmass}
 \begin{algorithmic}[1]
@@ -148,7 +148,7 @@ the TrOCR text embedding, its bounding-box coordinates, and the
 14-dim prior vector (\texttt{priors\_v3} with
 \textsc{subtotal}/\textsc{cash}/\textsc{change}/\textsc{tax}/\textsc{rounding}
 distractor bits).  A single GAT layer with 4 heads projects onto a
-128-dim hidden space; scatter-softmax attention on the $k$NN edge
+a low-dimensional hidden space; scatter-softmax attention on the $k$NN edge
 set mixes neighbour evidence, and a final linear head emits the
 $n$-field logit vector.  The resulting model is $\sim$120\,K
 parameters --- an order of magnitude smaller than the transformer

@@ -123,8 +123,12 @@ the follow-up release.  Ceiling (all-fixed) baseline:
 
 \begin{table}[t]
   \caption{Per-bug $\Delta$F1 from \texttt{results/bug\_timeline.json}
-    (single-seed; CIs collapsed to point estimates).  Ceiling (all-fixed)
-    baseline: \VAR{ablation_baseline_f1}.}\label{tab:bug_ablation}
+    (single-seed; CIs collapsed to point estimates).  $\Delta$F1 $=$
+    ceiling $-$ pre-fix F1, so a negative entry indicates the bug was
+    \emph{over-reporting} F1 above the fixed-pipeline measurement
+    (e.g.\ bug\_7 / val-test leakage --- the leak inflated reported F1
+    above the true ceiling).  Ceiling (all-fixed) baseline:
+    \VAR{ablation_baseline_f1}.}\label{tab:bug_ablation}
   \centering
   \small
   \begin{tabular}{llc}\toprule
