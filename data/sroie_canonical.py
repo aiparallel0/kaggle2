@@ -99,6 +99,50 @@ def _flatten_files(src_root: Path, dst: Path, exts: tuple[str, ...]) -> int:
     return n
 
 
+# Path-segment pairs that identify SROIE Task-3 entity directories in the
+# three known mirror layouts: docTR single-ZIP, RRC dual-ZIP, zzzDavid flat.
+_ENTITY_PATH_PARTS: tuple[tuple[str, str], ...] = (
+    ("test", "entities"),
+    ("test", "key"),
+    ("data", "key"),
+)
+
+
+def _is_task3_entity_path(p: Path) -> bool:
+    """Return True iff ``p`` lives under a Task-3 entity subdirectory."""
+    parts = p.parts
+    return any(
+        len(parts) >= 3 and parts[-3] == a and parts[-2] == b
+        for a, b in _ENTITY_PATH_PARTS
+    )
+
+
+def _flatten_json_entities(src_root: Path, dst: Path) -> int:
+    """Move Task-3 JSON entity .txt files from ``src_root`` into ``dst``.
+
+    Path-scoped: only considers files under ``*/test/entities/``,
+    ``*/test/key/``, or ``*/data/key/`` — rejects ``task1_2_test/box/``
+    and other Task-1/2 directories. Content-scoped: first non-whitespace
+    byte must be ``{`` (JSON dict). Returns count of files placed.
+    """
+    dst.mkdir(parents=True, exist_ok=True)
+    n = 0
+    for p in src_root.rglob("*.txt"):
+        if not p.is_file() or not _is_task3_entity_path(p):
+            continue
+        try:
+            head = p.read_text(errors="ignore").lstrip()[:1]
+        except OSError:
+            continue
+        if head != "{":
+            continue
+        target = dst / p.name
+        if not target.exists():
+            p.replace(target)
+        n += 1
+    return n
+
+
 def _try_primary(workdir: Path, urls: tuple[str, str]) -> tuple[Path, Path] | None:
     """Try the RRC primary URLs; return (img_zip, gt_zip) or None on failure."""
     img_zip, gt_zip = workdir / "sroie_test_img.zip", workdir / "sroie_test_gt.zip"
@@ -158,7 +202,7 @@ def ensure_canonical_test_set(config: ExpConfig, data_path: Path) -> Path:
         extract_dir = workdir / "mirror"
         _extract_zip(mirror_zip, extract_dir)
     n_img = _flatten_files(extract_dir, img_dir, (".jpg", ".jpeg"))
-    n_ent = _flatten_files(extract_dir, ent_dir, (".txt",))
+    n_ent = _flatten_json_entities(extract_dir, ent_dir)
     if n_img < _TASK3_TEST_COUNT or n_ent < _TASK3_TEST_COUNT:
         raise DataError(
             f"canonical-SROIE post-extract count mismatch: {n_img} jpg / "

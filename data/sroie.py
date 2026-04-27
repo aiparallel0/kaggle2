@@ -91,17 +91,33 @@ def download_sroie(config: ExpConfig) -> Path:
 
 
 def _parse_entities_txt(text: str) -> dict[str, str]:
-    """Parse key:value entity text; preserve colons inside values."""
+    """Parse SROIE Task-3 GT (JSON) or legacy key:value text.
+
+    Tries ``json.loads`` first when the content starts with ``{``.
+    For the legacy colon-line fallback, rejects lines whose key begins
+    with a digit-after-comma pattern (SROIE Task-1/2 box-file format:
+    ``x1,y1,...,x4,y4,LABEL:VALUE``).
+    """
+    s = text.strip()
+    if s.startswith("{"):
+        try:
+            obj = json.loads(s)
+            if isinstance(obj, dict):
+                return {str(k).lower(): str(v) for k, v in obj.items()}
+        except json.JSONDecodeError:
+            pass
     out: dict[str, str] = {}
-    for line in text.splitlines():
+    for line in s.splitlines():
         if ":" not in line:
             continue
-        # partition splits at the FIRST colon only; anything after (including
-        # further colons like "12:30:00") is preserved in the value.
         k, _, v = line.partition(":")
-        k, v = k.strip().lower(), v.strip()
+        # Reject SROIE box-file lines: "x1,y1,...,x4,y4,LABEL:VALUE"
+        head = k.split(",", 1)[0].strip()
+        if "," in k and head.isdigit():
+            continue
+        k = k.strip().lower()
         if k:
-            out[k] = v
+            out[k] = v.strip()
     return out
 
 
@@ -187,6 +203,24 @@ def _canonical_test_split(
     test_receipts = _load_receipts(test_img_dir, test_ent_dir)
     if not test_receipts:
         return None
+    # Bug 14 (canonical-GT poisoning): if every entity file parsed empty
+    # or contained only coord-prefixed pseudo-keys, the canonical extractor
+    # scooped Task-1 box files into entities/ instead of Task-3 JSON GT.
+    # Detected as: zero receipts whose fields contain ANY canonical field
+    # name (company/date/address/total). Hard-fail with a fix hint.
+    _canon_fields = {"company", "date", "address", "total"}
+    n_valid_canonical = sum(
+        1 for r in test_receipts
+        if any(f.name.lower() in _canon_fields for f in r.fields)
+    )
+    if n_valid_canonical == 0:
+        raise DataError(
+            "canonical-SROIE entities/ contains no Task-3 JSON GT — likely "
+            "Task-1 box files were extracted by mistake. Wipe "
+            "data/sroie_cache/test/entities/ and re-run; the fixed extractor "
+            "is now JSON+path-scoped "
+            "(data.sroie_canonical._flatten_json_entities).",
+        )
     train_receipts = _load_receipts(
         data_path / "train" / "img", data_path / "train" / "entities",
     )
