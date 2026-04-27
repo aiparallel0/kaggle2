@@ -107,9 +107,52 @@ def _seed_bug_timeline_fixture(config: ExpConfig) -> None:
     dst.write_text(src.read_text())
 
 
+def _assert_canonical_status_ok(config: ExpConfig) -> None:
+    """Refuse to compile an "advanced/canonical" paper over fallback metrics.
+
+    When ``canonical_sroie_enabled=True`` AND ``paper_variant=="advanced"``
+    the headline figures and Table~IV-bis carry "canonical SROIE Task-3"
+    captions.  If the canonical pathway silently degraded to the
+    500/63/63 internal split, those captions become a credibility
+    failure: numbers measured against a different test set than the
+    caption claims.  ``data.sroie._write_canonical_status`` records the
+    outcome to ``env/canonical_status.json``; refuse compilation when
+    that sidecar is missing or marks ``fallback_triggered=True``.
+    """
+    if not getattr(config, "canonical_sroie_enabled", False):
+        return
+    if str(getattr(config, "paper_variant", "advanced")) != "advanced":
+        return
+    status_path = Path(config.output_dir) / "env" / "canonical_status.json"
+    if not status_path.exists():
+        raise EvalError(
+            f"paper-stage refusing 'advanced' canonical caption: "
+            f"{status_path} is missing — the eval stage was not run with "
+            "canonical_sroie_enabled=True, or it raised before writing "
+            "the status sidecar.",
+        )
+    try:
+        status = json.loads(status_path.read_text())
+    except (OSError, json.JSONDecodeError) as exc:
+        raise EvalError(
+            f"paper-stage refusing 'advanced' canonical caption: "
+            f"unreadable {status_path} ({exc}).",
+        ) from exc
+    if status.get("fallback_triggered"):
+        raise EvalError(
+            "paper-stage refusing 'advanced' canonical caption: "
+            f"canonical_status.json reports fallback_triggered=True "
+            f"(mirror_used={status.get('mirror_used')!r}); rendering an "
+            "'advanced' paper now would caption internal-split F1 numbers "
+            "as canonical SROIE Task-3.  Re-run eval with the canonical "
+            "pathway working, or set paper_variant='basic'.",
+        )
+
+
 def stage_paper(config: ExpConfig) -> None:
     """Render figures, enrich metrics, inject \\VAR{}, compile PDF."""
     log.info("=== Stage: paper ===")
+    _assert_canonical_status_ok(config)
     metrics_path = os.path.join(config.output_dir, "combined_metrics.json")
     if not Path(metrics_path).exists():
         raise EvalError(f"Run eval stage first — {metrics_path} not found.")

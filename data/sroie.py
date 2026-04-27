@@ -168,6 +168,30 @@ def split_sroie(data_path: Path, seed: int, bug_flags: dict[str, bool] | None = 
     return DataSplit(train=train, val=val, test=test)
 
 
+def _write_canonical_status(
+    config: ExpConfig, *, mirror_used: str, n_img: int, n_ent: int,
+    fallback_triggered: bool, error: str = "",
+) -> None:
+    """Persist canonical-SROIE outcome to ``<output_dir>/env/canonical_status.json``.
+
+    Read by :mod:`stages.paper` to refuse the advanced "canonical SROIE
+    Task-3" caption when ``fallback_triggered`` is True (the headline
+    F1 numbers in that case were measured against the 500/63/63 split,
+    not the leaderboard test set, so the caption would mislead).
+    """
+    env_dir = Path(config.output_dir) / "env"
+    env_dir.mkdir(parents=True, exist_ok=True)
+    payload: dict[str, object] = {
+        "mirror_used": mirror_used,
+        "n_img_collected": int(n_img),
+        "n_ent_collected": int(n_ent),
+        "fallback_triggered": bool(fallback_triggered),
+    }
+    if error:
+        payload["error"] = error
+    (env_dir / "canonical_status.json").write_text(json.dumps(payload, indent=2))
+
+
 def _canonical_test_split(
     data_path: Path, config: ExpConfig,
 ) -> DataSplit | None:
@@ -191,13 +215,30 @@ def _canonical_test_split(
     if getattr(config, "canonical_sroie_enabled", False):
         from data.sroie_canonical import ensure_canonical_test_set
         try:
-            ensure_canonical_test_set(config, data_path)
+            status = ensure_canonical_test_set(config, data_path)
         except DataError as exc:
-            logging.getLogger("kaggle2").warning(
-                "canonical-SROIE auto-download failed (%s); falling back to "
-                "the 500/63/63 internal split.", exc,
+            # STRICT-CANONICAL mode: when the user explicitly opted in to
+            # the leaderboard 347-image test set (canonical_sroie_enabled
+            # is True), silently downgrading to the internal 500/63/63
+            # split would attach "canonical SROIE Task-3" captions to F1
+            # numbers measured against a different test set.  Persist a
+            # fallback-marker sidecar so paper.py can refuse to compile
+            # the advanced caption, then re-raise.
+            _write_canonical_status(
+                config, mirror_used="none", n_img=0, n_ent=0,
+                fallback_triggered=True, error=str(exc),
             )
-            return None
+            raise DataError(
+                f"canonical-SROIE strict mode: {exc} — set "
+                "canonical_sroie_enabled=false to use the 500/63/63 "
+                "internal split, or fix the mirror access (see "
+                "runs/<run_id>/env/canonical_status.json).",
+            ) from exc
+        _write_canonical_status(
+            config, mirror_used=status.mirror_used,
+            n_img=status.n_img_collected, n_ent=status.n_ent_collected,
+            fallback_triggered=False,
+        )
     if not (test_img_dir.exists() and test_ent_dir.exists()):
         return None
     test_receipts = _load_receipts(test_img_dir, test_ent_dir)

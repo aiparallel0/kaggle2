@@ -84,7 +84,11 @@ def test_canonical_idempotent_when_already_extracted(tmp_path: Path) -> None:
     config = load_config(str(cfg_path))
     # Must return without attempting any network I/O.
     out = ensure_canonical_test_set(config, tmp_path)
-    assert out == tmp_path
+    # API: ensure_canonical_test_set now returns a CanonicalStatus
+    # describing the outcome (mirror_used, counts, fallback flag).
+    assert out.mirror_used == "cached"
+    assert out.n_img_collected == 347
+    assert out.fallback_triggered is False
     assert len(list(img_dir.glob("*.jpg"))) == 347
 
 
