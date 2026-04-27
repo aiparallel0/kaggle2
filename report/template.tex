@@ -30,7 +30,12 @@
 % replaces the silent ``---`` em-dash backstop that produced the
 % v1–v3 em-dash regression cycle.
 \newcommand{\MissingCell}[1]{%
-  {\color{BrickRed}\textbf{\texttt{?}}\textsubscript{\tiny\texttt{#1}}}%
+  % \text{} wrap is mandatory: this macro is emitted by report/inject.py
+  % for unresolved \VAR keys and may land inside $...$ math mode (e.g.
+  % appendix.tex $=\VAR{gtocr_rulebased_f1}$).  \textbf/\texttt/\textsubscript
+  % are text-mode-only commands; wrapping with \text{} (amsmath, already
+  % loaded) auto-switches to text mode in both math and text contexts.
+  \text{{\color{BrickRed}\textbf{\texttt{?}}\textsubscript{\tiny\texttt{#1}}}}%
 }
 
 % IEEE two-column justification gets very tight on long technical words

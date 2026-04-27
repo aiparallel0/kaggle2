@@ -45,7 +45,11 @@ _FIG_ABSENT_RE = re.compile(r"\[figure absent\]")
 # that one line before scanning so the checker becomes precise (without
 # the strip it fires on every successful build).
 _FIGREF_BODY_RE = re.compile(
-    r"\\@ifundefined\{r@#1\}\{\\textit\{\[figure absent\]\}\}\{\\ref\{#1\}\}",
+    r"\\newcommand\{\\figref\}\[1\]\{%\s*"
+    r"\\@ifundefined\s*\{r@#1\}\s*\{\\textit\s*\{\[figure absent\]\}\}"
+    r"\s*\{\\ref\s*\{#1\}\}%?\s*"
+    r"\}",
+    re.DOTALL,
 )
 
 
