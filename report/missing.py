@@ -90,7 +90,9 @@ MISSING_OK_KEYS: frozenset[str] = frozenset({
     # vectors are present and equal-length.  Legitimately absent on
     # n=1 canonical-347 runs where the condition ``d_vec and p_vec and
     # len(d_vec) == len(p_vec)`` may not hold (e.g. skip_donut=True).
-    # The :p directive falls back gracefully when the key is absent.
+    # When absent, ``\\VAR{mcnemar_p:p}`` directives (handled by
+    # ``report.inject_format.apply_formatters``) leave the placeholder
+    # intact and the inject backstop converts it to ``\\MissingCell``.
     "mcnemar_p",
 })
 

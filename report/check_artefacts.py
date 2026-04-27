@@ -45,10 +45,16 @@ _FIG_ABSENT_RE = re.compile(r"\[figure absent\]")
 # that one line before scanning so the checker becomes precise (without
 # the strip it fires on every successful build).
 _FIGREF_BODY_RE = re.compile(
-    r"\\newcommand\{\\figref\}\[1\]\{%\s*"
-    r"\\@ifundefined\s*\{r@#1\}\s*\{\\textit\s*\{\[figure absent\]\}\}"
-    r"\s*\{\\ref\s*\{#1\}\}%?\s*"
-    r"\}",
+    # Match the full \newcommand{\figref}[1]{...} block so a single
+    # re.sub("", text) removes the entire definition including the
+    # literal ``[figure absent]`` it contains.
+    # Each \s* tolerates whitespace/newline differences across templates
+    # or after expand_inputs reflowing.  The %? handles the optional
+    # TeX comment character that trails the opening brace and body line.
+    r"\\newcommand\{\\figref\}\[1\]\{%\s*"          # \newcommand{\figref}[1]{%
+    r"\\@ifundefined\s*\{r@#1\}\s*\{\\textit\s*\{\[figure absent\]\}\}"  # body
+    r"\s*\{\\ref\s*\{#1\}\}%?\s*"                  # {\ref{#1}} with optional %
+    r"\}",                                          # closing brace of \newcommand
     re.DOTALL,
 )
 

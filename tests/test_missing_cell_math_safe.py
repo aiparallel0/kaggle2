@@ -56,8 +56,9 @@ def test_missing_cell_uses_text_wrap_in_all_templates() -> None:
 
 def test_amsmath_loaded_in_all_templates() -> None:
     """amsmath must be loaded in every template (required by \\text{})."""
+    import re
     for tmpl in _TEMPLATES:
         text = tmpl.read_text()
-        assert "\\usepackage{amsmath" in text or "\\usepackage[" in text and "amsmath" in text, (
+        assert re.search(r"\\usepackage(?:\[[^\]]*\])?\{[^}]*\bamsmath\b", text), (
             f"{tmpl.name}: amsmath package not loaded — required for \\text{{}} in \\MissingCell"
         )

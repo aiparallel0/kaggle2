@@ -37,10 +37,13 @@ def test_format_pvalue_large_is_plain_decimal() -> None:
 
 def test_format_pvalue_no_bare_times_outside_ensuremath() -> None:
     """No bare ``\\times`` must appear outside ``\\ensuremath``."""
+    import re
     for val in (3e-5, 1.5e-10, 0.0):
         out = _format_pvalue(val)
-        # Strip \ensuremath{...} blocks, then check no \times remains.
-        import re
+        # Strip \ensuremath{...} blocks then assert no \times remains.
+        # The pattern handles one level of nesting: \ensuremath{a\times 10^{-5}}
+        # which is the only structure _format_pvalue generates.  A full
+        # recursive brace-balanced parser is not needed here.
         stripped = re.sub(r"\\ensuremath\{[^}]*(?:\{[^}]*\}[^}]*)?\}", "", out)
         assert "\\times" not in stripped, f"bare \\times in {out!r}"
 
