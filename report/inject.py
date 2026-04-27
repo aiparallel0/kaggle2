@@ -13,6 +13,21 @@ import re
 from pathlib import Path
 from typing import Any
 
+
+class TexSource(str):
+    """Marker class for pre-escaped LaTeX strings that must NOT be re-escaped.
+
+    Usage:
+        metrics["my_latex_key"] = TexSource(r"$x_1 + x_2$")
+
+    When inject_results encounters a TexSource value, it emits the raw string
+    instead of running it through _latex_escape_text().  Use sparingly — only
+    for values that contain intentional LaTeX math or macros (e.g. the
+    \\MissingCell{} marker or pre-built "95\\% CI" strings).
+    """
+
+    pass
+
 _INPUT_RE = re.compile(r"\\input\{([^}]+)\}")
 
 _MEAN_STD_KEYS = {"donut_f1", "pipeline_f1"}
@@ -139,6 +154,9 @@ def _format_value(key: str, value: Any, metrics: dict[str, Any]) -> str:
         return f"{mean:.4f} \\ensuremath{{\\pm}} {std:.4f}"
     if isinstance(value, float):
         return f"{value:.4f}"
+    if isinstance(value, TexSource):
+        # Pre-escaped LaTeX: emit raw, do NOT double-escape.
+        return str(value)
     if isinstance(value, str):
         return _latex_escape_text(value)
     # Defensive: ints/bools/lists not handled above are unlikely to contain

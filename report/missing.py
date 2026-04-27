@@ -94,6 +94,14 @@ MISSING_OK_KEYS: frozenset[str] = frozenset({
     # ``report.inject_format.apply_formatters``) leave the placeholder
     # intact and the inject backstop converts it to ``\\MissingCell``.
     "mcnemar_p",
+    # all_off row removed from bug-ablation table (Item 10): the floor
+    # condition (all bugs reintroduced) is not a coherent single-run
+    # measurement — each bug is a separate failure mode, not additive.
+    # The table now shows the ceiling baseline (all bugs fixed) only.
+    "all_off_delta", "all_off_ci_low", "all_off_ci_high",
+    # Item 5: param ratio is computed from donut_params_m / pipeline_params_m.
+    # Missing when either is absent (e.g., lightweight eval-only runs).
+    "param_ratio_phrase", "param_ratio_numeric",
 })
 
 
@@ -136,3 +144,80 @@ def filter_blockers(unresolved: Iterable[str]) -> list[str]:
     cannot accidentally ship a PDF with silent placeholders.
     """
     return sorted(k for k in unresolved if not is_missing_ok(k))
+
+
+_RULEBASED_PREFIXES = ("gtocr_rulebased_", "rulebased_")
+# Literals that belong to basic (500/63/63) split, forbidden in advanced sections.
+_BASIC_SPLIT_PATTERNS = ("500/63/63", "500\\,/\\,63\\,/\\,63", "63-image test", "n=63")
+
+
+def assert_no_rulebased_in_advanced(
+    metrics: dict[str, object], variant: str,
+) -> None:
+    """Raise if advanced variant receives rulebased/gtocr_rulebased keys.
+
+    The advanced variant purges all GT-OCR / rule-based baseline rows
+    and must never inject metrics for those arms — doing so would
+    indicate a producer mismatch or a merged config error.
+    """
+    if variant != "advanced":
+        return
+    bad = [k for k in metrics if any(k.startswith(p) for p in _RULEBASED_PREFIXES)]
+    if bad:
+        raise ValueError(
+            f"advanced variant must not contain rulebased keys; found: {bad[:5]}"
+        )
+
+
+def assert_no_basic_split_in_advanced_sections(section_dir: str) -> None:
+    """Raise if any advanced-specific .tex file mentions basic split literals.
+
+    Advanced-specific sections (filenames containing 'advanced') must use
+    test_set_size/test_set_kind VAR keys rather than hard-coded 500/63/63 refs.
+    """
+    import os
+    import re
+    for fname in os.listdir(section_dir):
+        if "advanced" not in fname or not fname.endswith(".tex"):
+            continue
+        path = os.path.join(section_dir, fname)
+        with open(path, encoding="utf-8") as f:
+            for lineno, line in enumerate(f, 1):
+                if line.lstrip().startswith("%"):
+                    continue
+                for pat in _BASIC_SPLIT_PATTERNS:
+                    if re.search(re.escape(pat), line):
+                        raise ValueError(
+                            f"{fname}:{lineno}: basic split literal '{pat}' "
+                            "forbidden in advanced sections"
+                        )
+
+
+_CI_FIELDS = ("company", "date", "address", "total")
+_CI_SYSTEMS = ("donut", "pipeline")
+
+
+def assert_ci_bounds_valid(metrics: dict[str, object]) -> None:
+    """Raise if any per-field CI bound violates lo ≤ point ≤ hi.
+
+    Inspects keys like donut_f1_company, donut_f1_company_ci_lo,
+    donut_f1_company_ci_hi.  Missing keys are silently skipped;
+    present keys must satisfy ci_lo ≤ point ≤ ci_hi (within 1e-6
+    tolerance for float rounding).
+    """
+    tol = 1e-6
+    errs: list[str] = []
+    for sys in _CI_SYSTEMS:
+        for field in _CI_FIELDS:
+            point = metrics.get(f"{sys}_f1_{field}")
+            lo = metrics.get(f"{sys}_f1_{field}_ci_lo")
+            hi = metrics.get(f"{sys}_f1_{field}_ci_hi")
+            if not all(isinstance(x, int | float) for x in (point, lo, hi)):
+                continue
+            pf, lof, hif = float(point), float(lo), float(hi)  # type: ignore[arg-type]
+            if lof > pf + tol:
+                errs.append(f"{sys}_f1_{field}: ci_lo={lof:.4f} > point={pf:.4f}")
+            if hif < pf - tol:
+                errs.append(f"{sys}_f1_{field}: ci_hi={hif:.4f} < point={pf:.4f}")
+    if errs:
+        raise ValueError(f"CI bounds invalid: {errs[:5]}")

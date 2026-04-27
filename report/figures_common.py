@@ -137,6 +137,6 @@ def load_csv(path: Path) -> list[dict[str, float]]:
 def guard_empty(data: object, name: str) -> bool:
     """Log + return True when ``data`` is missing so callers can early-out."""
     if not data:
-        log.info("figures_common: skipping %s (no data)", name)
+        log.debug("figures_common: skipping %s (no data)", name)
         return True
     return False

@@ -71,7 +71,7 @@ field habitually spans multiple).  Following the multi-instance
 learning formulation of~\cite{dietterich1997mil,ilse2018mil}, we
 optimise, per receipt and per field,
 \[
-  \mathcal{L}_f \;=\; -\log \sum_{i \in \mathrm{target}_f}
+  \mathcal{L}_f \;=\; -\log \sum_{i \in T_f}
                    \mathrm{softmax}_j(A_{f,j})\big|_{j=i},
 \]
 i.e.\ the negative log of the attention probability mass placed on

@@ -118,12 +118,12 @@ $\Rightarrow$ F1\,=\,0'') for the rest.  CIs collapse to
 \texttt{[$\Delta$,\,$\Delta$]} because each row is a single-seed
 point estimate; a fully resampled
 \texttt{python\,main.py\,--stage\,ablate\_bugs} run is reserved for
-the follow-up release.  All-on baseline:
+the follow-up release.  Ceiling (all-fixed) baseline:
 \VAR{ablation_baseline_f1}; \texttt{n\_seeds}\,=\,\VAR{ablation_n_seeds}.
 
 \begin{table}[t]
   \caption{Per-bug $\Delta$F1 from \texttt{results/bug\_timeline.json}
-    (single-seed; CIs collapsed to point estimates).  All-on
+    (single-seed; CIs collapsed to point estimates).  Ceiling (all-fixed)
     baseline: \VAR{ablation_baseline_f1}.}\label{tab:bug_ablation}
   \centering
   \small
@@ -142,8 +142,6 @@ the follow-up release.  All-on baseline:
     bug\_11 & \VAR{bug_11_delta} & [\VAR{bug_11_ci_low}, \VAR{bug_11_ci_high}] \\
     bug\_12 & \VAR{bug_12_delta} & [\VAR{bug_12_ci_low}, \VAR{bug_12_ci_high}] \\
     bug\_13 & \VAR{bug_13_delta} & [\VAR{bug_13_ci_low}, \VAR{bug_13_ci_high}] \\
-    \midrule
-    all\_off & \VAR{all_off_delta} & [\VAR{all_off_ci_low}, \VAR{all_off_ci_high}] \\
     \bottomrule
   \end{tabular}
 \end{table}
