@@ -10,7 +10,6 @@ import pytest
 from core.config import load_config
 from core.errors import DataError
 from data.sroie_canonical import (
-    _DOCTR_MIRROR_SHA256,
     _verify_sha256,
     ensure_canonical_test_set,
 )
@@ -62,7 +61,7 @@ def test_sha256_mismatch_raises(tmp_path: Path) -> None:
     fake = tmp_path / "fake.zip"
     fake.write_bytes(b"not the real archive")
     with pytest.raises(DataError, match="sha256 mismatch"):
-        _verify_sha256(fake, _DOCTR_MIRROR_SHA256, "docTR mirror")
+        _verify_sha256(fake, "a" * 64, "some mirror")
 
 
 def test_sha256_none_skips(tmp_path: Path) -> None:
@@ -73,11 +72,14 @@ def test_sha256_none_skips(tmp_path: Path) -> None:
 
 
 def test_canonical_idempotent_when_already_extracted(tmp_path: Path) -> None:
-    """Pre-populating test/img/ with 347 .jpg files short-circuits download."""
+    """Pre-populating test/img/ and test/entities/ with exactly 347 files short-circuits."""
     img_dir = tmp_path / "test" / "img"
+    ent_dir = tmp_path / "test" / "entities"
     img_dir.mkdir(parents=True)
+    ent_dir.mkdir(parents=True)
     for i in range(347):
         (img_dir / f"X{i:05d}.jpg").write_bytes(b"\xff\xd8\xff\xe0")  # JPEG SOI
+        (ent_dir / f"X{i:05d}.txt").write_bytes(b'{"company":"F","date":"d","address":"a","total":"t"}')
     cfg_path = _write_min_config(
         tmp_path, canonical_sroie_enabled=True, data_dir=str(tmp_path),
     )
@@ -147,7 +149,8 @@ def test_canonical_config_keys_round_trip(tmp_path: Path) -> None:
         canonical_sroie_enabled=True,
         canonical_sroie_test_url="https://example.invalid/img.zip",
         canonical_sroie_gt_url="https://example.invalid/gt.zip",
-        canonical_sroie_mirror_url="https://example.invalid/mirror.zip",
+        canonical_sroie_hf_repo="Metric-AI/icdar_sroie",
+        canonical_sroie_hf_revision="main",
         paper_variant="advanced",
     )
     os.environ.pop("KAGGLE2_PAPER_VARIANT", None)
@@ -155,5 +158,6 @@ def test_canonical_config_keys_round_trip(tmp_path: Path) -> None:
     assert config.canonical_sroie_enabled is True
     assert config.canonical_sroie_test_url == "https://example.invalid/img.zip"
     assert config.canonical_sroie_gt_url == "https://example.invalid/gt.zip"
-    assert config.canonical_sroie_mirror_url == "https://example.invalid/mirror.zip"
+    assert config.canonical_sroie_hf_repo == "Metric-AI/icdar_sroie"
+    assert config.canonical_sroie_hf_revision == "main"
     assert config.paper_variant == "advanced"

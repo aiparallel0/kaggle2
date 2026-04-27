@@ -84,7 +84,8 @@ def load_config(path: str, defaults: dict[str, Any] | None = None) -> ExpConfig:
         # v4 — canonical SROIE / LayoutLMv3 / latency / curation keys.
         "canonical_sroie_enabled", "canonical_sroie_test_path",
         "canonical_sroie_test_url", "canonical_sroie_gt_url",
-        "canonical_sroie_mirror_url", "paper_variant",
+        "canonical_sroie_hf_repo", "canonical_sroie_hf_revision",
+        "paper_variant",
         "layoutlmv3_enabled", "layoutlmv3_model",
         "measure_latency",
         "qualitative_sample_ids", "fig1_receipt_id",
@@ -206,9 +207,11 @@ def load_config(path: str, defaults: dict[str, Any] | None = None) -> ExpConfig:
             "canonical_sroie_gt_url",
             "https://rrc.cvc.uab.es/downloads/SROIE_test_gt_task_3.zip",
         )),
-        canonical_sroie_mirror_url=str(raw.get(
-            "canonical_sroie_mirror_url",
-            "https://doctr-static.mindee.com/models?id=v0.1.1/sroie2019_test.zip&src=0",
+        canonical_sroie_hf_repo=str(raw.get(
+            "canonical_sroie_hf_repo", "Metric-AI/icdar_sroie",
+        )),
+        canonical_sroie_hf_revision=str(raw.get(
+            "canonical_sroie_hf_revision", "main",
         )),
         paper_variant=str(raw.get("paper_variant", "advanced")),
         layoutlmv3_enabled=bool(raw.get("layoutlmv3_enabled", False)),

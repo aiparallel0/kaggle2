@@ -11,10 +11,31 @@ fix for the asymmetry that produced ``360 jpg / 0 txt`` after PR #90.
 SSL is hardened with :mod:`certifi` so the RRC primary actually
 reaches ``rrc.cvc.uab.es`` on fresh vast.ai containers.  The post-
 extract count check is exact (``== 347``), not ``>= 347``.
+
+Identity-preserving pins
+------------------------
+``_RRC_TASK3_STEMS_SHA256`` and ``_RRC_TASK3_GT_SHA256`` start as the
+sentinel ``"PIN_ON_FIRST_RUN"``.  On first successful download, the
+observed hashes are written to ``canonical_status.json``.  To lock
+them, run::
+
+    python -m data.sroie_canonical --pin-stems /path/to/canonical_status.json
+
+and paste the printed values into the constants below.  Once pinned,
+any drift (upstream revision or label change) raises :class:`DataError`.
+
+HuggingFace revision pinning
+-----------------------------
+Operators: after the first successful download on a non-firewalled host,
+pin ``canonical_sroie_hf_revision`` in ``config.json`` to the specific
+commit SHA shown in ``runs/<run_id>/env/canonical_status.json`` under
+key ``hf_revision_used``.  Until pinned, "main" tracks the live HEAD of
+``Metric-AI/icdar_sroie`` which could change silently.
 """
 from __future__ import annotations
 
 import hashlib
+import json
 import logging
 import ssl
 import urllib.error
@@ -31,22 +52,32 @@ __all__ = [
     "MirrorAdapter",
     "ensure_canonical_test_set",
     "_TASK3_TEST_COUNT",
-    "_DOCTR_MIRROR_SHA256",
+    "_RRC_TASK3_STEMS_SHA256",
+    "_RRC_TASK3_GT_SHA256",
+    "_stems_sha256",
+    "_gt_content_sha256",
     "_verify_sha256",
     "_RRC_ADAPTER",
-    "_DOCTR_ADAPTER",
+    "_HF_ADAPTER",
 ]
 
 log = logging.getLogger("kaggle2")
 
 _TASK3_TEST_COUNT = 347
 
-# docTR community mirror sha256 — pinned upstream by Mindee.  Catches
-# truncation, not layout-version drift; the per-mirror adapter below
-# is what guards against silent layout changes.
-_DOCTR_MIRROR_SHA256 = (
-    "41b3c746a20226fddc80d86d4b2a903d43b5be4f521dd1bbe759dbf8844745e2"
-)
+# Sentinel value — replace with the hex digest printed by --pin-stems once
+# you have a successful canonical download on a non-firewalled host.
+_PIN_SENTINEL = "PIN_ON_FIRST_RUN"
+
+# sha256 over "\n".join(sorted(stems)).encode().
+# Detects stem-set drift between upstream revisions.
+# Regenerate: python -m data.sroie_canonical --pin-stems <canonical_status.json>
+_RRC_TASK3_STEMS_SHA256 = _PIN_SENTINEL  # TODO: pin after first successful run
+
+# sha256 over the normalised GT content (see _gt_content_sha256).
+# Detects label drift between upstream revisions.
+# Regenerate: python -m data.sroie_canonical --pin-stems <canonical_status.json>
+_RRC_TASK3_GT_SHA256 = _PIN_SENTINEL  # TODO: pin after first successful run
 
 
 @dataclass(frozen=True)
@@ -57,6 +88,8 @@ class CanonicalStatus:
     n_img_collected: int
     n_ent_collected: int
     fallback_triggered: bool = False
+    stems_sha256: str = ""
+    gt_content_sha256: str = ""
 
 
 @dataclass(frozen=True)
@@ -82,13 +115,14 @@ _RRC_ADAPTER = MirrorAdapter(
     entity_format="sroie_kv",
 )
 
-# docTR single-zip (Mindee v0.1.1): ``sroie2019_test/{images,annotations}/``.
-_DOCTR_ADAPTER = MirrorAdapter(
-    name="doctr",
+# HuggingFace mirror (Metric-AI/icdar_sroie): materialised by
+# _try_huggingface into workdir/hf/{img,entities}/.
+_HF_ADAPTER = MirrorAdapter(
+    name="huggingface",
     image_glob="*.jpg",
     entity_glob="*.json",
-    image_path_marker="images",
-    entity_path_marker="annotations",
+    image_path_marker="img",
+    entity_path_marker="entities",
     entity_format="json",
 )
 
@@ -210,25 +244,55 @@ def _try_primary(workdir: Path, urls: tuple[str, str]) -> Path | None:
         _download(urls[0], img_zip)
         _download(urls[1], gt_zip)
     except DataError as exc:
-        log.warning("canonical-SROIE primary mirror failed (%s); trying fallback.", exc)
+        log.warning("canonical-SROIE primary mirror failed (%s); trying HF fallback.", exc)
         return None
     _extract_zip(img_zip, extract)
     _extract_zip(gt_zip, extract)
     return extract
 
 
-def _try_mirror(workdir: Path, mirror_url: str) -> Path | None:
-    """docTR single-zip fetch (sha256-pinned); return extract dir or None."""
-    mirror_zip = workdir / "doctr.zip"
-    extract = workdir / "doctr"
-    try:
-        _download(mirror_url, mirror_zip)
-        _verify_sha256(mirror_zip, _DOCTR_MIRROR_SHA256, "docTR mirror")
-    except DataError as exc:
-        log.warning("canonical-SROIE docTR mirror failed (%s).", exc)
-        return None
-    _extract_zip(mirror_zip, extract)
-    return extract
+def _stems_sha256(img_dir: Path) -> str:
+    """sha256 over ``\\n``.join(sorted stems) — detects test-set identity drift."""
+    stems = sorted(p.stem for p in img_dir.glob("*.jpg"))
+    return hashlib.sha256("\n".join(stems).encode()).hexdigest()
+
+
+def _gt_content_sha256(ent_dir: Path) -> str:
+    """Mirror-agnostic GT content sha256 over company/date/address/total.
+
+    Handles both ``.json`` (HF) and ``.txt`` (RRC sroie_kv) entity files so
+    the hash is comparable across mirrors — both represent the same GT values.
+    """
+    canon: list[str] = []
+    seen: set[str] = set()
+    all_files = sorted(
+        [*ent_dir.glob("*.json"), *ent_dir.glob("*.txt")],
+        key=lambda p: p.stem,
+    )
+    for p in all_files:
+        if p.stem in seen:
+            continue
+        seen.add(p.stem)
+        try:
+            text = p.read_text(encoding="utf-8").strip()
+            kv: dict[str, str] = {}
+            if text.startswith("{"):
+                raw = json.loads(text)
+                kv = {str(k).lower(): str(v) for k, v in raw.items()}
+            else:
+                for line in text.splitlines():
+                    if ":" not in line:
+                        continue
+                    k, _, v = line.partition(":")
+                    h = k.split(",", 1)[0].strip()
+                    if "," in k and h.isdigit():
+                        continue
+                    kv[k.strip().lower()] = v.strip()
+            keep = {k: kv.get(k, "") for k in ("address", "company", "date", "total")}
+            canon.append(p.stem + "\x1f" + json.dumps(keep, sort_keys=True, ensure_ascii=False))
+        except (OSError, json.JSONDecodeError, ValueError):
+            continue
+    return hashlib.sha256("\n".join(canon).encode()).hexdigest()
 
 
 def ensure_canonical_test_set(
@@ -238,19 +302,23 @@ def ensure_canonical_test_set(
 
     Produces ``<data_path>/test/img/<id>.jpg`` (×347) and
     ``<data_path>/test/entities/<id>.{txt,json}`` (×347).  Idempotent:
-    returns immediately when both directories already hold ≥347 files.
-    Raises :class:`DataError` if neither mirror is reachable or the
-    post-extract count is anything but exactly ``347 / 347``.
+    returns immediately when both directories already hold exactly 347 files.
+    Raises :class:`DataError` if neither mirror is reachable, the
+    post-extract count is not exactly ``347 / 347``, or a pinned identity
+    hash does not match the collected data.
     """
     img_dir = data_path / "test" / "img"
     ent_dir = data_path / "test" / "entities"
-    if img_dir.exists() and len(list(img_dir.glob("*.jpg"))) >= _TASK3_TEST_COUNT:
+    # Tightened idempotent short-circuit: require EXACT counts on BOTH sides.
+    # (>= 347 previously allowed a stale 360-jpg run to be treated as cached-OK)
+    if img_dir.exists() and len(list(img_dir.glob("*.jpg"))) == _TASK3_TEST_COUNT:
         n_ent = len(list(ent_dir.iterdir())) if ent_dir.exists() else 0
-        return CanonicalStatus(
-            mirror_used="cached",
-            n_img_collected=_TASK3_TEST_COUNT,
-            n_ent_collected=n_ent,
-        )
+        if n_ent == _TASK3_TEST_COUNT:
+            return CanonicalStatus(
+                mirror_used="cached",
+                n_img_collected=_TASK3_TEST_COUNT,
+                n_ent_collected=n_ent,
+            )
     workdir = data_path / "_canonical_dl"
     workdir.mkdir(parents=True, exist_ok=True)
     primary = _try_primary(
@@ -260,15 +328,20 @@ def ensure_canonical_test_set(
     if primary is not None:
         adapter, extract_dir = _RRC_ADAPTER, primary
     else:
-        mirror = _try_mirror(workdir, config.canonical_sroie_mirror_url)
-        if mirror is None:
+        from data.sroie_canonical_hf import try_huggingface
+        hf = try_huggingface(
+            workdir,
+            repo_id=config.canonical_sroie_hf_repo,
+            revision=config.canonical_sroie_hf_revision,
+        )
+        if hf is None:
             raise DataError(
-                "canonical-SROIE: both primary (rrc.cvc.uab.es) and fallback "
-                "(docTR mirror) failed — set canonical_sroie_enabled=false to "
-                "use the 500/63/63 internal split, or pre-populate "
-                "<data_dir>/test/{img,entities}/.",
+                "canonical-SROIE: both primary (rrc.cvc.uab.es) and HuggingFace "
+                f"fallback (repo={config.canonical_sroie_hf_repo}) failed — set "
+                "canonical_sroie_enabled=false to use the 500/63/63 internal split, "
+                "or pre-populate <data_dir>/test/{img,entities}/.",
             )
-        adapter, extract_dir = _DOCTR_ADAPTER, mirror
+        adapter, extract_dir = _HF_ADAPTER, hf
     n_img = _place_files(extract_dir, img_dir, adapter, is_entity=False)
     n_ent = _place_files(extract_dir, ent_dir, adapter, is_entity=True)
     if n_img != _TASK3_TEST_COUNT or n_ent != _TASK3_TEST_COUNT:
@@ -277,12 +350,39 @@ def ensure_canonical_test_set(
             f"{n_img} img / {n_ent} ent — expected exactly "
             f"{_TASK3_TEST_COUNT}/{_TASK3_TEST_COUNT}.",
         )
+    # Compute identity hashes for pin-on-first-run workflow.
+    observed_stems_sha = _stems_sha256(img_dir)
+    observed_gt_sha = _gt_content_sha256(ent_dir)
+    # Enforce pinned values when set (not the placeholder "PIN_ON_FIRST_RUN").
+    if (
+        _RRC_TASK3_STEMS_SHA256 != _PIN_SENTINEL
+        and observed_stems_sha != _RRC_TASK3_STEMS_SHA256
+    ):
+        raise DataError(
+            f"canonical-SROIE stem-set drift (mirror={adapter.name}): "
+            f"expected {_RRC_TASK3_STEMS_SHA256[:16]}…, "
+            f"got {observed_stems_sha[:16]}… — "
+            "an upstream mirror revision changed the test image set. "
+            "If intentional, regenerate the pin with "
+            "`python -m data.sroie_canonical --pin-stems <canonical_status.json>`.",
+        )
+    if (
+        _RRC_TASK3_GT_SHA256 != _PIN_SENTINEL
+        and observed_gt_sha != _RRC_TASK3_GT_SHA256
+    ):
+        raise DataError(
+            f"canonical-SROIE GT content drift (mirror={adapter.name}): "
+            f"expected {_RRC_TASK3_GT_SHA256[:16]}…, "
+            f"got {observed_gt_sha[:16]}….",
+        )
     log.info("canonical-SROIE ready (%s): %d images + %d entity files under %s",
              adapter.name, n_img, n_ent, data_path / "test")
     return CanonicalStatus(
         mirror_used=adapter.name,
         n_img_collected=n_img,
         n_ent_collected=n_ent,
+        stems_sha256=observed_stems_sha,
+        gt_content_sha256=observed_gt_sha,
     )
 
 
@@ -325,3 +425,29 @@ def _flatten_json_entities(src_root: Path, dst: Path) -> int:
             p.replace(target)
         n += 1
     return n
+
+
+# --------------------------------------------------------------------------- #
+# One-shot pin helper — run after first successful canonical download.          #
+# Usage: python -m data.sroie_canonical --pin-stems [path/to/status.json]      #
+# --------------------------------------------------------------------------- #
+
+if __name__ == "__main__":  # pragma: no cover
+    import argparse
+    import sys
+
+    ap = argparse.ArgumentParser(
+        description="Print canonical identity pins from canonical_status.json.",
+    )
+    ap.add_argument(
+        "--pin-stems", metavar="STATUS_JSON", required=True,
+        help="Path to canonical_status.json written by a successful run.",
+    )
+    args = ap.parse_args()
+    payload = json.loads(Path(args.pin_stems).read_text())
+    stems_sha = payload.get("stems_sha256", "")
+    gt_sha = payload.get("gt_content_sha256", "")
+    if not stems_sha or not gt_sha:
+        sys.exit(f"missing stems_sha256/gt_content_sha256 in {args.pin_stems}")
+    print(f'_RRC_TASK3_STEMS_SHA256 = "{stems_sha}"')
+    print(f'_RRC_TASK3_GT_SHA256    = "{gt_sha}"')

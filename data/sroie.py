@@ -171,6 +171,7 @@ def split_sroie(data_path: Path, seed: int, bug_flags: dict[str, bool] | None = 
 def _write_canonical_status(
     config: ExpConfig, *, mirror_used: str, n_img: int, n_ent: int,
     fallback_triggered: bool, error: str = "",
+    stems_sha256: str = "", gt_content_sha256: str = "",
 ) -> None:
     """Persist canonical-SROIE outcome to ``<output_dir>/env/canonical_status.json``.
 
@@ -178,6 +179,11 @@ def _write_canonical_status(
     Task-3" caption when ``fallback_triggered`` is True (the headline
     F1 numbers in that case were measured against the 500/63/63 split,
     not the leaderboard test set, so the caption would mislead).
+
+    ``stems_sha256`` and ``gt_content_sha256`` are the identity pins
+    written on first successful download; operators paste these into
+    ``data/sroie_canonical.py`` to lock reproducibility (see
+    ``python -m data.sroie_canonical --pin-stems``).
     """
     env_dir = Path(config.output_dir) / "env"
     env_dir.mkdir(parents=True, exist_ok=True)
@@ -189,6 +195,10 @@ def _write_canonical_status(
     }
     if error:
         payload["error"] = error
+    if stems_sha256:
+        payload["stems_sha256"] = stems_sha256
+    if gt_content_sha256:
+        payload["gt_content_sha256"] = gt_content_sha256
     (env_dir / "canonical_status.json").write_text(json.dumps(payload, indent=2))
 
 
@@ -201,9 +211,9 @@ def _canonical_test_split(
     auto-download the ICDAR-2019 SROIE Task-3 test archive (347 images
     + GT) into ``data_path/test/{img,entities}/`` via
     :func:`data.sroie_canonical.ensure_canonical_test_set` (sha256-
-    verified, with a docTR mirror fallback) before reading.  All 626
-    training images become the train pool; the canonical 347 images
-    become the test set; ``_N_VAL`` images are reserved from the
+    verified, with a HuggingFace Task-3 mirror fallback) before reading.
+    All 626 training images become the train pool; the canonical 347
+    images become the test set; ``_N_VAL`` images are reserved from the
     training pool for early-stopping.
 
     Returns ``None`` when the canonical test labels are not available
@@ -238,6 +248,8 @@ def _canonical_test_split(
             config, mirror_used=status.mirror_used,
             n_img=status.n_img_collected, n_ent=status.n_ent_collected,
             fallback_triggered=False,
+            stems_sha256=status.stems_sha256,
+            gt_content_sha256=status.gt_content_sha256,
         )
     if not (test_img_dir.exists() and test_ent_dir.exists()):
         return None
