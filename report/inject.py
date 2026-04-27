@@ -17,6 +17,38 @@ _INPUT_RE = re.compile(r"\\input\{([^}]+)\}")
 
 _MEAN_STD_KEYS = {"donut_f1", "pipeline_f1"}
 
+# Map each LaTeX text-mode special character to its safe representation.
+# Applied only to arbitrary string metric values (e.g. ``test_set_kind =
+# "canonical_347"``) — numeric formatters and explicit LaTeX literals such
+# as ``\ensuremath{...}`` are already safe and must NOT be passed through
+# this escaper (see _format_value).
+_LATEX_TEXT_ESCAPES: dict[str, str] = {
+    "\\": r"\textbackslash{}",
+    "&": r"\&",
+    "%": r"\%",
+    "$": r"\$",
+    "#": r"\#",
+    "_": r"\_",
+    "{": r"\{",
+    "}": r"\}",
+    "~": r"\textasciitilde{}",
+    "^": r"\textasciicircum{}",
+}
+
+
+def _latex_escape_text(s: str) -> str:
+    """Escape LaTeX text-mode special characters.
+
+    Used by ``_format_value`` for arbitrary string metric values
+    (e.g. ``test_set_kind = "canonical_347"``) which would otherwise
+    inject unescaped ``_`` into text mode and crash tectonic with
+    ``Missing $ inserted`` (paper_filled.tex line 1468 in run
+    20260427T071206Z-fd9d7b0).  Numeric formatters and explicit LaTeX
+    literals (``\\ensuremath{...}``, ``\\MissingCell{...}``) are already
+    safe and must NOT be passed through this escaper.
+    """
+    return "".join(_LATEX_TEXT_ESCAPES.get(c, c) for c in s)
+
 
 def _read_section(base: Path, name: str) -> str:
     """Read ``<base>/<name>(.tex)``; raise ``FileNotFoundError`` if missing."""
@@ -107,7 +139,12 @@ def _format_value(key: str, value: Any, metrics: dict[str, Any]) -> str:
         return f"{mean:.4f} \\ensuremath{{\\pm}} {std:.4f}"
     if isinstance(value, float):
         return f"{value:.4f}"
-    return str(value)
+    if isinstance(value, str):
+        return _latex_escape_text(value)
+    # Defensive: ints/bools/lists not handled above are unlikely to contain
+    # LaTeX-active chars, but escaping uniformly is harmless and guards
+    # against future metric types that stringify to e.g. "model_v2".
+    return _latex_escape_text(str(value))
 
 
 def inject_results(template: str, metrics: dict[str, Any]) -> str:
