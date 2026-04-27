@@ -13,14 +13,16 @@ Role: two auxiliary emitters alongside :mod:`report.figures_extra`.
     ``telemetry_donut.jsonl`` / ``telemetry_pipeline.jsonl``,
     complementing the full four-panel figure from
     :func:`report.figures.render_gpu_telemetry`.  Both emitters are
-    best-effort: missing source files warn and return ``None``.
+    best-effort: missing source files log debug and return ``None``.
 """
 from __future__ import annotations
 
 import json
-import warnings
+import logging
 from pathlib import Path
 from typing import Any
+
+log = logging.getLogger("kaggle2")
 
 try:
     import matplotlib
@@ -66,13 +68,11 @@ def render_bug_timeline(results_dir: str, out_dir: str) -> str | None:
     with the headline table at paper-build time.
     """
     if not _HAS_MPL:
-        warnings.warn("matplotlib unavailable — skipping bug timeline", stacklevel=2)
+        log.debug("matplotlib unavailable — skipping bug timeline")
         return None
     data = _load_json(Path(results_dir) / "bug_timeline.json")
     if data is None or "bugs" not in data:
-        warnings.warn(
-            f"bug_timeline.json not found in {results_dir}", stacklevel=2,
-        )
+        log.debug("bug_timeline.json not found in %s", results_dir)
         return None
     bugs = data["bugs"]
     f1_after = _resolve_f1_after(Path(results_dir), data)
@@ -127,22 +127,20 @@ def render_telemetry_overlay(results_dir: str, out_dir: str) -> str | None:
     both ``telemetry_donut.jsonl`` and ``telemetry_pipeline.jsonl``
     exist.  When only one trace is present, returning a single-line
     plot would silently mislead the reader (review item S3 in the
-    paper-craftsmanship critique); we instead warn and return ``None``
+    paper-craftsmanship critique); we instead log debug and return ``None``
     so the LaTeX ``\\iffigurefile`` macro suppresses the figure entirely.
     """
     if not _HAS_MPL:
-        warnings.warn(
-            "matplotlib unavailable — skipping telemetry overlay", stacklevel=2,
-        )
+        log.debug("matplotlib unavailable — skipping telemetry overlay")
         return None
     donut = _load_jsonl(Path(results_dir) / "telemetry_donut.jsonl")
     pipe = _load_jsonl(Path(results_dir) / "telemetry_pipeline.jsonl")
     if not donut or not pipe:
-        warnings.warn(
+        log.debug(
             "telemetry overlay needs BOTH telemetry_donut.jsonl and "
-            f"telemetry_pipeline.jsonl in {results_dir}; "
-            f"have donut={bool(donut)} pipeline={bool(pipe)} — skipping",
-            stacklevel=2,
+            "telemetry_pipeline.jsonl in %s; "
+            "have donut=%s pipeline=%s — skipping",
+            results_dir, bool(donut), bool(pipe),
         )
         return None
     fig, ax = plt.subplots(figsize=(6.8, 3.4))
@@ -178,7 +176,7 @@ def render_bug_interaction_heatmap(
     bug ablation is the default, pairwise is expensive).
     """
     if not _HAS_MPL:
-        warnings.warn("matplotlib unavailable — skipping heatmap", stacklevel=2)
+        log.debug("matplotlib unavailable — skipping heatmap")
         return None
     metrics_dir = Path(results_dir) / "metrics"
     src = metrics_dir / "ablation_report.json"
@@ -186,9 +184,7 @@ def render_bug_interaction_heatmap(
         src = Path(results_dir) / "ablation_report.json"
     report = _load_json(src)
     if report is None:
-        warnings.warn(
-            f"ablation_report.json not found in {results_dir}", stacklevel=2,
-        )
+        log.debug("ablation_report.json not found in %s", results_dir)
         return None
     per_bug = dict(report.get("per_bug_delta") or {})
     interaction: dict[str, dict[str, float]] = {

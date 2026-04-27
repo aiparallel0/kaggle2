@@ -39,6 +39,10 @@
   % loaded) auto-switches to text mode in both math and text contexts.
   \text{{\color{BrickRed}\textbf{\texttt{?}}\textsubscript{\tiny\texttt{#1}}}}%
 }
+% \code{} — hyphenation-friendly monospace for long tokens like
+% decoder\_start\_token\_id that trigger overfull \hbox warnings.
+% Uses \texttt with explicit hyphenation permission at underscores.
+\newcommand{\code}[1]{\texttt{\hyphenchar\font=`\-\relax #1}}
 \setlength{\emergencystretch}{3em}
 \graphicspath{{}{./}{./figures/}{./results/}{../}{../figures/}{../results/}}
 

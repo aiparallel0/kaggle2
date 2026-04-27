@@ -168,6 +168,16 @@ def merge_pipeline_diagnostics(
             )
         except Exception as exc:  # noqa: BLE001
             log.warning("Failed to read pipeline_meta.json: %s", exc)
+    # Item 5: single-source param ratio (pipeline / donut).
+    donut_m = metrics.get("donut_params_m")
+    pipe_m = metrics.get("pipeline_params_m")
+    if isinstance(donut_m, int | float) and isinstance(pipe_m, int | float):
+        ratio = float(pipe_m) / float(donut_m) if float(donut_m) > 0 else 0.0
+        metrics.setdefault("param_ratio_numeric", round(ratio, 2))
+        if 0.29 <= ratio <= 0.37:
+            metrics.setdefault("param_ratio_phrase", "roughly one-third")
+        else:
+            metrics.setdefault("param_ratio_phrase", f"$\\approx${ratio:.0%}")
 
 
 def merge_cost_json(config: ExpConfig, metrics: dict[str, object]) -> None:

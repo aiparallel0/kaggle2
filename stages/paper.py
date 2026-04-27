@@ -42,6 +42,11 @@ from report.combine_new import (
     merge_rag_metrics,
 )
 from report.inject import collect_unresolved, expand_inputs, inject_results
+from report.missing import (
+    assert_ci_bounds_valid,
+    assert_no_basic_split_in_advanced_sections,
+    assert_no_rulebased_in_advanced,
+)
 from report.pdflatex import compile_paper_pdf
 
 log = logging.getLogger("kaggle2")
@@ -179,6 +184,13 @@ def stage_paper(config: ExpConfig) -> None:
     # so the training table no longer prints ``\\textit{n/a}`` for
     # those cells.  Idempotent / best-effort.
     merge_best_epochs(config, metrics)
+    # Item 2: advanced variant must not carry rulebased/gtocr keys.
+    assert_no_rulebased_in_advanced(metrics, str(getattr(config, "paper_variant", "basic")))
+    # Item 3: advanced sections must not use basic-split literals (500/63/63).
+    section_dir = str(Path(config.paper_template).parent / "sections")
+    assert_no_basic_split_in_advanced_sections(section_dir)
+    # Item 4: per-field CI bounds must satisfy lo ≤ point ≤ hi.
+    assert_ci_bounds_valid(metrics)
     # Materialise auto-generated tabular blocks for the new Section-D
     # tables.  Each key is a ``table_*`` identifier the LaTeX section
     # files reference as ``\\VAR{table_headline_f1}`` etc. — so the
