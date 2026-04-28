@@ -63,6 +63,8 @@ _FIELD_KEY_VARIANTS: dict[str, tuple[str, ...]] = {
 }
 
 # Guard against missing huggingface_hub at import time (mypy-strict safe).
+# Typed as Any so the runtime ``_HF_AVAILABLE`` guard at each call site
+# satisfies strict mypy without re-declaring HF's complex kwargs signature.
 try:
     from huggingface_hub import snapshot_download as _hf_snapshot_download
     _snapshot_download: Any = _hf_snapshot_download
