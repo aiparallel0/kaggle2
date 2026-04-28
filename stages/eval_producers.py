@@ -96,13 +96,20 @@ def _merge_error_jsonls(output_dir: str, sources: tuple[str, ...]) -> None:
 
 def _build_bundles(
     fields: tuple[str, ...],
-    donut: tuple[list[Prediction] | None, Metrics | None],
-    pipe: tuple[list[Prediction] | None, Metrics | None],
-    receipts: list[Receipt],
+    donut: tuple[list[Prediction] | None, Metrics | None, list[Receipt]],
+    pipe: tuple[list[Prediction] | None, Metrics | None, list[Receipt]],
 ) -> dict[str, tuple[Metrics, EvalBundle]]:
-    """Assemble the ``{system: (metrics, bundle)}`` dict for extended metrics."""
+    """Assemble the ``{system: (metrics, bundle)}`` dict for extended metrics.
+
+    Each ``(preds, metrics, receipts)`` triple is per-arm: the receipts
+    must be the *normalised* gold the arm's headline scorer saw.  Mixing
+    arms (e.g. donut preds with the pipeline arm's normalised gold)
+    would re-introduce the asymmetry PR #111 is fixing.
+    """
     out: dict[str, tuple[Metrics, EvalBundle]] = {}
-    for key, (preds, metrics) in {"donut": donut, "pipeline": pipe}.items():
+    for key, (preds, metrics, receipts) in {
+        "donut": donut, "pipeline": pipe,
+    }.items():
         if preds is not None and metrics is not None and receipts:
             out[key] = (metrics, EvalBundle(
                 predictions=preds, receipts=receipts, fields=list(fields),
@@ -113,27 +120,39 @@ def _build_bundles(
 def emit_all(
     output_dir: str, fields: tuple[str, ...], *,
     donut_preds: list[Prediction] | None, pipeline_preds: list[Prediction] | None,
-    receipts: list[Receipt],
+    donut_receipts: list[Receipt], pipeline_receipts: list[Receipt],
     donut_metrics: Metrics | None, pipeline_metrics: Metrics | None,
     n_iter: int = 1000, level: float = 0.95,
 ) -> dict[str, int]:
-    """One-call producer.  Writes everything that can be written from real data."""
+    """One-call producer.  Writes everything that can be written from real data.
+
+    ``donut_receipts`` / ``pipeline_receipts`` carry each arm's
+    *normalised* gold receipts — the same ``Receipt`` list the arm's
+    headline F1/NED/EM scorer saw.  Splitting receipts per-arm prevents
+    the silent (normalised pred, raw gold) bundle mix that produced
+    ``F1 > max(P, R)`` rows in ``extended_metrics.json`` (PR #110
+    follow-up).
+    """
     counts: dict[str, int] = {}
-    for system, preds in (("donut", donut_preds), ("pipeline", pipeline_preds)):
-        if preds is None or not receipts:
+    for system, preds, recs in (
+        ("donut", donut_preds, donut_receipts),
+        ("pipeline", pipeline_preds, pipeline_receipts),
+    ):
+        if preds is None or not recs:
             continue
         counts[f"{system}_preds"] = write_preds_jsonl(
             _sub(output_dir, "predictions", f"{system}_preds.jsonl"),
-            preds, receipts, fields, system,
+            preds, recs, fields, system,
         )
         counts[f"{system}_errors"] = write_errors_jsonl(
             _sub(output_dir, "predictions", f"{system}_errors.jsonl"),
-            preds, receipts, fields, system,
+            preds, recs, fields, system,
         )
     _merge_error_jsonls(output_dir, ("donut_errors.jsonl", "pipeline_errors.jsonl"))
     bundles = _build_bundles(
-        fields, (donut_preds, donut_metrics), (pipeline_preds, pipeline_metrics),
-        receipts,
+        fields,
+        (donut_preds, donut_metrics, donut_receipts),
+        (pipeline_preds, pipeline_metrics, pipeline_receipts),
     )
     if bundles:
         counts["extended_keys"] = write_extended_metrics(

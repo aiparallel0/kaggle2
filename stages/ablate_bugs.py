@@ -45,7 +45,7 @@ def _eval_one(config: ExpConfig, data: DataSplit, cell: str) -> tuple[float, flo
     try:
         from models.donut_eval import eval_donut  # local import: torch optional
 
-        metrics, _ = eval_donut(cfg, data.test)
+        metrics, _, _ = eval_donut(cfg, data.test)
         return metrics.global_f1, metrics.global_ned, metrics.global_em
     except ImportError as exc:  # pragma: no cover — torch optional
         log.warning("ablate_bugs: %s — returning zeros for cell=%s", exc, cell)

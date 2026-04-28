@@ -173,6 +173,15 @@ class PipelineResult:
     rulebased: Metrics
     assigner_preds: list[Prediction] = field(default_factory=list)
     rulebased_preds: list[Prediction] = field(default_factory=list)
+    # Normalised gold receipts (output of :func:`models.normalize_bundle.
+    # normalize_bundle` applied to the eval-time test list).  Surfaced so
+    # the per-field precision / recall / bootstrap-CI producer in
+    # :mod:`stages.eval_producers` can build its ``EvalBundle`` from the
+    # *same* ``(preds, receipts)`` pair that ``compute_metrics`` saw —
+    # without this, ``summarise_extended`` runs on (normalised pred, raw
+    # gold), token-set intersections collapse, and ``F1 > max(P, R)``
+    # silently appears in ``extended_metrics.json`` (PR #110 follow-up).
+    receipts: list[Receipt] = field(default_factory=list)
 
 
 @dataclass

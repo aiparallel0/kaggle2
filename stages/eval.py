@@ -21,7 +21,7 @@ from core.env_snapshot import write_env_snapshot
 from core.errors import EvalError
 from core.seed import seed_everything
 from core.statistics import bootstrap_ci, mcnemar, paired_bootstrap_delta_ci
-from core.types import DataSplit, ExpConfig, Metrics, Prediction
+from core.types import DataSplit, ExpConfig, Metrics, Prediction, Receipt
 from core.validate import validate_f1
 from data.sroie import download_sroie, load_or_create_split
 from models.donut_eval import eval_donut
@@ -133,8 +133,14 @@ def _emit_focus_diagnostics(config: ExpConfig) -> None:
 
 def _eval_donut_or_skip(
     config: ExpConfig, data: DataSplit,
-) -> tuple[Metrics, list[Prediction]]:
-    """Eval DONUT iff ``skip_donut`` is False AND a checkpoint exists."""
+) -> tuple[Metrics, list[Prediction], list[Receipt]]:
+    """Eval DONUT iff ``skip_donut`` is False AND a checkpoint exists.
+
+    Returns ``(metrics, normalised preds, normalised gold receipts)``
+    so the caller can build the same ``(preds, receipts)`` bundle the
+    headline scorer saw — the extended-metrics producer needs both
+    sides field-normalised to keep ``F1 ≤ max(P, R)`` (PR #110 follow-up).
+    """
     donut_model = os.path.join(config.output_dir, "donut")
     if config.skip_donut:
         log.info("skip_donut=True — skipping DONUT eval; reporting zeros.")
@@ -144,16 +150,16 @@ def _eval_donut_or_skip(
             per_field_ned={f: 0.0 for f in config.fields},
             per_field_em={f: 0.0 for f in config.fields},
         )
-        return zeros, []
+        return zeros, [], []
     if not Path(donut_model).exists():
         raise EvalError(
             f"DONUT checkpoint not found at {donut_model}. Either run train "
             "stage first, or set skip_donut=true for a Phase-1 pipeline-only run.",
         )
-    dm, dp = eval_donut(config, data.test)
+    dm, dp, dt = eval_donut(config, data.test)
     validate_f1(dm, "donut")
     warn_below_expected(dm, config, "donut")
-    return dm, dp
+    return dm, dp, dt
 
 
 def _per_seed_metrics(
@@ -161,7 +167,7 @@ def _per_seed_metrics(
 ) -> tuple[Metrics, Metrics, Metrics]:
     """Run one (DONUT, pipeline, GT-OCR-stream-rulebased) eval triple at `seed`."""
     seed_everything(seed)
-    dm, _ = _eval_donut_or_skip(config, data)
+    dm, _, _ = _eval_donut_or_skip(config, data)
     log.info("DONUT F1=%.4f", dm.global_f1)
     pm = eval_pipeline(config, data.test)
     validate_f1(pm.assigner, "pipeline",
@@ -304,13 +310,20 @@ def stage_eval(
     last: dict[str, object] = {}
     last_donut_preds: list[Prediction] = []
     last_pipeline_preds: list[Prediction] = []
+    # PR #110 follow-up: surface each arm's normalised gold receipts so
+    # ``emit_all`` can build per-arm ``EvalBundle``s that match what the
+    # headline scorer saw.  Mixing normalised preds with raw gold (the
+    # pre-fix behaviour) collapsed per-field P/R and produced
+    # ``F1 > max(P, R)`` rows in ``extended_metrics.json``.
+    last_donut_receipts: list[Receipt] = []
+    last_pipeline_receipts: list[Receipt] = []
     last_donut_metrics: Metrics | None = None
     last_pipeline_metrics: Metrics | None = None
     for seed in run_seeds:
         if len(run_seeds) > 1:
             log.info("--- Eval seed=%d ---", seed)
         seed_everything(seed)
-        dm, dp = _eval_donut_or_skip(config, data)
+        dm, dp, dt = _eval_donut_or_skip(config, data)
         log.info("DONUT F1=%.4f", dm.global_f1)
         pm = eval_pipeline(config, data.test)
         validate_f1(pm.assigner, "pipeline",
@@ -357,7 +370,9 @@ def stage_eval(
         else:
             last["oracle_patch_f1_if_applied"] = round(patched_assigner.global_f1, 4)
         last_donut_preds = dp
+        last_donut_receipts = dt
         last_pipeline_preds = pm.assigner_preds
+        last_pipeline_receipts = pm.receipts
         last_donut_metrics = dm
         last_pipeline_metrics = pm.assigner
     # Always emit the variance block, even when n=1 — downstream consumers
@@ -457,11 +472,17 @@ def stage_eval(
     # Producer: write per-sample predictions, per_field_errors.jsonl, and
     # extended_metrics.json from the real eval data of the last seed so
     # every new \VAR{} resolves to a measured value in the PDF.
+    # PR #110 follow-up: pass each arm's *normalised* gold receipts (not
+    # raw ``data.test``) so the per-field P/R/CI producer sees the same
+    # bundle ``compute_metrics`` saw.  Falling back to ``data.test`` only
+    # if the arm produced no normalised gold (e.g. ``skip_donut=True``)
+    # so the existing skip-an-arm contract is preserved.
     emit_all(
         config.output_dir, tuple(config.fields),
         donut_preds=last_donut_preds or None,
         pipeline_preds=last_pipeline_preds or None,
-        receipts=data.test,
+        donut_receipts=last_donut_receipts or list(data.test),
+        pipeline_receipts=last_pipeline_receipts or list(data.test),
         donut_metrics=last_donut_metrics,
         pipeline_metrics=last_pipeline_metrics,
         n_iter=config.bootstrap_n_iter,

@@ -86,7 +86,7 @@ def main(argv: list[str] | None = None) -> int:
 
     # eval_donut itself does not call validate_f1 — this script intentionally
     # skips validate_f1 so it always terminates and writes donut_eval_diag.json.
-    metrics, _ = eval_donut(config, data.test)
+    metrics, _, _ = eval_donut(config, data.test)
 
     log.info(
         "DONUT  F1=%.4f  NED=%.4f  EM=%.4f",
