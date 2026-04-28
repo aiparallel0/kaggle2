@@ -15,9 +15,9 @@ from pathlib import Path
 from typing import Any
 
 from core.types import DataSplit, ExpConfig
-from models._gen_config import _persist_generation_config
 from models.donut_dataset import _DonutCollator, _seed_worker, _SROIEDataset
 from models.donut_optim import _make_compute_metrics, _split_param_groups
+from models.gen_config import _persist_generation_config
 
 _import_error: ImportError | None = None
 try:

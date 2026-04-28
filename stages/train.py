@@ -13,7 +13,7 @@ from __future__ import annotations
 import logging
 
 from core.errors import TrainError
-from core.telem_stage import start_telem, stop_telem
+from core.stage_telemetry import start_telem, stop_telem
 from core.types import AssignerData, ExpConfig
 from data.sroie import (
     download_sroie,
@@ -21,11 +21,11 @@ from data.sroie import (
     extract_receipt_regions,
     load_or_create_split,
 )
-from models.assigner_train import train_assigner
 from models.donut_train import train_donut
+from models.focus_train import train_assigner
 from models.trocr_train import train_trocr
 from models.yolo_train import train_yolo
-from stages._common import write_pipeline_meta
+from stages.common import write_pipeline_meta
 
 log = logging.getLogger("kaggle2")
 

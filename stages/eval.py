@@ -25,14 +25,14 @@ from core.types import DataSplit, ExpConfig, Metrics, Prediction
 from core.validate import validate_f1
 from data.sroie import download_sroie, load_or_create_split
 from models.donut_eval import eval_donut
-from models.pipeline_eval import eval_pipeline
+from models.eval_pipeline import eval_pipeline
 from models.rule_eval import (
     combined_from_rulebased,
     eval_gtocr_rulebased,
     per_field_injection,
 )
 from report.combine import build_combined
-from stages._common import (
+from stages.common import (
     assert_hybrid_beats_gtocr_rulebased,
     oracle_patch_hybrid,
     warn_below_expected,
@@ -46,20 +46,20 @@ log = logging.getLogger("kaggle2")
 def _emit_foundation_metrics(config: ExpConfig, test: list) -> None:  # type: ignore[type-arg]
     """P4 — write ``foundation_metrics.json`` to ``config.output_dir``.
 
-    Calls :func:`models.foundation_oracle.foundation_predict` for each
-    test receipt (results cached by content hash) and reduces through
-    the shared ``compute_metrics`` so the numbers are directly
-    comparable with DONUT/pipeline F1/NED/EM.  Any missing API key
-    yields an empty Receipt → metrics degrade gracefully to 0.0.
+    Calls :func:`models.oracle.run_llm_ceiling` for each test receipt
+    (results cached by content hash) and reduces through the shared
+    ``compute_metrics`` so the numbers are directly comparable with
+    DONUT/pipeline F1/NED/EM.  Any missing API key yields an empty
+    Receipt → metrics degrade gracefully to 0.0.
     """
     try:
         from core.metrics import compute_metrics
         from core.types import EvalBundle
-        from models.foundation_oracle import foundation_predict
+        from models.oracle import run_llm_ceiling
     except ImportError as exc:
         log.warning("foundation arm: %s — skipping side-car emit", exc)
         return
-    preds = [foundation_predict(r.image_path, config) for r in test]
+    preds = [run_llm_ceiling(r.image_path, config) for r in test]
     bundle = EvalBundle(
         predictions=preds, receipts=test, fields=list(config.fields),
     )
@@ -252,7 +252,7 @@ def stage_eval(
     When ``oracle_address`` is True the harness short-circuits to the
     Day-1 FOCUS gate: it loads the SROIE split, runs Tier A (clean
     box-file ceiling) + Tier B (canonical-347 heuristic ceiling) via
-    :func:`models.pipeline_oracle.compute_oracle_address`, writes
+    :func:`models.oracle.run_skip_ceiling`, writes
     ``runs/<run_id>/metrics/oracle_address.json``, logs the decision
     branch, and returns without touching any other sidecar.
     """
@@ -272,8 +272,8 @@ def stage_eval(
     data_path = download_sroie(config)
     data = load_or_create_split(config, data_path)
     if oracle_address:
-        from models.pipeline_oracle import compute_oracle_address
-        payload = compute_oracle_address(data, config)
+        from models.oracle import run_skip_ceiling
+        payload = run_skip_ceiling(data, config)
         out = Path(config.output_dir) / "metrics" / "oracle_address.json"
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_text(json.dumps(payload, indent=2))
@@ -447,8 +447,8 @@ def stage_eval(
         _strip_gtocr_keys(last)
     # P4 — foundation-model ceiling arm (Claude Sonnet / GPT-4V zero-shot).
     # Opt-in via ``config.foundation_enabled``; API keys + caching are
-    # owned by :mod:`models.foundation_oracle`.  Written as a side-car
-    # so it never alters the headline pipeline/DONUT metrics.
+    # owned by :mod:`models.oracle`.  Written as a side-car so it never
+    # alters the headline pipeline/DONUT metrics.
     if getattr(config, "foundation_enabled", False):
         _emit_foundation_metrics(config, data.test)
     Path(config.output_dir).mkdir(parents=True, exist_ok=True)

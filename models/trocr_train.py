@@ -15,7 +15,7 @@ from typing import Any
 from core.errors import TrainError
 from core.metrics import token_f1
 from core.types import Crop, ExpConfig
-from models._gen_config import _persist_generation_config
+from models.gen_config import _persist_generation_config
 
 _import_error: ImportError | None = None
 try:

@@ -213,13 +213,13 @@ class ExpConfig:
     trocr_model: str
     yolo_model: str
     image_size: tuple[int, int]
-    yolo_img_size: int
+    yolo_image_size: int
     max_length: int
     trocr_max_len: int
     epochs_donut: int
     epochs_yolo: int
     epochs_trocr: int
-    epochs_assigner: int
+    epochs_focus: int
     batch_size: int
     grad_accum: int
     lr: float
@@ -244,20 +244,20 @@ class ExpConfig:
     lr_scheduler_type: str = "cosine"
     gradient_checkpointing: bool = True
     num_beams: int = 4
-    expected_f1_warn: float = 0.75
+    f1_warn_threshold: float = 0.75
     skip_donut: bool = False
-    assigner_hidden: int = 384
-    assigner_n_layers_level2: int = 6
+    focus_hidden_dim: int = 384
+    focus_n_layers_level2: int = 6
     emit_hidden: int = 128
     emit_vocab_size: int = 259
     emit_max_len: int = 96
     emit_beam_width: int = 4
     kd_attn_weight: float = 0.0
     kd_logits_weight: float = 0.0
-    assigner_patience: int = 7
-    assigner_min_delta: float = 0.005
-    weight_decay_assigner: float = 5e-4
-    dropout_assigner: float = 0.2
+    focus_patience: int = 7
+    focus_min_delta: float = 0.005
+    weight_decay_focus: float = 5e-4
+    dropout_focus: float = 0.2
     priors_v2: bool = True
     seeds: list[int] = field(default_factory=lambda: [42])
     n_trials: int = 1
@@ -284,9 +284,9 @@ class ExpConfig:
     # Fix 4 — explicit assigner optimiser knobs.  Defaults preserve the
     # hardcoded legacy values (``lr=1e-3``, no warmup) so unchanged
     # training runs remain bit-for-bit reproducible; the regression-fix
-    # config sets ``lr_assigner=3e-4`` and ``warmup_ratio_assigner=0.1``.
-    lr_assigner: float = 1e-3
-    warmup_ratio_assigner: float = 0.0
+    # config sets ``lr_focus=3e-4`` and ``warmup_ratio_focus=0.1``.
+    lr_focus: float = 1e-3
+    warmup_ratio_focus: float = 0.0
     # PR-A — bug-atlas extension.  Bugs 14-17 are PR-C-era guards:
     #   bug_14 — anchor-extender warmup ordering must precede the head
     #   bug_15 — priors_v3 must NOT fire ``is_distractor`` on Bahasa
@@ -339,7 +339,7 @@ class ExpConfig:
     # report/template_basic.tex).  ``advanced`` (default) is the headline
     # 626-train + 347-test comparison; ``basic`` is the reduced-scope
     # 500/63/63 + GT-OCR baseline study.  CLI flag: --paper-variant.
-    paper_variant: str = "advanced"
+    paper_variant: str = "focus"
     # v4 — LayoutLMv3 baseline.  Off by default so the headline run is
     # bit-for-bit reproducible against v3; flip to True on the first
     # GPU box that has the public HF checkpoint cached.

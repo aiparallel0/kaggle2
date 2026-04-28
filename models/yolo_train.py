@@ -120,7 +120,7 @@ def train_yolo(config: ExpConfig, data: DataSplit) -> str:
         out_dir = str(Path(config.output_dir, "yolo"))
     model = YOLO(config.yolo_model)
     # Bug 5 (gate): explicit imgsz= at train.  Off = use ultralytics default.
-    _imgsz = config.yolo_img_size if config.bug_flags.get("bug_5", True) else 640
+    _imgsz = config.yolo_image_size if config.bug_flags.get("bug_5", True) else 640
     model.train(
         data=str(yaml_path),
         epochs=config.epochs_yolo,

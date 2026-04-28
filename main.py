@@ -26,11 +26,11 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="kaggle2 KIE pipeline")
     parser.add_argument(
         "--stage",
-        choices=["train", "eval", "eval_gtocr_rulebased", "eval_rulebased_gold",
+        choices=["train", "eval", "eval_rule_gtocr",
                  "ablate_bugs", "paper", "all"],
         default="all",
     )
-    parser.add_argument("--config", default="config.json")
+    parser.add_argument("--config", default="configs/default.json")
     parser.add_argument(
         "--skip-donut",
         action="store_true",
@@ -65,10 +65,10 @@ def main() -> None:
     )
     parser.add_argument(
         "--paper-variant",
-        choices=["advanced", "basic"],
+        choices=["focus", "baseline"],
         default=None,
-        help="Select the paper template: 'advanced' (default, 626 train + 347 "
-        "canonical test, DONUT vs YOLO+TrOCR+Assigner) or 'basic' (500/63/63 "
+        help="Select the paper template: 'focus' (default, 626 train + 347 "
+        "canonical test, DONUT vs YOLO+TrOCR+Assigner) or 'baseline' (500/63/63 "
         "internal split, DONUT vs YOLO+TrOCR+regex vs GT-OCR+regex baseline). "
         "Overrides config.paper_variant; flips canonical_sroie_enabled to "
         "match.",
@@ -130,11 +130,11 @@ def main() -> None:
     # CLI --paper-variant flips both the template choice (via env in
     # load_config) AND the canonical_sroie_enabled toggle so the basic
     # variant always evaluates on the 500/63/63 internal split.
-    if args.paper_variant == "basic":
-        config.paper_variant = "basic"
+    if args.paper_variant == "baseline":
+        config.paper_variant = "baseline"
         config.canonical_sroie_enabled = False
-    elif args.paper_variant == "advanced":
-        config.paper_variant = "advanced"
+    elif args.paper_variant == "focus":
+        config.paper_variant = "focus"
         config.canonical_sroie_enabled = True
     # CLI --seeds wins over config.seeds; config.seeds wins over legacy config.seed.
     # config.seeds and config.n_trials are the durable way to switch to n=5 etc.
@@ -148,7 +148,7 @@ def main() -> None:
         stage_train(config)
     if args.stage in ("eval", "all"):
         stage_eval(config, seeds=seeds, oracle_address=args.oracle_address)
-    if args.stage in ("eval_gtocr_rulebased", "eval_rulebased_gold"):
+    if args.stage == "eval_rule_gtocr":
         stage_eval_gtocr_rulebased(config)
     if args.stage == "ablate_bugs":
         from stages.ablate_bugs import stage_ablate_bugs

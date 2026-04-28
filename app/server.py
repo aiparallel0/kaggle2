@@ -32,7 +32,7 @@ _state: dict[str, Any] = {"model": None, "config": None}
 def _get_model() -> LoadedModel:
     """Lazy-load DONUT on first request so server boot is instant."""
     if _state["model"] is None:
-        config: ExpConfig = _state["config"] or load_config("config.json")
+        config: ExpConfig = _state["config"] or load_config("configs/default.json")
         _state["config"] = config
         log.info("Loading DONUT model (first request)…")
         _state["model"] = load_model(config)

@@ -31,7 +31,7 @@ To re-run the full pipeline with the F1 guard downgraded to a warning
 (so combined_metrics.json is still written), set the env var and run
 the eval stage:
 
-    KAGGLE2_VALIDATE_F1_WARN_ONLY=1 python main.py --stage eval
+    KAGGLE2_F1_WARN_ONLY=1 python main.py --stage eval
 """
 from __future__ import annotations
 
@@ -53,7 +53,7 @@ def main(argv: list[str] | None = None) -> int:
         level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
     args = list(argv if argv is not None else sys.argv[1:])
-    config_path = args[0] if args and not args[0].startswith("-") else "config.json"
+    config_path = args[0] if args and not args[0].startswith("-") else "configs/default.json"
 
     # Parse --run-dir / -r <path>
     run_dir: str | None = None
@@ -97,7 +97,7 @@ def main(argv: list[str] | None = None) -> int:
     log.info(
         "donut_eval_only: validate_f1 guard was skipped.  "
         "Run `python main.py --stage eval` (or set "
-        "KAGGLE2_VALIDATE_F1_WARN_ONLY=1 for a warn-only full pipeline) "
+        "KAGGLE2_F1_WARN_ONLY=1 for a warn-only full pipeline) "
         "for the gated evaluation.",
     )
     return 0

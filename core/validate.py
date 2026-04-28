@@ -6,7 +6,7 @@ Article: "End-to-End vs. Pipeline Receipt KIE: DONUT Against
 Role: hard-fails when F1 falls below architecture-specific bug floors,
     surfacing the 13 silent F1-destroying bugs documented in
     report/sections/bugs.tex (Bug 1–13).  Set env var
-    KAGGLE2_VALIDATE_F1_WARN_ONLY=1 to downgrade the DONUT hard floor to
+    KAGGLE2_F1_WARN_ONLY=1 to downgrade the DONUT hard floor to
     a warning so forensic artifacts (donut_eval_diag.json,
     combined_metrics.json) survive a sub-floor run for inspection.
 """
@@ -35,9 +35,9 @@ def validate_f1(
             "wrong decoder_start_token_id (Bug 2), token2json list (Bug 3), "
             "or unflattened <s_sroie> wrapper (Bug 8)."
         )
-        if os.environ.get("KAGGLE2_VALIDATE_F1_WARN_ONLY", "0") == "1":
+        if os.environ.get("KAGGLE2_F1_WARN_ONLY", "0") == "1":
             _log.warning(
-                "KAGGLE2_VALIDATE_F1_WARN_ONLY=1 — downgrading hard floor to "
+                "KAGGLE2_F1_WARN_ONLY=1 — downgrading hard floor to "
                 "warning so forensic artifacts survive: %s", msg,
             )
             return

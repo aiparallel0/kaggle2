@@ -66,12 +66,12 @@ def build_combined(
         "rulebased_f1_address": gtocr_rb.per_field_f1.get("address", 0.0),
         "rulebased_f1_total": gtocr_rb.per_field_f1.get("total", 0.0),
         "epochs_donut": config.epochs_donut, "epochs_trocr": config.epochs_trocr,
-        "epochs_yolo": config.epochs_yolo, "epochs_assigner": config.epochs_assigner,
+        "epochs_yolo": config.epochs_yolo, "epochs_assigner": config.epochs_focus,
         "batch_size": config.batch_size,
         "lr": config.lr, "precision": config.precision,
         "label_smoothing": config.label_smoothing,
         "warmup_steps": config.warmup_steps,
-        "yolo_img_size": config.yolo_img_size,
+        "yolo_img_size": config.yolo_image_size,
         "img_w": config.image_size[0], "img_h": config.image_size[1],
         "artifact_mode": "full",
         # Differential LR: the DONUT decoder is trained 10× faster than
@@ -101,10 +101,10 @@ def build_combined(
         # template references — single source of truth, sourced from
         # the live config object (which itself wraps the actual
         # assigner ctor args at construction time).
-        "assigner_hidden": config.assigner_hidden,
-        "assigner_n_layers_level2": config.assigner_n_layers_level2,
-        "assigner_d_model": config.assigner_hidden,
-        "assigner_n_layers": config.assigner_n_layers_level2,
+        "assigner_hidden": config.focus_hidden_dim,
+        "assigner_n_layers_level2": config.focus_n_layers_level2,
+        "assigner_d_model": config.focus_hidden_dim,
+        "assigner_n_layers": config.focus_n_layers_level2,
         # Per-image correctness vectors (all-fields EM per receipt):
         # consumed by stages/eval.py for the McNemar test and the
         # ``*_em_*`` paired-bootstrap CIs.
@@ -183,7 +183,7 @@ def merge_pipeline_diagnostics(
             with open(meta) as fh:
                 meta_data = json.load(fh)
             metrics["parity_ok"] = (
-                int(meta_data.get("yolo_img_size", -1)) == config.yolo_img_size
+                int(meta_data.get("yolo_img_size", -1)) == config.yolo_image_size
             )
         except Exception as exc:  # noqa: BLE001
             log.warning("Failed to read pipeline_meta.json: %s", exc)
