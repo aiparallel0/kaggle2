@@ -182,7 +182,10 @@ def _strip_gtocr_keys(d: dict[str, object]) -> None:
         d.pop(k, None)
 
 
-def stage_eval(config: ExpConfig, seeds: list[int] | None = None) -> None:
+def stage_eval(
+    config: ExpConfig, seeds: list[int] | None = None,
+    oracle_address: bool = False,
+) -> None:
     """Run eval across one or more seeds; aggregate mean/std/CI.
 
     Keeps the legacy single-seed keys (``donut_f1``, ``pipeline_f1``,
@@ -192,6 +195,13 @@ def stage_eval(config: ExpConfig, seeds: list[int] | None = None) -> None:
     render seed-level uncertainty bands.  For n=1 the paper-side bootstrap
     CI over per-image correctness is still available via
     :func:`core.statistics.bootstrap_ci`.
+
+    When ``oracle_address`` is True the harness short-circuits to the
+    Day-1 FOCUS gate: it loads the SROIE split, runs Tier A (clean
+    box-file ceiling) + Tier B (canonical-347 heuristic ceiling) via
+    :func:`models.pipeline_oracle.compute_oracle_address`, writes
+    ``runs/<run_id>/metrics/oracle_address.json``, logs the decision
+    branch, and returns without touching any other sidecar.
     """
     log.info("=== Stage: eval ===")
     # Best-effort env snapshot; never block eval on a missing config.json.
@@ -207,6 +217,20 @@ def stage_eval(config: ExpConfig, seeds: list[int] | None = None) -> None:
         log.warning("env_snapshot failed: %s", exc)
     data_path = download_sroie(config)
     data = load_or_create_split(config, data_path)
+    if oracle_address:
+        from models.pipeline_oracle import compute_oracle_address
+        payload = compute_oracle_address(data, config)
+        out = Path(config.output_dir) / "metrics" / "oracle_address.json"
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(json.dumps(payload, indent=2))
+        log.info("Oracle address sidecar -> %s", out)
+        log.info(
+            "Tier B canonical: f1=%.4f em=%.4f decision=%s p1_passes=%s",
+            payload["tier_b_canonical_heuristic"]["f1"],
+            payload["tier_b_canonical_heuristic"]["em"],
+            payload["decision"], payload["p1_passes"],
+        )
+        return
     run_seeds = list(seeds) if seeds else list(config.seeds[: config.n_trials])
     log.info("Eval harness: n_trials=%d seeds=%s", len(run_seeds), run_seeds)
     canonical = bool(getattr(config, "canonical_sroie_enabled", False))

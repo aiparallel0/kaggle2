@@ -43,6 +43,13 @@ def main() -> None:
         help="Comma-separated seeds for the eval stage multi-seed harness "
         "(e.g. '42,123,2024'). Default = single run with config.seed.",
     )
+    parser.add_argument(
+        "--oracle-address",
+        action="store_true",
+        help="Day-1 diagnostic: emit oracle_address.json (Tier A box-file "
+        "ceiling + Tier B canonical-347 heuristic ceiling) and exit "
+        "before running the multi-seed eval loop.",
+    )
     parser.add_argument("--log-level", default="INFO")
     parser.add_argument(
         "--runs-root",
@@ -140,7 +147,7 @@ def main() -> None:
     if args.stage in ("train", "all"):
         stage_train(config)
     if args.stage in ("eval", "all"):
-        stage_eval(config, seeds=seeds)
+        stage_eval(config, seeds=seeds, oracle_address=args.oracle_address)
     if args.stage in ("eval_gtocr_rulebased", "eval_rulebased_gold"):
         stage_eval_gtocr_rulebased(config)
     if args.stage == "ablate_bugs":
