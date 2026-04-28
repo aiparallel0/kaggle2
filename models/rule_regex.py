@@ -46,14 +46,32 @@ _ADDR_CONTINUATION = re.compile(
     r"PETALING|SKUDAI|JAYA|BRINCHANG|BALAKONG|DENGKIL|SERDANG|SETIA\s+ALAM|SETAPAK|BATANG\s+BERJUNTAI|"
     r"AMPANG|GOMBAK|JOHOR\s+BAHRU|SEREMBAN|IPOH|KUANTAN|MASAI|BAHRU)\b", re.IGNORECASE)
 _ADDR_TERMINATOR = re.compile(
-    r"\b(INVOICE(?:\s+NO)?|INV\s+NO|TAX\s+INVOICE|CASH(?:IER|\s+SALES?|\s+RECEIPT)|BILL\s+(?:TO|NO)|"
-    r"RECEIPT\s+NO|TABLE\s+NO?\b|TABLE\s+\d|COUNTER|GUEST\s+CHECK|ORDER\s+NO|DOC\s*#|"
-    r"SIMPLIFIED(?:\s+TAX)?|SHOPPING\s+HOURS|ADJUSTMENT\s+NOTE|PAY\s+BY|CARRY\s+OUT|WEBSITE|\bBRN\b|"
-    r"SITE\s+\d|POSTED|RETAIL\b|TAKEAWAY|OWNED\s+BY|SUN-THU|MON-SUN|ROC\s+NO|DEPT\s+(?:DOC|SO)|"
-    r"TEL(?:EPHONE)?\s*(?:NO|[:.])|PHONE\s*(?:NO|[:.])|FAX\s*(?:NO|[:.]))\b", re.IGNORECASE)
+    r"\b(INVOICE(?:\s+NO)?|INV(?:\.?\s*NO)?|TAX\s+INVOICE|"
+    r"CASH(?:IER|\s+SALES?|\s+RECEIPT|\s+BILL)?|BILL(?:\s+(?:TO|NO))?|"
+    r"RECEIPT(?:\s+NO)?|TABLE\s+NO?\b|TABLE\s+\d|COUNTER|GUEST\s+CHECK|"
+    r"ORDER(?:\s+NO)?|COVER\b|WAITER\b|DOC(?:\s*(?:NO|#))?|CREDIT\s+NOTE|"
+    r"DATE\s*[:#]?\s*\d+|TIME\s*[:#]?\s*\d+|"
+    r"SIMPLIFIED(?:\s+TAX)?|SHOPPING\s+HOURS|ADJUSTMENT\s+NOTE|PAY\s+BY|"
+    r"CARRY\s+OUT|WEBSITE|\bBRN\b|SITE\s+\d|POSTED|RETAIL\b|TAKEAWAY|"
+    r"OWNED\s+BY|SUN-THU|MON-SUN|ROC(?:\s+NO)?|DEPT\s+(?:DOC|SO)|"
+    r"TEL(?:EPHONE)?(?:\s*(?:NO|[:.]))?|PHONE(?:\s*(?:NO|[:.]))?|"
+    r"FAX(?:\s*(?:NO|[:.]))?)\b", re.IGNORECASE)
 _COMPANY_TOKEN = re.compile(
     r"\b(SDN\.?\s*BHD\.?|BERHAD|ENTERPRISE|HOLDINGS|TRADING|MARKETING|CORPORATION|CORP\.?|"
     r"CO\.?\s*M\s*BHD|CO\.\s*LTD\.?|LIMITED|INC\.?)\b", re.IGNORECASE)
+# PR-ADDR-PREC — top-of-receipt company-header / tax-ID lines that the
+# address anchor walk and backward-extend MUST skip.  Wider than
+# :data:`_COMPANY_TOKEN` (which is also used by the company refiner where
+# we want SDN BHD to *positively* score): catches bare ``BHD``,
+# ``INTERNATIONAL``, ``(M) SDN``, ``PTE LTD``, ``CO LTD``, registration
+# numbers like ``123456-A``, GST IDs, and 12-digit tax IDs.
+_ADDR_COMPANY_HEADER = re.compile(
+    r"\bSDN\.?\s*BHD\.?\b|\bBHD\b|\(\s*M\s*\)\s*SDN|"
+    r"\bINTERNATIONAL\b|\bENTERPRISE\b|\bBERHAD\b|"
+    r"\bPTE\.?\s*LTD\.?\b|\bCO\.?\s*LTD\.?\b|\bHOLDINGS\b|"
+    r"\b\d{6,}-[A-Z]\b|\bGST\s*[:#]?\s*\d|\b\d{12}\b",
+    re.IGNORECASE,
+)
 _ADDR_LEADING_JUNK_RE = re.compile(
     r"^\s*(?:CO\.?\s*NO\.?\s*[\w\-]+|COMPANY\s*NO\.?\s*[\w\-]+|REG(?:ISTRATION)?\s*NO\.?\s*[\w\-]+|"
     r"GST(?:\s*NO\.?)?\s*[\w\-]+|SST(?:\s*NO\.?)?\s*[\w\-]+|TIN(?:\s*NO\.?)?\s*[\w\-]+)[,\s:;\-]*", re.IGNORECASE)

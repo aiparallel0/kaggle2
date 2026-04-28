@@ -34,6 +34,7 @@ from models.rule_fields import (
 )
 from models.rule_regex import (
     _ADDR_ANCHOR,
+    _ADDR_COMPANY_HEADER,
     _ADDR_CONTINUATION,
     _ADDR_EXCLUDE,
     _ADDR_LEADING_JUNK_RE,
@@ -366,26 +367,39 @@ def _y_of(value: str, texts: list[str], bboxes: list[list[float]]) -> float:
 
 def _is_addr_boundary(t: str) -> bool:
     """Address span terminator: money / date / phone-or-tax-id / header junk /
-    invoice-cashier transition / company header.
+    invoice-cashier transition / company header / tax-id boilerplate.
 
-    Postcode-bearing lines never count as boundary — a 5-digit run like
-    ``40000 SHAH ALAM`` is the canonical *end* of a Malaysian address and
-    must be included in the span, not used to stop it.
+    A 5-digit postcode line (``\\b\\d{5}\\b``) is normally NOT a
+    boundary — ``40000 SHAH ALAM`` is the canonical *end* of a
+    Malaysian address and must be included in the span.  PR-ADDR-PREC
+    refines this exemption: the postcode short-circuit fires only when
+    the line carries NO transaction-boundary or company-header
+    keyword, so a contaminated tail like ``DOC NO 88421`` (which
+    happens to contain a 5-digit run) still terminates the span.
 
-    Two additional boundary classes were added after observing the
-    over-extension pattern in the live miss table (pred runs past the
-    postcode line into ``INV NO …`` / ``CASHIER …``, or backward-extends
-    through a ``MR D.I.Y M SDN BHD`` company header):
+    Boundary classes:
 
-    * :data:`_ADDR_TERMINATOR` — invoice/cashier/footer keywords.
+    * :data:`_ADDR_TERMINATOR` — invoice/cashier/footer keywords plus
+      the bottom-cut additions (``RECEIPT``, bare ``CASH``, ``COVER``,
+      ``WAITER``, ``DOC NO``, ``DATE:``/``TIME:``, ``BILL``, bare
+      ``ROC`` / ``TEL`` / ``FAX``, ``CREDIT NOTE``).
     * :data:`_COMPANY_TOKEN`   — hard company markers (``SDN BHD``,
                                  ``BERHAD``, ``ENTERPRISE``, …).
+    * :data:`_ADDR_COMPANY_HEADER` — wider company / tax-ID stripping
+      regex used pre-anchor and during backward-extend so headers like
+      ``INTERNATIONAL``, ``(M) SDN``, ``GST: 12345``, ``\\d{12}`` and
+      registration numbers ``\\d{6,}-[A-Z]`` are excluded.
     """
-    if _POSTCODE_RE.search(t):
+    has_postcode = bool(_POSTCODE_RE.search(t))
+    has_terminator = bool(_ADDR_TERMINATOR.search(t))
+    has_company = bool(
+        _COMPANY_TOKEN.search(t) or _ADDR_COMPANY_HEADER.search(t),
+    )
+    if has_postcode and not (has_terminator or has_company):
         return False
     return bool(_MONEY_RE.search(t) or _DATE_RE.search(t)
                 or _ADDR_EXCLUDE.search(t) or _HEADER_JUNK.match(t)
-                or _ADDR_TERMINATOR.search(t) or _COMPANY_TOKEN.search(t))
+                or has_terminator or has_company)
 
 
 def _line_height(bboxes: list[list[float]], i: int) -> float:
@@ -611,7 +625,16 @@ def _refine_address(
         if not st:
             return (0, 0, 0, 0)
         has_postcode = 1 if _POSTCODE_RE.search(st) else 0
-        not_junk = 0 if _ADDR_EXCLUDE.search(st) else 1
+        # PR-ADDR-PREC — ``not_junk`` is now a tri-test: a candidate
+        # contaminated with company-header / transaction-boundary
+        # tokens (``BHD``, ``INV NO``, ``CASH``, …) loses the bit even
+        # when it carries the postcode, so the cleaner span/rule
+        # candidate wins on the (post,not_junk,cont,len) tuple.
+        not_junk = 0 if (
+            _ADDR_EXCLUDE.search(st)
+            or _ADDR_TERMINATOR.search(st)
+            or _ADDR_COMPANY_HEADER.search(st)
+        ) else 1
         has_cont = 1 if _ADDR_CONTINUATION.search(st) else 0
         return (has_postcode, not_junk, has_cont, len(st))
 

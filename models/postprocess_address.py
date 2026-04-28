@@ -22,6 +22,16 @@ Role: closes the loss/metric gap on the address field.  The deterministic
          ``Lot 12.5A``) keep their punctuation so the postcode and
          the unit-number convention are preserved.
       4. Casefold.
+      5. PR-ADDR-PREC — token-level *trailing* trim: drop trailing
+         tokens that match the bottom-cut keyword set (``INV``, ``NO``,
+         ``CASH``, ``RECEIPT``, ``TAX``, ``INVOICE``, ``DATE``,
+         ``TIME``, ``DOC``, ``BILL``, ``ROC``, ``TEL``, ``FAX``,
+         ``BHD``, ``SDN``, ``INTERNATIONAL``, ``ENTERPRISE``, …) or
+         are 1-2-character OCR fragments (``JO``, ``T``, ``#``).  Run
+         symmetrically on pred and GT — the SROIE GT is clean of
+         these tokens so the trim is a no-op for gold but excises the
+         tail-bleed seen on 331/347 mismatched receipts in
+         ``address_mismatches.json``.
 """
 from __future__ import annotations
 
@@ -37,6 +47,27 @@ _STRIP_PUNCT = ",.:;"
 _DIGIT_RE = re.compile(r"\d")
 _MULTI_WS_RE = re.compile(r"\s+")
 
+# PR-ADDR-PREC — bottom-cut + company-header keywords for the trailing
+# token trim.  Matches a *whole* casefolded token (after step 3 strip).
+# Kept as a Python set (frozenset for immutability) so the trim is a
+# membership test rather than yet another regex compile.
+_TRAIL_DROP_TOKENS: frozenset[str] = frozenset({
+    # bottom-cut transaction boundary tokens
+    "inv", "invoice", "no", "cash", "cashier", "receipt", "tax",
+    "date", "time", "doc", "bill", "roc", "tel", "telephone",
+    "fax", "phone", "order", "table", "cover", "waiter", "counter",
+    "credit", "note", "cashier:", "simplified",
+    # top-of-receipt company / tax-ID stripping tokens
+    "bhd", "sdn", "international", "enterprise", "berhad",
+    "pte", "ltd", "co", "holdings", "corp", "corporation",
+    "inc", "limited", "gst", "sst", "vat",
+})
+
+# 1-2-char OCR fragments at the tail are dropped unless they are
+# digit-bearing (so postcodes, lot numbers, and ``#3`` survive — the
+# trim only fires on alpha fragments / lone punctuation).
+_TAIL_FRAG_MAX_LEN = 2
+
 
 def _strip_token_punct(token: str) -> str:
     """Strip ``,.:;`` from a token unless it carries any digit."""
@@ -45,14 +76,43 @@ def _strip_token_punct(token: str) -> str:
     return token.translate(str.maketrans("", "", _STRIP_PUNCT))
 
 
+def _trim_trailing_junk(tokens: list[str]) -> list[str]:
+    """Drop trailing bottom-cut keywords and 1-2-char alpha fragments.
+
+    Walks the token list right-to-left and removes any token that is
+    either a member of :data:`_TRAIL_DROP_TOKENS` (case-folded) OR is
+    a short (≤2-char) purely-alphabetic OCR fragment.  Stops at the
+    first token that does NOT meet either condition so the head of
+    the address is never touched.  Numeric / digit-bearing tokens
+    (``50100``, ``12.5a``) always halt the trim — postcodes are the
+    canonical *end* of a Malaysian address.
+    """
+    out = list(tokens)
+    while out:
+        tail = out[-1]
+        if not tail:
+            out.pop()
+            continue
+        if _DIGIT_RE.search(tail):
+            break
+        if tail in _TRAIL_DROP_TOKENS:
+            out.pop()
+            continue
+        if len(tail) <= _TAIL_FRAG_MAX_LEN and tail.isalpha():
+            out.pop()
+            continue
+        break
+    return out
+
+
 def normalize_address_focus(value: str) -> str:
     """Symmetric address normaliser — line order preserved, casefold output.
 
     A no-op on the empty string.  The output is whitespace-collapsed,
-    case-folded, and has comma/period/colon/semicolon stripped from
-    non-numeric tokens — the token punctuation that the SROIE GT
-    convention is inconsistent about, but which token-F1 treats as a
-    full token loss when one side carries it and the other does not.
+    case-folded, has comma/period/colon/semicolon stripped from
+    non-numeric tokens, and has trailing bottom-cut / 1-2-char OCR
+    fragments dropped (PR-ADDR-PREC).  Applied symmetrically to pred
+    and GT inside :func:`models.normalize_bundle._normalize_address_pipeline`.
     """
     if not value:
         return ""
@@ -67,8 +127,10 @@ def normalize_address_focus(value: str) -> str:
     # Drop tokens that became empty after punctuation strip (a lone
     # ``","`` or ``"."`` between alpha tokens).
     tokens = [t for t in tokens if t]
-    # Step 4 — casefold for case-insensitive comparison parity.  The
-    # legacy ``normalize_address`` returned mixed case; downstream
-    # ``compute_field_f1`` already lower-cases for matching, so this
-    # change is symmetric on both sides of the comparison.
-    return " ".join(tokens).casefold()
+    # Step 4 — casefold for case-insensitive comparison parity.
+    folded = [t.casefold() for t in tokens]
+    # Step 5 — PR-ADDR-PREC — drop trailing bottom-cut keywords and
+    # short alpha OCR fragments so company headers / inv-no / cash-
+    # receipt / doc-no tails don't leak into the predicted span.
+    trimmed = _trim_trailing_junk(folded)
+    return " ".join(trimmed)
