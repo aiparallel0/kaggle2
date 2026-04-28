@@ -18,6 +18,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from models.consensus import (
+    _is_addr_boundary as _consensus_is_addr_boundary,
+)
 from models.consensus import enforce_address_contiguity
 from models.date_post import fallback_from_ocr_lines, is_plausible
 from models.focus_inference import (
@@ -328,19 +331,39 @@ def _legacy_address_pick(
     :func:`_assign_learned_with_attn` can fall back to this exact chain
     when the span head is absent or abstains.  Returns the picked
     indices (top→bottom by ``bboxes[i][1]``) and the joined text.
+
+    PR-ADDR-PREC adds a boundary filter to the threshold band: any
+    region whose text matches :func:`models.consensus._is_addr_boundary`
+    (money / date / phone / GST / company-header / invoice-cashier
+    transition) or :data:`models.rule_regex._ADDR_LEADING_JUNK_RE`
+    (CO. NO., GST NO., REG NO., …) is dropped *before* the spatial
+    contiguity gate.  This stops the wider 0.5 accept-band from
+    pulling ``BHD`` / ``INTERNATIONAL`` / ``INV NO`` / ``CASH`` /
+    ``RECEIPT`` / ``DOC NO`` lines into the address span on
+    diffuse-attention receipts (the precision-drop pattern dominating
+    the live miss table).
     """
+    from models.rule_regex import _ADDR_LEADING_JUNK_RE
     max_w = float(attn_row.max().item())
     if max_w <= 0:
         return [], ""
+    stripped = [t.strip() for t in texts]
     picks = [
         i for i in range(attn_row.shape[0])
         if i not in used and float(attn_row[i].item()) >= frac * max_w
+    ]
+    # Boundary filter — drop picks classified as boundary lines or
+    # leading-junk tax-ID / reg-no headers before contiguity.
+    picks = [
+        i for i in picks
+        if not _consensus_is_addr_boundary(stripped[i])
+        and not _ADDR_LEADING_JUNK_RE.match(stripped[i])
     ]
     if not picks:
         return [], ""
     picks.sort(key=lambda i: bboxes[i][1])
     picks = enforce_address_contiguity(picks, bboxes)
-    value = " ".join(texts[i].strip() for i in picks if texts[i].strip())
+    value = " ".join(stripped[i] for i in picks if stripped[i])
     return picks, value
 
 
