@@ -1,12 +1,15 @@
 \item \textbf{Validation$\equiv$test leakage}
-  (illusory F1\,$\approx$\,0.85 before the fix).
+  (illusory F1\,$\approx$\,\VAR{bug_7_f1_before} before the fix).
   \textit{Mechanism.} An earlier split drew val and test from the same
   shuffled pool with independent seeds, so $\approx$\,15\,\% of test
   images also appeared in validation and were effectively memorised
   by the best-val checkpoint selector.  \textit{F1 impact.} The
-  \emph{reported} F1 was inflated by $\approx$0.10 absolute; when the
-  leak was closed the held-out F1 dropped to \VAR{donut_f1}, which
-  reflects true generalisation.  \textit{Guard.} The split is
+  \emph{reported} F1 was inflated above the true post-fix ceiling
+  (the magnitude is the negative entry in
+  Table~\ref{tab:bug_ablation}, computed as
+  ceiling\,$-$\,F1\textsubscript{before}); when the leak was closed
+  the held-out F1 dropped to \VAR{donut_f1}, which reflects true
+  generalisation.  \textit{Guard.} The split is
   computed once from a single seed and persisted to
   \texttt{results/split.json}; the loader asserts empty overlap at
   load time and raises \texttt{DataError} on violation.
@@ -29,7 +32,7 @@
   reads \texttt{model.generation\_config}, which is snapshotted at
   \texttt{from\_pretrained} time --- \emph{not} the live overrides
   we place on \texttt{model.config}.  So
-  \texttt{decoder\_start\_token\_id} falls back to the base mBART
+  \code{decoder\_start\_token\_id} falls back to the base mBART
   \texttt{<s>}, \texttt{token2json} receives a token stream with no
   recognisable field tags, and returns \texttt{\{\}}; per-field F1
   is a clean zero while \texttt{eval\_loss} descends normally.
@@ -37,7 +40,7 @@
   codebase: F1\,$\approx$\,0 on every reload for weeks, while the
   loss curves looked textbook.  \textit{Guard.}
   \texttt{donut\_train.py} mirrors
-  \texttt{decoder\_start\_token\_id} / \texttt{pad\_token\_id} /
+  \code{decoder\_start\_token\_id} / \texttt{pad\_token\_id} /
   \texttt{eos\_token\_id} / \texttt{max\_new\_tokens} from
   \texttt{model.config} into \texttt{model.generation\_config}
   before the first \texttt{trainer.evaluate()}.

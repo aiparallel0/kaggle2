@@ -41,6 +41,15 @@
 % (basic-variant semantics) so the rulebased rows survive when this
 % template is used.  Advanced/basic siblings override the macro.
 \newcommand{\IfRulebased}[1]{#1}
+% \IfAdvanced{<advanced-only content>} — complement of \IfRulebased.
+% Advanced template overrides this; the legacy/basic templates drop
+% the argument so basic-only prose stays correct under those builds.
+\newcommand{\IfAdvanced}[1]{}
+% \code{} — hyphenation-friendly monospace for long tokens like
+% decoder\_start\_token\_id; identical definition to template_focus.tex
+% (paper-corrections item 10).  Defined in every template so the
+% bugs_code.tex \code{} usages compile under all variants.
+\newcommand{\code}[1]{\texttt{\hyphenchar\font=`\-\relax #1}}
 
 % IEEE two-column justification gets very tight on long technical words
 % (``cross-entropy'', ``hyperparameters'', function names, URLs).  Allow
@@ -123,7 +132,7 @@ train\,/\,val\,/\,test split: an end-to-end sequence-to-sequence
 model (DONUT, $\approx$200\,M parameters) and a modular
 detect-then-read pipeline (YOLOv8\,$+$\,TrOCR\,$+$\,learned attention
 assigner, $\approx$65\,M $+$ \VAR{assigner_params_k}\,K parameters).
-With $n_{\text{trials}}=\VAR{n_trials}$ on 500 receipts, DONUT
+With $n_{\text{trials}}=\VAR{n_trials}$ on \VAR{n_train_images} receipts, DONUT
 reaches a global token-F1 of \VAR{donut_f1:mean_std_pct1} and the
 pipeline reaches \VAR{pipeline_f1:mean_std_pct1}
 ($\Delta$F1 $=$ \VAR{f1_gap}, within the

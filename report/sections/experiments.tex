@@ -12,7 +12,15 @@ in both image and field counts.
 
 \begin{table}[!t]
 \centering
-\caption{SROIE split used throughout the paper.}
+\caption{SROIE split used throughout the paper.  The Train ``Fields''
+         count may be $4N{-}1$ rather than $4N$ for $N$ train images:
+         the SROIE corpus contains a small number of receipts whose
+         official ground-truth file omits one of the four fields
+         (typically address on a receipt with an obscured top
+         margin); \texttt{data/sroie\_loader.py} preserves this
+         missing-field behaviour exactly so the persisted
+         \texttt{results/split.json} and the live
+         \texttt{combined\_metrics.json} agree to the unit.}
 \label{tab:splits}
 \begin{tabular}{lrr}
 \toprule

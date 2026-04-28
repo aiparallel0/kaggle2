@@ -5,8 +5,9 @@
 \centering
 \caption{Headline results on the \VAR{n_test_images}-image SROIE test split at
          $n_{\text{trials}}=\VAR{n_trials}$.  Headline F1 rounded to
-         three decimals; full four-decimal numbers are in
-         Appendix~\ref{app:raw}.}
+         four decimals; full-precision values are also reproduced in
+         Appendix~\ref{app:raw}.  The abstract reports the same
+         numbers at one-decimal-percentage precision.}
 \label{tab:headline}
 \begin{tabular}{lccc}
 \toprule
@@ -56,7 +57,8 @@ that ``RM\,43.50'' and ``43.50'' are treated as equivalent.
 \centering
 \caption{Efficiency metrics at seed 42 on a vast.ai RTX\,4090
          (CUDA 12.x).  Pipeline training time and cost are dominated
-         by TrOCR; YOLOv8n and the 400\,K-parameter assigner finish
+         by TrOCR; YOLOv8n and the
+         $\approx$\VAR{assigner_params_k}\,K-parameter assigner finish
          in minutes.  Inference latency is out of scope and is
          flagged in the limitations section.}
 \label{tab:efficiency}
@@ -78,14 +80,17 @@ CO$_2$eq (kg)     & \VAR{donut_co2_kg}                     & \VAR{pipeline_co2_k
 \caption{Ablation: the learned assigner vs.\ the rule-based heuristic
          on identical YOLO+TrOCR features.  Individual-component
          ablations (priors, encoder depth, head count, MIL loss) are
-         left to future work.}
+         left to future work.  This ablation is meaningful only for
+         the basic-variant split (the rule-based row vanishes under
+         the advanced/canonical Task-3 build per
+         Section~\ref{sec:limitations}).}
 \label{tab:ablation}
 \begin{tabular}{lc}
 \toprule
 Assignment & F1 \\ \midrule
 \IfRulebased{Rule-based (YOLO+TrOCR)  & \VAR{rulebased_f1} \\}
 Learned attention (ours) & \VAR{pipeline_f1} \\
-$\Delta$                 & \VAR{assigner_delta} \\
+\IfRulebased{$\Delta$ (vs.\ rule-based, basic variant) & \VAR{assigner_delta} \\}
 \bottomrule
 \end{tabular}
 \end{table}

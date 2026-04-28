@@ -47,6 +47,12 @@
 % emitted unchanged.  See template_advanced.tex for the row-elision
 % sibling definition.
 \newcommand{\IfRulebased}[1]{#1}
+% \IfAdvanced{<advanced-only content>} — complement of \IfRulebased.
+% Drop the argument so advanced-only prose vanishes under the basic build.
+\newcommand{\IfAdvanced}[1]{}
+% \code{} — hyphenation-friendly monospace for long tokens; identical
+% definition to template_focus.tex (paper-corrections item 10).
+\newcommand{\code}[1]{\texttt{\hyphenchar\font=`\-\relax #1}}
 \setlength{\emergencystretch}{3em}
 \graphicspath{{}{./}{./figures/}{./results/}{../}{../figures/}{../results/}}
 

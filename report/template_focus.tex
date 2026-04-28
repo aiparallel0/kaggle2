@@ -48,12 +48,21 @@
 % under the advanced template; in template_basic.tex the same macro
 % expands to its argument so the row is emitted as before.
 \newcommand{\IfRulebased}[1]{}
+% \IfAdvanced{<advanced-only content>} — complement of \IfRulebased.
+% Advanced template emits the argument so advanced-only prose
+% (e.g. "plus the 347 official Task-3 test images") renders here.
+\newcommand{\IfAdvanced}[1]{#1}
 % \code{} — hyphenation-friendly monospace for long tokens like
 % decoder\_start\_token\_id that trigger overfull \hbox warnings.
 % Uses \texttt with explicit hyphenation permission at underscores.
 \newcommand{\code}[1]{\texttt{\hyphenchar\font=`\-\relax #1}}
 \setlength{\emergencystretch}{3em}
-\graphicspath{{}{./}{./figures/}{./results/}{../}{../figures/}{../results/}}
+% Audit item 19: drop ./results/ from \graphicspath.  The fixtures
+% directory is for tracked JSON only (per AGENTS.md) — figure PDFs
+% live under runs/<run_id>/ (or a sibling figures/ dir).  Keeping
+% ./results/ in the search list invited reviewers (and CI) to
+% accidentally check fixture files in as graphics binaries.
+\graphicspath{{}{./}{./figures/}{../}{../figures/}}
 
 \makeatletter
 \newcommand{\iffigurefile}[2]{%
@@ -78,8 +87,8 @@
 
 \begin{document}
 
-\title{Matching DONUT with \VAR{param_ratio_phrase} of the Parameters:
-       A Reproducible YOLO+TrOCR+Attention Pipeline
+\title{FOCUS: Matching DONUT with \VAR{param_ratio_phrase} of the Parameters
+       --- A Reproducible YOLO\,$+$\,TrOCR\,$+$\,Attention Pipeline
        on the Canonical SROIE Task-3 Test Set}
 
 \author{\IEEEauthorblockN{Anonymous}
@@ -96,28 +105,31 @@ parameter efficiency, carbon accounting.
 \begin{abstract}
 We compare an end-to-end sequence-to-sequence model
 (DONUT, $\approx$200\,M parameters) against a modular
-detect\,$\to$\,read\,$\to$\,assign pipeline
-(YOLOv8\,$+$\,TrOCR\,$+$\,learned cross-attention assigner,
-$\approx$65\,M$+$\VAR{assigner_params_k}\,K parameters) on the
+detect\,$\to$\,read\,$\to$\,assign pipeline (\textsc{focus}:
+YOLOv8\,$+$\,TrOCR\,$+$\,learned cross-attention assigner,
+$\approx$\VAR{pipeline_params_m}\,M$+$\VAR{assigner_params_m}\,M
+parameters) on the
 \emph{canonical} ICDAR-2019 SROIE Task-3 evaluation set: 626
-official training receipts (with 63 reserved for early-stopping
-validation) and the \emph{347} official held-out test images
-released by the SROIE organisers.  This is the protocol every
-public SROIE leaderboard entry uses, so our numbers are directly
-comparable; no internal split, no leaderboard-incompatible
+official training receipts (split
+\VAR{n_train_images}\,/\,\VAR{n_val_images} for early-stopping
+validation) and the \emph{\VAR{n_test_images}} official held-out
+test images released by the SROIE organisers.  This is the protocol
+every public SROIE leaderboard entry uses, so our numbers are
+directly comparable; no internal split, no leaderboard-incompatible
 re-partition.  With $n_{\text{trials}}=\VAR{n_trials}$ DONUT
 reaches a global token-F1 of \VAR{donut_f1:mean_std_pct1} and the
 pipeline reaches \VAR{pipeline_f1:mean_std_pct1}
 ($\Delta$F1$=$\VAR{f1_gap}, paired bootstrap 95\%
 CI \VAR{delta_f1_ci_lo}--\VAR{delta_f1_ci_hi}, McNemar
-$p=$\VAR{mcnemar_p:p}).  The pipeline ships at \VAR{param_ratio_numeric} of
-the DONUT parameter count yet narrows the gap to within the
-347-image bootstrap CI, while exposing per-field attention maps
-the monolithic decoder cannot.  We release the full reproducibility
-bundle (sha256-pinned dataset downloader, env snapshot, MANIFEST,
-13 silent-bug regression guards, complete training/eval/paper
-auto-pipeline) so any GPU operator can rerun every reported number
-end-to-end.
+$p=$\VAR{mcnemar_p:p}).  The pipeline ships at
+\VAR{param_ratio_numeric} of the DONUT parameter count and
+\emph{matches and slightly exceeds} our re-implemented DONUT,
+within the \VAR{n_test_images}-image bootstrap CI, while exposing
+per-field attention maps the monolithic decoder cannot.  We release
+the full reproducibility bundle (sha256-pinned dataset downloader,
+env snapshot, MANIFEST, 13 silent-bug regression guards, complete
+training/eval/paper auto-pipeline) so any GPU operator can rerun
+every reported number end-to-end.
 \end{abstract}
 
 \input{sections/intro}

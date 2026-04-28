@@ -2,10 +2,20 @@
 \label{sec:method}
 
 \subsection{Dataset and Splits}
-We use all 626 SROIE images with a deterministic seed-42 shuffle:
-500 train\,/\,\VAR{n_val_images} validation\,/\,\VAR{n_test_images} test.  The split is computed once
-and persisted to \texttt{results/split.json} so that no image can
-appear in both validation and test sets (Bug~7 in Section~\ref{sec:bugs}).
+\label{sec:data_splits}
+We use 626 official ICDAR-2019 SROIE training images, partitioned by
+a deterministic seed-42 shuffle into
+\VAR{n_train_images} train\,/\,\VAR{n_val_images} validation.
+\IfAdvanced{The advanced (canonical) variant additionally evaluates
+on the \VAR{n_test_images} official Task-3 test images (downloaded
+sha256-verified from \texttt{rrc.cvc.uab.es}, with the docTR mirror
+as fallback) which are held disjoint from the 626-receipt training
+pool.}\IfRulebased{The basic variant draws an additional
+\VAR{n_test_images}-image internal test split from the same 626-image
+pool (so train + val + test sum to 626).}  The split is computed
+once and persisted to \texttt{results/split.json} so that no image
+can appear in both validation and test sets (Bug~7 in
+Section~\ref{sec:bugs}).
 
 \subsection{DONUT: End-to-End Vision-to-Text}
 
@@ -43,9 +53,10 @@ Because the decoder sees both visual features (via cross-attention to
 Swin outputs) and previously generated tokens (via causal
 self-attention), it can simultaneously learn \emph{where fields
 tend to appear spatially} and \emph{what their textual surface form
-looks like}, without committing to either in isolation.  At 500
-receipts the decoder overfits less than at lower data, but it is still
-far from the $>$10\,K regime where end-to-end models routinely dominate.
+looks like}, without committing to either in isolation.  At
+\VAR{n_train_images} receipts the decoder overfits less than at lower
+data, but it is still far from the $>$10\,K regime where end-to-end
+models routinely dominate.
 
 \textbf{Limitations.}
 No intermediate representation is exposed: every failure is a
@@ -108,7 +119,7 @@ image to XML. (b) Pipeline: detect $\to$ read $\to$ assign.}
 
 \subsection{Retrieval-augmented DONUT (RA-KIE)}\label{sec:rag}
 
-The fine-tuning set is small (500 receipts) but highly repetitive:
+The fine-tuning set is small (\VAR{n_train_images} receipts) but highly repetitive:
 the same merchant boilerplate, date orderings, and total-line
 formatting patterns recur across dozens of scans.  We exploit this
 regularity with a lightweight retrieval-augmented variant of DONUT.

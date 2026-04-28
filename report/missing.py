@@ -114,6 +114,17 @@ MISSING_OK_KEYS: frozenset[str] = frozenset({
     # Item 5: param ratio is computed from donut_params_m / pipeline_params_m.
     # Missing when either is absent (e.g., lightweight eval-only runs).
     "param_ratio_phrase", "param_ratio_numeric",
+    # Item 15 (paper-corrections): assigner param count in millions —
+    # derived in :func:`report.combine.merge_pipeline_diagnostics` from
+    # ``assigner_params_k``; absent when the assigner did not run.
+    "assigner_params_m",
+    # Item 16 (paper-corrections): per-bug pre-fix F1 surfaced for the
+    # bugs_code prose; absent if bug_timeline.json is unavailable.
+    "bug_1_f1_before", "bug_2_f1_before", "bug_3_f1_before",
+    "bug_4_f1_before", "bug_5_f1_before", "bug_6_f1_before",
+    "bug_7_f1_before", "bug_8_f1_before", "bug_9_f1_before",
+    "bug_10_f1_before", "bug_11_f1_before", "bug_12_f1_before",
+    "bug_13_f1_before",
 })
 
 
