@@ -117,7 +117,8 @@ attention, reproducibility, carbon accounting.
 
 \begin{abstract}
 We compare two architectures for Key Information Extraction (KIE) on
-the SROIE receipt benchmark under a fixed 500\,/\,63\,/\,63
+the SROIE receipt benchmark under a fixed
+\VAR{n_train_images}\,/\,\VAR{n_val_images}\,/\,\VAR{n_test_images}
 train\,/\,val\,/\,test split: an end-to-end sequence-to-sequence
 model (DONUT, $\approx$200\,M parameters) and a modular
 detect-then-read pipeline (YOLOv8\,$+$\,TrOCR\,$+$\,learned attention
@@ -126,7 +127,7 @@ With $n_{\text{trials}}=\VAR{n_trials}$ on 500 receipts, DONUT
 reaches a global token-F1 of \VAR{donut_f1:mean_std_pct1} and the
 pipeline reaches \VAR{pipeline_f1:mean_std_pct1}
 ($\Delta$F1 $=$ \VAR{f1_gap}, within the
-$\pm 0.05$ width of a 63-image bootstrap 95\% CI).  Our attention
+$\pm 0.05$ width of a \VAR{n_test_images}-image bootstrap 95\% CI).  Our attention
 assigner --- a $\approx\VAR{assigner_params_k}\,$K-parameter
 Transformer-encoder~$+$~cross-attention module with four learned
 field queries, 6-d handcrafted text priors, and a multi-instance

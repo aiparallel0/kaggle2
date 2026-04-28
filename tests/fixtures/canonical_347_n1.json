@@ -176,6 +176,12 @@
   ],
   "test_set_kind": "canonical_347",
   "test_set_size": 347,
+  "n_train_images": 626,
+  "n_val_images": 63,
+  "n_test_images": 347,
+  "n_train_fields": 2504,
+  "n_val_fields": 252,
+  "n_test_fields": 1388,
   "warmup_steps": 100,
   "yolo_img_size": 1024
 }

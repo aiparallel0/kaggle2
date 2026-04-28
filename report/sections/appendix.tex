@@ -53,7 +53,7 @@ Paired-bootstrap CIs at \VAR{bootstrap_ci_level} confidence over
 $\Delta$F1 $\in [\VAR{delta_f1_ci_lo},\,\VAR{delta_f1_ci_hi}]$;
 all-fields-EM $\Delta$EM
 $\in [\VAR{delta_em_ci_lo},\,\VAR{delta_em_ci_hi}]$
-(both vectors of length $n=63$ are persisted alongside
+(both vectors of length $n=\VAR{n_test_images}$ are persisted alongside
 \texttt{combined\_metrics.json} for reviewer audit).
 Artifact mode: \texttt{\VAR{artifact_mode}} (``full'' = headline run
 including DONUT + pipeline + rule baselines; ``gtocr\_rulebased\_only''
@@ -71,7 +71,7 @@ Fig.~\figref{fig:f1_grouped} and Tables~\ref{tab:headline} /
 \ref{tab:extended}.  Every cell is a separate \texttt{\textbackslash
 VAR\{\}} substitution from \texttt{metrics/extended\_metrics.json}; CI
 bounds are paired-bootstrap (\VAR{bootstrap_n_iter} resamples at
-\VAR{bootstrap_ci_level} confidence) over the 63-image test split.
+\VAR{bootstrap_ci_level} confidence) over the \VAR{n_test_images}-image test split.
 Macro-averaged headline numbers ---
 DONUT F1 / NED / EM $=\VAR{donut_f1_macro}$ / $\VAR{donut_ned_macro}$
 / $\VAR{donut_em_macro}$, Pipeline F1 / NED / EM

@@ -446,7 +446,28 @@ def stage_eval(
         last["delta_em_ci_hi"] = round(em_ci_hi, 4)
         # Full-precision float: ``report.inject._format_pvalue`` handles
         # rendering (``p=3e-5`` → ``$3.0\times 10^{-5}$`` not ``0.0000``).
+        # Audit B (PR #115): the McNemar test runs over the *per-image*
+        # all-fields-EM boolean vector (length == n_test_receipts), NOT
+        # a flattened per-(image,field) vector (which would be 4x longer
+        # and treat each cell as an independent trial — yielding the
+        # implausible p≈6e-39 reported in earlier paper drafts).  The
+        # per-image vector is the single source of truth here; the
+        # length invariant is enforced by
+        # ``tests/stages/test_mcnemar_per_image.py``.
         last["mcnemar_p"] = float(mcnemar(d_vec, p_vec))
+        # Surface the underlying 2x2 discordant-pair counts so reviewers
+        # can recompute the p-value (see Audit B regression notes).
+        # ``b01`` = DONUT correct & pipeline incorrect; ``b10`` = DONUT
+        # incorrect & pipeline correct.  Concordant pairs (b00, b11) do
+        # not enter the exact-binomial form and are therefore not
+        # persisted; if a reviewer needs them, ``n_test_receipts``
+        # already gives the table total.
+        last["mcnemar_b01"] = sum(
+            1 for d, p in zip(d_vec, p_vec, strict=True) if d and not p
+        )
+        last["mcnemar_b10"] = sum(
+            1 for d, p in zip(d_vec, p_vec, strict=True) if not d and p
+        )
     last["seeds_used"] = list(run_seeds)
     last["n_trials"] = len(run_seeds)
     last["bootstrap_n_iter"] = config.bootstrap_n_iter
@@ -455,7 +476,23 @@ def stage_eval(
     # (basic vs advanced variant) can branch on it without parsing
     # config.json again.  ``test_set_kind`` ∈ {"canonical_347", "internal_63"}.
     last["test_set_kind"] = "canonical_347" if canonical else "internal_63"
-    last["test_set_size"] = 347 if canonical else 63
+    # Audit C (PR #116): ``test_set_size`` and the new
+    # ``n_train_images`` / ``n_val_images`` / ``n_test_images`` keys are
+    # sourced directly from the loaded split rather than hard-coded
+    # literals.  This kills the "63-image test split" drift in the
+    # advanced-variant paper (which actually evaluates on canonical_347
+    # = 347 images) and means the basic variant continues to render
+    # ``63`` because its split genuinely has 63 test receipts.
+    last["test_set_size"] = len(data.test)
+    last["n_train_images"] = len(data.train)
+    last["n_val_images"] = len(data.val)
+    last["n_test_images"] = len(data.test)
+    # Field-count companions for ``tab:splits`` (sum of per-receipt
+    # field counts, not |fields|*|images| because some receipts may
+    # be missing a field — defaults to 4 per image when populated).
+    last["n_train_fields"] = sum(len(r.fields) for r in data.train)
+    last["n_val_fields"] = sum(len(r.fields) for r in data.val)
+    last["n_test_fields"] = sum(len(r.fields) for r in data.test)
     if canonical:
         # Final defensive strip — any merge above must not reintroduce
         # GT-OCR-rulebased / oracle-patch keys when canonical is active.

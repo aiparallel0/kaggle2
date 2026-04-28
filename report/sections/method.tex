@@ -3,7 +3,7 @@
 
 \subsection{Dataset and Splits}
 We use all 626 SROIE images with a deterministic seed-42 shuffle:
-500 train\,/\,63 validation\,/\,63 test.  The split is computed once
+500 train\,/\,\VAR{n_val_images} validation\,/\,\VAR{n_test_images} test.  The split is computed once
 and persisted to \texttt{results/split.json} so that no image can
 appear in both validation and test sets (Bug~7 in Section~\ref{sec:bugs}).
 

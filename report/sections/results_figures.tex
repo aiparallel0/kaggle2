@@ -17,7 +17,7 @@
     deterministic seed-42 split (Bug~7) places the noisier OCR
     receipts in the larger train fold, while validation samples are
     drawn from the same distribution but at a smaller cardinality
-    (63 receipts) so its empirical loss has lower variance.  The
+    (\VAR{n_val_images} receipts) so its empirical loss has lower variance.  The
     \texttt{tests/test\_split\_persistence.py} hygiene test
     confirms zero image-id overlap between train, val, and test.}
   \label{fig:training}\end{figure}
@@ -26,7 +26,7 @@
 \iffigurefile{fig_f1_by_system.pdf}{%
   \begin{figure}[!t]\centering
   \includegraphics[width=\columnwidth]{fig_f1_by_system.pdf}
-  \caption{Per-field token-F1 by system on the 63-image test split.
+  \caption{Per-field token-F1 by system on the \VAR{n_test_images}-image test split.
     The structural difficulty of each field (company and total are
     dominated by lexical cues; address is dominated by spatial extent)
     is reproduced similarly by DONUT and the pipeline; the rule-based
@@ -104,7 +104,7 @@
   \begin{figure}[!t]\centering
   \includegraphics[width=\columnwidth]{fig_per_field_confusion.pdf}
   \caption{Per-field token F1 by system (DONUT, left; Pipeline, right)
-    on the 63-image SROIE test split.  Numeric values are annotated
+    on the \VAR{n_test_images}-image SROIE test split.  Numeric values are annotated
     above each bar so the table-row equivalent of this figure
     (Table~\ref{tab:perfield}) can be cross-checked at a glance.}
   \label{fig:ned_buckets}\end{figure}
