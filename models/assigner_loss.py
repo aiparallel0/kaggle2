@@ -15,8 +15,9 @@ from typing import TYPE_CHECKING
 
 try:
     import torch
+    from torch import Tensor  # noqa: F401
 except ImportError:  # lightweight CI — torch not installed
-    torch = None  # type: ignore[assignment]
+    pass
 
 if TYPE_CHECKING:
     from torch import Tensor
