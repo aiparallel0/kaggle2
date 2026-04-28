@@ -224,11 +224,16 @@ def test_normalize_address_focus_clean_gt_is_unchanged_after_trim() -> None:
 
 
 def test_normalize_address_focus_keeps_internal_company_token() -> None:
-    """Trim is RIGHT-anchored — internal ``BHD`` / ``CASH`` is preserved
-    so a pathological GT containing one of these tokens (rare on SROIE
-    but theoretically possible) is not over-trimmed."""
-    out = normalize_address_focus("BHD ROAD 12 47000 SHAH ALAM")
-    # Internal "bhd" survives because the postcode + alam tail halts trim.
+    """Trim is anchored to the ENDS — a truly internal ``BHD`` / ``CASH``
+    (preceded by a real address token) is preserved so a pathological
+    GT containing one of these tokens (rare on SROIE but theoretically
+    possible) is not over-trimmed.  PR-ADDR-PREC-2: the leading-token
+    trim halts at the first non-boilerplate token, so ``NO 12 BHD …``
+    keeps ``bhd`` once ``no 12`` has anchored the head.
+    """
+    out = normalize_address_focus("NO 12 BHD ROAD 47000 SHAH ALAM")
+    # Internal "bhd" survives — the leading trim stops at "no" (kept)
+    # and the trailing trim stops at "alam" / postcode.
     assert "bhd" in out.split()
 
 

@@ -1,37 +1,20 @@
 """FOCUS address normaliser — symmetric, applied to pred AND gold (Bug 18).
 
 Project: kaggle2 — End-to-End vs. Pipeline Receipt KIE on SROIE.
-Role: closes the loss/metric gap on the address field.  The deterministic
-    numeric normaliser was previously applied only to ``total``; address
-    matched verbatim.  Comma/period/casing drift on lines whose line set
-    was already correct therefore destroyed token-F1 and (especially) EM.
-
-    The function applied symmetrically to BOTH pred and gold inside
-    :func:`models.eval_pipeline._nt`, mirroring the existing total
-    normaliser's wiring.  Steps (in order):
-
-      1. Preserve line order — split on newlines, drop empty lines.
-         The assembly layer (``focus_pipeline``) emits address lines in
-         y_min-ascending order from the predicted span; we keep that
-         order rather than re-sorting (string-only normaliser, no bbox
-         info available at this layer).  GT is single-line on SROIE,
-         so the multi-line case is rare and harmless.
-      2. Collapse whitespace runs to a single space.
-      3. Strip ``, . : ;`` from non-numeric tokens.  Tokens matching
-         ``\\d`` (postcodes ``50100``, phone fragments, lot numbers
-         ``Lot 12.5A``) keep their punctuation so the postcode and
-         the unit-number convention are preserved.
+Role: closes the loss/metric gap on the address field.  Steps applied
+    symmetrically to pred and gold inside
+    :func:`models.normalize_bundle._normalize_address_pipeline`:
+      1. Preserve line order — newlines→spaces, drop empty lines.
+      2. Collapse internal whitespace runs to a single space.
+      3. Strip ``, . : ;`` from non-numeric tokens (postcodes,
+         lot numbers and phone tokens keep their punctuation).
       4. Casefold.
-      5. PR-ADDR-PREC — token-level *trailing* trim: drop trailing
-         tokens that match the bottom-cut keyword set (``INV``, ``NO``,
-         ``CASH``, ``RECEIPT``, ``TAX``, ``INVOICE``, ``DATE``,
-         ``TIME``, ``DOC``, ``BILL``, ``ROC``, ``TEL``, ``FAX``,
-         ``BHD``, ``SDN``, ``INTERNATIONAL``, ``ENTERPRISE``, …) or
-         are 1-2-character OCR fragments (``JO``, ``T``, ``#``).  Run
-         symmetrically on pred and GT — the SROIE GT is clean of
-         these tokens so the trim is a no-op for gold but excises the
-         tail-bleed seen on 331/347 mismatched receipts in
-         ``address_mismatches.json``.
+      5a. PR-ADDR-PREC-2 — leading trim: drop tax-invoice / company-
+          header / OCR boilerplate tokens up to the first address
+          anchor (digit-bearing token or ``no``/``lot``/``jalan``/…).
+      5b. PR-ADDR-PREC — trailing trim: drop bottom-cut keywords
+          (``INV``, ``CASH``, ``RECEIPT``, ``GST``, …) and 1-2-char
+          alpha OCR fragments.  No-op on clean SROIE GT.
 """
 from __future__ import annotations
 
@@ -40,32 +23,51 @@ import re
 __all__ = ["normalize_address_focus"]
 
 # Punctuation we strip from purely-alphabetic tokens.  Numeric tokens
-# (``"50100"`` postcode, ``"03-1234567"`` phone, ``"12.5A"`` lot) are
-# left intact — their punctuation carries meaning the comparison must
-# preserve.
+# (``"50100"`` postcode, ``"03-1234567"`` phone, ``"12.5A"`` lot) keep
+# their punctuation — it carries meaning the comparison must preserve.
 _STRIP_PUNCT = ",.:;"
 _DIGIT_RE = re.compile(r"\d")
 _MULTI_WS_RE = re.compile(r"\s+")
 
 # PR-ADDR-PREC — bottom-cut + company-header keywords for the trailing
 # token trim.  Matches a *whole* casefolded token (after step 3 strip).
-# Kept as a Python set (frozenset for immutability) so the trim is a
-# membership test rather than yet another regex compile.
 _TRAIL_DROP_TOKENS: frozenset[str] = frozenset({
-    # bottom-cut transaction boundary tokens
     "inv", "invoice", "no", "cash", "cashier", "receipt", "tax",
     "date", "time", "doc", "bill", "roc", "tel", "telephone",
     "fax", "phone", "order", "table", "cover", "waiter", "counter",
     "credit", "note", "cashier:", "simplified",
-    # top-of-receipt company / tax-ID stripping tokens
     "bhd", "sdn", "international", "enterprise", "berhad",
     "pte", "ltd", "co", "holdings", "corp", "corporation",
     "inc", "limited", "gst", "sst", "vat",
 })
 
-# 1-2-char OCR fragments at the tail are dropped unless they are
-# digit-bearing (so postcodes, lot numbers, and ``#3`` survive — the
-# trim only fires on alpha fragments / lone punctuation).
+# PR-ADDR-PREC-2 — leading-token strip set.  Fires from the left until
+# the first :data:`_LEAD_ANCHOR_TOKENS` member or digit-bearing token
+# (postcode / lot / house no.).  When the entire token stream contains
+# no anchor at all the leading trim is a no-op so existing tests like
+# ``"abc def" -> "abc def"`` keep their pre-PR shape.
+_LEAD_DROP_TOKENS: frozenset[str] = frozenset({
+    "tax", "invoice", "simplified", "receipt",
+    "sdn", "bhd", "berhad", "pte", "ltd", "co", "co.",
+    "holdings", "corp", "corporation", "inc", "inc.", "limited",
+    "international", "enterprise", "enterprises", "trading", "marketing",
+    "welcome", "to", "thank", "you",
+    "gst", "sst", "vat", "roc",
+    "and", "the", "&",
+})
+
+# Address-anchor keywords — a leading token in this set halts the
+# trim.  Malaysian / Singaporean address vocabulary plus generic
+# building-name nouns; digit-bearing tokens are anchors via _DIGIT_RE.
+_LEAD_ANCHOR_TOKENS: frozenset[str] = frozenset({
+    "no", "lot", "block", "unit", "level", "floor", "ground",
+    "lower", "upper", "lg", "lg-",
+    "jalan", "lorong", "persiaran", "taman", "kawasan", "kampung",
+    "batu", "jln", "kg", "tmn", "blk",
+    "plaza", "mall", "tower", "complex", "centre", "center",
+    "building", "bangunan",
+})
+
 _TAIL_FRAG_MAX_LEN = 2
 
 
@@ -76,16 +78,47 @@ def _strip_token_punct(token: str) -> str:
     return token.translate(str.maketrans("", "", _STRIP_PUNCT))
 
 
+def _is_lead_anchor(token: str) -> bool:
+    """True iff ``token`` is digit-bearing or an address-anchor word."""
+    if not token:
+        return False
+    if _DIGIT_RE.search(token):
+        return True
+    bare = token.rstrip(",.:;'")
+    return bare in _LEAD_ANCHOR_TOKENS
+
+
+def _trim_leading_junk(tokens: list[str]) -> list[str]:
+    """Drop leading company-header tokens up to the first address anchor.
+
+    Walks left-to-right looking for the first :func:`_is_lead_anchor`
+    token; when such a token exists at position ``k > 0`` and every
+    preceding token is either in :data:`_LEAD_DROP_TOKENS` or a purely-
+    alphabetic OCR fragment, the head is excised.  When no anchor is
+    found, the input is returned unchanged so existing tests like
+    ``"abc def" -> "abc def"`` keep their pre-PR shape.
+    """
+    if not tokens:
+        return tokens
+    anchor = next(
+        (k for k, t in enumerate(tokens) if _is_lead_anchor(t)), None,
+    )
+    if anchor is None or anchor == 0:
+        return list(tokens)
+    for tok in tokens[:anchor]:
+        if not tok or tok in _LEAD_DROP_TOKENS or tok.isalpha():
+            continue
+        return list(tokens)
+    return list(tokens[anchor:])
+
+
 def _trim_trailing_junk(tokens: list[str]) -> list[str]:
     """Drop trailing bottom-cut keywords and 1-2-char alpha fragments.
 
-    Walks the token list right-to-left and removes any token that is
-    either a member of :data:`_TRAIL_DROP_TOKENS` (case-folded) OR is
-    a short (≤2-char) purely-alphabetic OCR fragment.  Stops at the
-    first token that does NOT meet either condition so the head of
-    the address is never touched.  Numeric / digit-bearing tokens
-    (``50100``, ``12.5a``) always halt the trim — postcodes are the
-    canonical *end* of a Malaysian address.
+    Walks right-to-left, removing any token in :data:`_TRAIL_DROP_TOKENS`
+    or any 1-2-char purely-alphabetic OCR fragment.  Halts at the first
+    digit-bearing token (postcode / lot / lot-number — the canonical
+    *end* of a Malaysian address) or non-droppable alpha token.
     """
     out = list(tokens)
     while out:
@@ -108,29 +141,19 @@ def _trim_trailing_junk(tokens: list[str]) -> list[str]:
 def normalize_address_focus(value: str) -> str:
     """Symmetric address normaliser — line order preserved, casefold output.
 
-    A no-op on the empty string.  The output is whitespace-collapsed,
-    case-folded, has comma/period/colon/semicolon stripped from
-    non-numeric tokens, and has trailing bottom-cut / 1-2-char OCR
-    fragments dropped (PR-ADDR-PREC).  Applied symmetrically to pred
-    and GT inside :func:`models.normalize_bundle._normalize_address_pipeline`.
+    No-op on the empty string.  Output is whitespace-collapsed,
+    case-folded, with comma/period/colon/semicolon stripped from non-
+    numeric tokens, leading boilerplate (PR-ADDR-PREC-2) and trailing
+    bottom-cut / 1-2-char OCR fragments (PR-ADDR-PREC) trimmed.
     """
     if not value:
         return ""
-    # Step 1 — preserve line order while joining; SROIE GT is single
-    # line, so this collapses to a no-op on most receipts.
     lines = [ln.strip() for ln in value.splitlines() if ln.strip()]
     joined = " ".join(lines) if lines else value
-    # Step 2 — collapse internal whitespace runs.
     collapsed = _MULTI_WS_RE.sub(" ", joined).strip()
-    # Step 3 — per-token punctuation strip (numeric tokens preserved).
     tokens = [_strip_token_punct(t) for t in collapsed.split(" ")]
-    # Drop tokens that became empty after punctuation strip (a lone
-    # ``","`` or ``"."`` between alpha tokens).
     tokens = [t for t in tokens if t]
-    # Step 4 — casefold for case-insensitive comparison parity.
     folded = [t.casefold() for t in tokens]
-    # Step 5 — PR-ADDR-PREC — drop trailing bottom-cut keywords and
-    # short alpha OCR fragments so company headers / inv-no / cash-
-    # receipt / doc-no tails don't leak into the predicted span.
-    trimmed = _trim_trailing_junk(folded)
-    return " ".join(trimmed)
+    # Step 5a (PR-ADDR-PREC-2): leading company-header / tax-invoice trim.
+    # Step 5b (PR-ADDR-PREC):   trailing bottom-cut + 1-2-char OCR trim.
+    return " ".join(_trim_trailing_junk(_trim_leading_junk(folded)))

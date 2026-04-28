@@ -23,6 +23,7 @@ from models.consensus import (
 )
 from models.consensus import enforce_address_contiguity
 from models.date_post import fallback_from_ocr_lines, is_plausible
+from models.focus_addr_penalty import shrink_addr_span
 from models.focus_inference import (
     N_TEXT_PRIORS,
     N_TEXT_PRIORS_V2,
@@ -468,8 +469,22 @@ def _assign_learned_with_attn(
                     pred["j"] >= pred["i"]
                     and pred["confidence"] >= focus_confidence_floor
                 ):
-                    picks = list(range(pred["i"], pred["j"] + 1))
-                    span_value = pred["span_text"]
+                    # PR-ADDR-PREC-2 — deterministic shrink-from-both-ends.
+                    # The trained span head has occasional residual leak
+                    # at the endpoints (a borderline header line that the
+                    # boundary penalty did not fully repel).  This loop
+                    # walks ``i`` forward and ``j`` backward while the
+                    # endpoint matches the broadened address-boundary
+                    # classifier; ``(0, -1)`` collapses through the
+                    # legacy fallback.
+                    si, sj = shrink_addr_span(
+                        (pred["i"], pred["j"]), texts,
+                    )
+                    if sj >= si:
+                        picks = list(range(si, sj + 1))
+                        span_value = " ".join(
+                            t for t in (texts[k].strip() for k in picks) if t
+                        )
             if span_value is None:
                 picks, span_value = _legacy_address_pick(
                     w, texts, bboxes, used, addr_frac,
