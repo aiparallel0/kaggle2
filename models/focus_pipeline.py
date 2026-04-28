@@ -347,6 +347,7 @@ def _legacy_address_pick(
     max_w = float(attn_row.max().item())
     if max_w <= 0:
         return [], ""
+    stripped = [t.strip() for t in texts]
     picks = [
         i for i in range(attn_row.shape[0])
         if i not in used and float(attn_row[i].item()) >= frac * max_w
@@ -355,14 +356,14 @@ def _legacy_address_pick(
     # leading-junk tax-ID / reg-no headers before contiguity.
     picks = [
         i for i in picks
-        if not _consensus_is_addr_boundary(texts[i].strip())
-        and not _ADDR_LEADING_JUNK_RE.match(texts[i].strip())
+        if not _consensus_is_addr_boundary(stripped[i])
+        and not _ADDR_LEADING_JUNK_RE.match(stripped[i])
     ]
     if not picks:
         return [], ""
     picks.sort(key=lambda i: bboxes[i][1])
     picks = enforce_address_contiguity(picks, bboxes)
-    value = " ".join(texts[i].strip() for i in picks if texts[i].strip())
+    value = " ".join(stripped[i] for i in picks if stripped[i])
     return picks, value
 
 
