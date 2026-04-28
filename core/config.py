@@ -104,6 +104,14 @@ def load_config(path: str, defaults: dict[str, Any] | None = None) -> ExpConfig:
         # PR-D — GPT-4V eval + carbon accounting.
         "llm_eval_enabled", "llm_eval_provider", "llm_eval_cache_path",
         "carbon_grid_factor_kgco2e_per_kwh",
+        # PR-FOCUS — FOCUS-A (PR #106) + FOCUS-T / FOCUS-C / priors_v4 sub-
+        # flags.  Defaults are bit-exact with pre-FOCUS runs.
+        "focus_enabled", "focus_max_span",
+        "focus_iou_weight", "focus_boundary_weight", "focus_confidence_floor",
+        "focus_total_enabled", "focus_total_witness_weight",
+        "focus_company_enabled", "focus_company_y_weight",
+        "focus_company_boilerplate_weight",
+        "priors_v4",
     }
     known = set(_REQUIRED) | _optional
     extra = {k: v for k, v in raw.items() if k not in known}
@@ -280,6 +288,22 @@ def load_config(path: str, defaults: dict[str, Any] | None = None) -> ExpConfig:
         carbon_grid_factor_kgco2e_per_kwh=float(
             raw.get("carbon_grid_factor_kgco2e_per_kwh", 0.475),
         ),
+        # PR-FOCUS — FOCUS-A (PR #106) + FOCUS-T / FOCUS-C / priors_v4.
+        focus_enabled=bool(raw.get("focus_enabled", False)),
+        focus_max_span=int(raw.get("focus_max_span", 8)),
+        focus_iou_weight=float(raw.get("focus_iou_weight", 1.0)),
+        focus_boundary_weight=float(raw.get("focus_boundary_weight", 1.0)),
+        focus_confidence_floor=float(raw.get("focus_confidence_floor", 0.10)),
+        focus_total_enabled=bool(raw.get("focus_total_enabled", False)),
+        focus_total_witness_weight=float(
+            raw.get("focus_total_witness_weight", 1.0),
+        ),
+        focus_company_enabled=bool(raw.get("focus_company_enabled", False)),
+        focus_company_y_weight=float(raw.get("focus_company_y_weight", 1.0)),
+        focus_company_boilerplate_weight=float(
+            raw.get("focus_company_boilerplate_weight", 1.0),
+        ),
+        priors_v4=bool(raw.get("priors_v4", False)),
         extra=extra,
     )
 

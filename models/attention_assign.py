@@ -10,6 +10,7 @@ Role: re-exports AttentionAssigner and text_priors so callers need not
 from __future__ import annotations
 
 import logging
+from typing import Any
 
 try:
     import torch
@@ -33,9 +34,12 @@ from models.attention_priors import (
     N_TEXT_PRIORS,
     N_TEXT_PRIORS_V2,
     N_TEXT_PRIORS_V3,
+    N_TEXT_PRIORS_V4,
+    arithmetic_witnesses_v4,
     text_priors,
     text_priors_v2,
     text_priors_v3,
+    text_priors_v4,
 )
 
 __all__ = [
@@ -48,23 +52,26 @@ __all__ = [
     "N_TEXT_PRIORS",
     "N_TEXT_PRIORS_V2",
     "N_TEXT_PRIORS_V3",
+    "N_TEXT_PRIORS_V4",
     "SHIPPED_HIDDEN_DIM",
     "SHIPPED_N_HEADS",
     "SHIPPED_N_LAYERS",
     "AttentionAssigner",
     "_load_assigner",
+    "arithmetic_witnesses_v4",
     "load_assigner",
     "migrate_v2_checkpoint",
     "save_assigner",
     "text_priors",
     "text_priors_v2",
     "text_priors_v3",
+    "text_priors_v4",
 ]
 
 _log = logging.getLogger("kaggle2")
 
 
-def _architecture_config(model: AttentionAssigner) -> dict[str, int | bool]:
+def _architecture_config(model: AttentionAssigner) -> dict[str, Any]:
     """Persist architecture params so mismatched checkpoints fail loudly."""
     return {
         "hidden_dim": model.hidden_dim,
@@ -76,6 +83,14 @@ def _architecture_config(model: AttentionAssigner) -> dict[str, int | bool]:
         "text_pool_learned": bool(model.text_pool_learned),
         "focus_enabled": bool(model.focus_enabled),
         "focus_max_span": int(model.focus_max_span),
+        "focus_total_enabled": bool(model.focus_total_enabled),
+        "focus_total_witness_weight": float(model.focus_total_witness_weight),
+        "focus_company_enabled": bool(model.focus_company_enabled),
+        "focus_company_y_weight": float(model.focus_company_y_weight),
+        "focus_company_boilerplate_weight": float(
+            model.focus_company_boilerplate_weight,
+        ),
+        "field_names": list(model.field_names) if model.field_names else None,
     }
 
 
@@ -93,7 +108,7 @@ def _load_assigner(
 ) -> AttentionAssigner:
     """Load AttentionAssigner (bundle or legacy format); internal use."""
     blob = torch.load(path, map_location="cpu", weights_only=True)
-    cfg: dict[str, int | bool]
+    cfg: dict[str, Any]
     if isinstance(blob, dict) and "state_dict" in blob and "config" in blob:
         cfg = dict(blob["config"])
         sd = blob["state_dict"]
@@ -113,6 +128,10 @@ def _load_assigner(
         cfg["hidden_dim"] = hidden_dim
     if text_feat_dim is not None:
         cfg["text_feat_dim"] = text_feat_dim
+    fn = cfg.get("field_names")
+    field_names: list[str] | None = (
+        [str(x) for x in fn] if isinstance(fn, list) else None
+    )
     m = AttentionAssigner(
         hidden_dim=int(cfg["hidden_dim"]), n_fields=int(cfg["n_fields"]),
         n_heads=int(cfg.get("n_heads", DEFAULT_N_HEADS)),
@@ -122,12 +141,25 @@ def _load_assigner(
         text_pool_learned=bool(cfg.get("text_pool_learned", False)),
         focus_enabled=bool(cfg.get("focus_enabled", False)),
         focus_max_span=int(cfg.get("focus_max_span", 8)),
+        focus_total_enabled=bool(cfg.get("focus_total_enabled", False)),
+        focus_total_witness_weight=float(
+            cfg.get("focus_total_witness_weight", 1.0),
+        ),
+        focus_company_enabled=bool(cfg.get("focus_company_enabled", False)),
+        focus_company_y_weight=float(cfg.get("focus_company_y_weight", 1.0)),
+        focus_company_boilerplate_weight=float(
+            cfg.get("focus_company_boilerplate_weight", 1.0),
+        ),
+        field_names=field_names,
     )
     m.load_state_dict(sd)
-    if m.n_text_priors not in (N_TEXT_PRIORS, N_TEXT_PRIORS_V2, N_TEXT_PRIORS_V3):
+    if m.n_text_priors not in (
+        N_TEXT_PRIORS, N_TEXT_PRIORS_V2, N_TEXT_PRIORS_V3, N_TEXT_PRIORS_V4,
+    ):
         raise ValueError(
             f"Loaded assigner has unsupported n_text_priors={m.n_text_priors}; "
-            f"expected {N_TEXT_PRIORS}, {N_TEXT_PRIORS_V2}, or {N_TEXT_PRIORS_V3}. "
+            f"expected {N_TEXT_PRIORS}, {N_TEXT_PRIORS_V2}, "
+            f"{N_TEXT_PRIORS_V3}, or {N_TEXT_PRIORS_V4}. "
             f"Inference priors builder cannot match this checkpoint.",
         )
     _log.info(

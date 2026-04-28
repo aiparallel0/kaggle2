@@ -36,6 +36,7 @@ from models.assigner_teacher import (
 from models.attention_assign import (
     N_TEXT_PRIORS_V2,
     N_TEXT_PRIORS_V3,
+    N_TEXT_PRIORS_V4,
     AttentionAssigner,
     save_assigner,
 )
@@ -454,14 +455,18 @@ def train_assigner(config: ExpConfig, data: AssignerData) -> str:
         ) from _import_error
     device = "cuda" if torch.cuda.is_available() else "cpu"
     field_to_idx = {f.lower(): i for i, f in enumerate(config.fields)}
-    priors_v3 = bool(config.extra.get("priors_v3", False))
+    priors_v3 = bool(config.priors_v3) or bool(
+        config.extra.get("priors_v3", False),
+    )
+    priors_v4 = bool(config.priors_v4)
     prepared, text_feat_dim = _prepare_groups(
         data, field_to_idx, device,
-        priors_v2=config.priors_v2, priors_v3=priors_v3,
+        priors_v2=config.priors_v2, priors_v3=priors_v3, priors_v4=priors_v4,
     )
     train_groups, val_groups = split_train_val(prepared, config.seed)
     n_priors = (
-        N_TEXT_PRIORS_V3 if priors_v3
+        N_TEXT_PRIORS_V4 if priors_v4
+        else N_TEXT_PRIORS_V3 if priors_v3
         else (N_TEXT_PRIORS_V2 if config.priors_v2 else 6)
     )
     # Wire the ``assigner_hidden`` / ``assigner_n_layers_level2`` knobs
@@ -474,6 +479,12 @@ def train_assigner(config: ExpConfig, data: AssignerData) -> str:
         text_pool_learned=config.text_pool_learned,
         focus_enabled=config.focus_enabled,
         focus_max_span=config.focus_max_span,
+        focus_total_enabled=config.focus_total_enabled,
+        focus_total_witness_weight=config.focus_total_witness_weight,
+        focus_company_enabled=config.focus_company_enabled,
+        focus_company_y_weight=config.focus_company_y_weight,
+        focus_company_boilerplate_weight=config.focus_company_boilerplate_weight,
+        field_names=[f.lower() for f in config.fields],
     ).to(device)
     hardneg_weight = _loss_knob(config, "assigner_hardneg_weight", 0.0)
     # P6 — prefer typed ExpConfig KD knobs over legacy ``config.extra``.
@@ -603,6 +614,7 @@ def train_assigner(config: ExpConfig, data: AssignerData) -> str:
                 "scheduler": "cosine",
                 "priors_v2": config.priors_v2,
                 "priors_v3": priors_v3,
+                "priors_v4": priors_v4,
                 "n_priors": n_priors,
                 "hardneg_weight": hardneg_weight,
                 "kd_weight": kd_weight,
@@ -611,6 +623,9 @@ def train_assigner(config: ExpConfig, data: AssignerData) -> str:
                 "lr_assigner": config.lr_assigner,
                 "warmup_ratio_assigner": config.warmup_ratio_assigner,
                 "n_params": n_params,
+                "focus_enabled": bool(config.focus_enabled),
+                "focus_total_enabled": bool(config.focus_total_enabled),
+                "focus_company_enabled": bool(config.focus_company_enabled),
                 "train_loss": train_loss_history,
                 "val_loss": val_loss_history,
             },
