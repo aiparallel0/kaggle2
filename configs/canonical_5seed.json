@@ -1,0 +1,9 @@
+{
+  "_comment": "PR-B — multi-seed canonical-SROIE eval (paired bootstrap + McNemar).",
+  "seeds": [42, 1, 2, 3, 5],
+  "n_trials": 5,
+  "canonical_sroie_enabled": true,
+  "bootstrap_n_iter": 1000,
+  "bootstrap_ci_level": 0.95,
+  "measure_latency": true
+}

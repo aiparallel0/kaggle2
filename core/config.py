@@ -13,7 +13,7 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal, cast
 
 from core.errors import TrainError
 from core.runlayout import derive_paths
@@ -76,7 +76,7 @@ def load_config(path: str, defaults: dict[str, Any] | None = None) -> ExpConfig:
         "address_accept_fraction", "regex_router", "text_pool_learned",
         "total_confidence_threshold",
         "lr_assigner", "warmup_ratio_assigner",
-        "bug_flags",  # P1 — 13-bug ablation gating dict
+        "bug_flags",  # P1 — 13-bug ablation gating dict (now 17 with PR-C)
         "rag_enabled", "rag_k",  # P2 — retrieval-augmented DONUT
         "gat_enabled",  # P3 — graph-attention assigner opt-in
         "foundation_enabled", "foundation_api", "foundation_cache_path",  # P4
@@ -90,6 +90,20 @@ def load_config(path: str, defaults: dict[str, Any] | None = None) -> ExpConfig:
         "measure_latency",
         "qualitative_sample_ids", "fig1_receipt_id",
         "strict_paper",
+        # PR-A / T-C — magic-number → config promotions.
+        "assigner_hardneg_margin", "assigner_kd_temperature",
+        "assigner_field_weights", "assigner_param_drift_tol",
+        # PR-C — S0/S1/S2/S3 opt-in feature flags.
+        "priors_v3",
+        "address_anchor_extend", "address_anchor_extender_k",
+        "fusion",
+        "address_score_token_f1_w", "address_score_line_count_w",
+        "address_score_postcode_w", "address_score_money_penalty",
+        # PR-E — Pareto sweep selectors.
+        "sweep_size", "sweep_dataset",
+        # PR-D — GPT-4V eval + carbon accounting.
+        "llm_eval_enabled", "llm_eval_provider", "llm_eval_cache_path",
+        "carbon_grid_factor_kgco2e_per_kwh",
     }
     known = set(_REQUIRED) | _optional
     extra = {k: v for k, v in raw.items() if k not in known}
@@ -222,13 +236,116 @@ def load_config(path: str, defaults: dict[str, Any] | None = None) -> ExpConfig:
         ],
         fig1_receipt_id=str(raw.get("fig1_receipt_id", "")),
         strict_paper=bool(raw.get("strict_paper", False)),
+        # PR-A / T-C — promoted magic numbers.
+        assigner_hardneg_margin=float(
+            raw.get("assigner_hardneg_margin", 0.10),
+        ),
+        assigner_kd_temperature=float(
+            raw.get("assigner_kd_temperature", 2.0),
+        ),
+        assigner_field_weights=_parse_field_weights(
+            raw.get("assigner_field_weights"),
+        ),
+        assigner_param_drift_tol=int(
+            raw.get("assigner_param_drift_tol", 500),
+        ),
+        # PR-C — S0/S1/S2/S3 opt-in feature flags.
+        priors_v3=bool(raw.get("priors_v3", False)),
+        address_anchor_extend=bool(raw.get("address_anchor_extend", False)),
+        address_anchor_extender_k=int(
+            raw.get("address_anchor_extender_k", 2),
+        ),
+        fusion=_parse_fusion(raw.get("fusion", "sum")),
+        address_score_token_f1_w=float(
+            raw.get("address_score_token_f1_w", 1.0),
+        ),
+        address_score_line_count_w=float(
+            raw.get("address_score_line_count_w", 0.25),
+        ),
+        address_score_postcode_w=float(
+            raw.get("address_score_postcode_w", 0.05),
+        ),
+        address_score_money_penalty=float(
+            raw.get("address_score_money_penalty", 0.10),
+        ),
+        # PR-E — Pareto sweep selectors.
+        sweep_size=_parse_sweep_size(raw.get("sweep_size", "")),
+        sweep_dataset=_parse_sweep_dataset(raw.get("sweep_dataset", "")),
+        # PR-D — GPT-4V + carbon.
+        llm_eval_enabled=bool(raw.get("llm_eval_enabled", False)),
+        llm_eval_provider=str(raw.get("llm_eval_provider", "gpt-4v")),
+        llm_eval_cache_path=str(
+            raw.get("llm_eval_cache_path", "./runs/llm_eval_cache.json"),
+        ),
+        carbon_grid_factor_kgco2e_per_kwh=float(
+            raw.get("carbon_grid_factor_kgco2e_per_kwh", 0.475),
+        ),
         extra=extra,
     )
 
 
+def _parse_field_weights(raw: object) -> dict[str, float]:
+    """Coerce ``raw`` into the ``{field: weight}`` shape used by the
+    assigner train loop; defaults match the legacy ``FIELD_LOSS_WEIGHTS``.
+    """
+    out = {"company": 1.5, "address": 1.3, "total": 1.2, "date": 0.8}
+    if isinstance(raw, dict):
+        for k, v in raw.items():
+            if isinstance(k, str) and isinstance(v, int | float):
+                out[k] = float(v)
+    return out
+
+
+def _parse_fusion(raw: object) -> Literal["sum", "concat"]:
+    """Restrict ``fusion`` to the two supported strategies."""
+    s = str(raw).lower().strip() or "sum"
+    if s in ("sum", "concat"):
+        return cast("Literal['sum', 'concat']", s)
+    raise TrainError(
+        f"fusion={raw!r} not supported; choose 'sum' or 'concat'.",
+    )
+
+
+_SWEEP_SIZES: tuple[Literal["", "tiny", "small", "base", "large"], ...] = (
+    "", "tiny", "small", "base", "large",
+)
+_SWEEP_DATASETS: tuple[Literal["", "sroie", "cord"], ...] = (
+    "", "sroie", "cord",
+)
+
+
+def _parse_sweep_size(
+    raw: object,
+) -> Literal["", "tiny", "small", "base", "large"]:
+    s = str(raw).lower().strip()
+    for v in _SWEEP_SIZES:
+        if v == s:
+            return v
+    raise TrainError(
+        f"sweep_size={raw!r} not in {{tiny, small, base, large, ''}}.",
+    )
+
+
+def _parse_sweep_dataset(
+    raw: object,
+) -> Literal["", "sroie", "cord"]:
+    s = str(raw).lower().strip()
+    for v in _SWEEP_DATASETS:
+        if v == s:
+            return v
+    raise TrainError(
+        f"sweep_dataset={raw!r} not in {{sroie, cord, ''}}.",
+    )
+
+
 def _parse_bug_flags(raw: object) -> dict[str, bool]:
-    """Coerce ``raw`` into a {bug_1..bug_13: bool} dict; defaults True."""
-    out = {f"bug_{i}": True for i in range(1, 14)}
+    """Coerce ``raw`` into a {bug_1..bug_17: bool} dict; defaults True.
+
+    Bugs 1..13 are the original silent-bug guards; 14..17 are the PR-C
+    additions (anchor-extender warmup ordering, priors_v3 Bahasa false-
+    fire, KD pooling on 0-box receipts, RAG self-hit on val).
+    """
+    out = {f"bug_{i}": True for i in range(1, 18)}
     if isinstance(raw, dict):
         for k, v in raw.items():
             if isinstance(k, str) and k in out:

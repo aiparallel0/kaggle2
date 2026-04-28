@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Literal
 
 
 @dataclass
@@ -237,11 +238,16 @@ class ExpConfig:
     # config sets ``lr_assigner=3e-4`` and ``warmup_ratio_assigner=0.1``.
     lr_assigner: float = 1e-3
     warmup_ratio_assigner: float = 0.0
-    # P1 — Bug-atlas ablation. Per-bug toggles (True = guard active / bug
-    # fixed; False = reintroduce the bug for ablation).  13 flags keyed
-    # by ``bug_<n>`` (1..13).  Default all-True keeps current behaviour.
+    # PR-A — bug-atlas extension.  Bugs 14-17 are PR-C-era guards:
+    #   bug_14 — anchor-extender warmup ordering must precede the head
+    #   bug_15 — priors_v3 must NOT fire ``is_distractor`` on Bahasa
+    #            ``JUMLAH BESAR`` (a TOTAL synonym, not a distractor)
+    #   bug_16 — KD pooling on a 0-box receipt must skip + log, not div0
+    #   bug_17 — RAG retrieval must reject self-hits on val (id leak)
+    # 13 flags keyed by ``bug_<n>`` (1..17).  Default all-True keeps
+    # current behaviour (every guard active).
     bug_flags: dict[str, bool] = field(
-        default_factory=lambda: {f"bug_{i}": True for i in range(1, 14)},
+        default_factory=lambda: {f"bug_{i}": True for i in range(1, 18)},
     )
     # P2 — Retrieval-augmented DONUT (RA-KIE).  When ``rag_enabled`` is
     # True the Swin encoder is used to index train-set receipts and the
@@ -310,4 +316,63 @@ class ExpConfig:
     # ``MISSING_OK`` allow-list.  Default False keeps current behaviour
     # (warn + render \MissingCell{}).  CI gates should flip to True.
     strict_paper: bool = False
+    # PR-A / T-C — magic-number → config promotions.  Defaults preserve
+    # the legacy hard-coded values so reference runs reproduce bit-for-
+    # bit.  Pulled into the assigner train loop and the rule-based
+    # teacher KD term so reviewers can grid-search without editing src.
+    assigner_hardneg_margin: float = 0.10
+    assigner_kd_temperature: float = 2.0
+    assigner_field_weights: dict[str, float] = field(
+        default_factory=lambda: {
+            "company": 1.5, "address": 1.3, "total": 1.2, "date": 0.8,
+        },
+    )
+    # PR-A / T-A1 — checkpoint-introspection assertion tolerance.  When
+    # ``stages/eval.py`` introspects the assigner checkpoint at startup
+    # it asserts ``abs(introspected_params - declared_params) <
+    # assigner_param_drift_tol`` (default 500) so a stale checkpoint /
+    # config drift surfaces before any GPU work.
+    assigner_param_drift_tol: int = 500
+    # PR-C / S2 — opt-in 14-d distractor-aware text priors (priors_v3).
+    # Default False so existing 6-/9-d checkpoints load bit-exact;
+    # fresh trains flip True alongside an assigner re-train.
+    priors_v3: bool = False
+    # PR-C / S1 — opt-in anchor-then-extend address head.  When True the
+    # ``AttentionAssigner`` exposes an ``address_anchor_head`` +
+    # ``address_extender`` pair and the address logit is replaced with
+    # ``anchor_score + extender_scores`` over ±k vertical neighbours.
+    address_anchor_extend: bool = False
+    address_anchor_extender_k: int = 2
+    # PR-C / S3 — fusion head selector for ``AttentionAssigner.forward``.
+    # ``"sum"`` (default) keeps the legacy additive fusion that is
+    # bit-exact with shipped checkpoints; ``"concat"`` activates a
+    # ``Linear(2h or 3h, h)`` projection over the concatenated
+    # ``[text, bbox, prior]`` tensors.
+    fusion: Literal["sum", "concat"] = "sum"
+    # PR-C / S0 — address-assembly scoring weights.  Promoted onto
+    # ``AssignerPolicy`` (see ``models/pipeline_assign.py``) so PR-E
+    # sweeps can grid-search without editing source.  Defaults match
+    # the values measured on SROIE (median 3 lines, IQR 2-5; postcode
+    # tail bonus 0.05; money-token-inside penalty 0.10).
+    address_score_token_f1_w: float = 1.0
+    address_score_line_count_w: float = 0.25
+    address_score_postcode_w: float = 0.05
+    address_score_money_penalty: float = 0.10
+    # PR-E — Pareto sweep knobs.  Empty default keeps existing eval flow
+    # unchanged; populated only by ``configs/sweep/*.json``.
+    sweep_size: Literal["", "tiny", "small", "base", "large"] = ""
+    sweep_dataset: Literal["", "sroie", "cord"] = ""
+    # PR-D — gated GPT-4V / generic-foundation eval (mirrors the existing
+    # ``foundation_*`` knobs but kept distinct so the cache files do not
+    # collide).  ``llm_eval_enabled`` is the public switch surfaced in
+    # the paper's competitor table; ``llm_eval_cache_path`` keeps GPT-4V
+    # answers content-hash-keyed so reruns are deterministic.
+    llm_eval_enabled: bool = False
+    llm_eval_provider: str = "gpt-4v"
+    llm_eval_cache_path: str = "./runs/llm_eval_cache.json"
+    # PR-D — carbon emissions accounting (Section "Energy &
+    # Emissions").  ``grid_factor`` is the country-specific kgCO2e/kWh
+    # default; override via ``ExpConfig.extra["grid_factor"]`` for
+    # CI-pinned reruns from a different region.
+    carbon_grid_factor_kgco2e_per_kwh: float = 0.475
     extra: dict[str, object] = field(default_factory=dict)

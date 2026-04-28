@@ -29,7 +29,7 @@ produces an auditable intermediate representation --- and fast to
 iterate: retraining the $\approx\VAR{assigner_params_k}\,$K-parameter
 assigner takes minutes, whereas
 retraining DONUT from a new base takes hours.
-At roughly half the end-to-end parameter cost of DONUT, the analytical
+At \VAR{param_ratio_phrase} the end-to-end parameter cost of DONUT, the analytical
 route with a learned cross-attention assigner effectively \emph{discards
 the unused parameters} DONUT carries: the heavy perceptual work is
 delegated to YOLOv8 (a parametrically cheap detector) and TrOCR (a
