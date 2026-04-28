@@ -64,31 +64,15 @@ def _apply_total_normalizer(preds: list[Prediction], gts: list[Receipt]) -> tupl
     list[Prediction], list[Receipt],
 ]:
     """Symmetric per-field normalisation (preds + GT) so token-F1 measures
-    semantic match. Mirrors ``pipeline_eval._nt`` for DONUT/pipeline parity."""
+    semantic match.  Uses the DONUT-specific normaliser map (legacy
+    ``normalize_address``, no FOCUS punctuation pass) so headline F1 is
+    bit-identical to PR #110.  Routes through the shared helper so the
+    *exact same* ``(preds', receipts')`` pair flows out to the extended-
+    metrics producer in :mod:`stages.eval_producers` (PR #110 follow-up:
+    fixes ``F1 > max(P, R)`` in ``extended_metrics.json``)."""
     # Lazy import — keeps DONUT eval importable in torch-free CI.
-    from models.normalize import (
-        normalize_address,
-        normalize_company,
-        normalize_date,
-    )
-    norms: dict[str, Any] = {
-        "total": normalize_total, "date": normalize_date,
-        "company": normalize_company, "address": normalize_address,
-    }
-
-    def _identity(s: str) -> str:
-        return s
-
-    def _norm_fields(fs: list[Field]) -> list[Field]:
-        return [Field(name=f.name,
-                      value=norms.get(f.name.lower(), _identity)(f.value))
-                for f in fs]
-
-    n_preds = [Prediction(receipt_id=p.receipt_id, fields=_norm_fields(p.fields))
-               for p in preds]
-    n_gts = [Receipt(image_path=r.image_path, fields=_norm_fields(r.fields))
-             for r in gts]
-    return n_preds, n_gts
+    from models.normalize_bundle import FIELD_NORMALISERS_DONUT, normalize_bundle
+    return normalize_bundle(preds, gts, FIELD_NORMALISERS_DONUT)
 
 
 def _load(model_path: str) -> tuple[Any, Any, str]:
@@ -170,8 +154,18 @@ def _write_eval_diag(
 
 def eval_donut(
     config: ExpConfig, test: list[Receipt],
-) -> tuple[Metrics, list[Prediction]]:
-    """Run DONUT inference; return (Metrics, per-receipt predictions)."""
+) -> tuple[Metrics, list[Prediction], list[Receipt]]:
+    """Run DONUT inference; return ``(Metrics, normalised preds, normalised gold)``.
+
+    The third return value (the field-normalised gold receipts) is
+    surfaced so the extended-metrics producer in
+    :mod:`stages.eval_producers` can build its ``EvalBundle`` from
+    the *same* ``(preds, receipts)`` pair the headline F1 scorer
+    saw.  Before PR #111 the producer received raw ``data.test``
+    while the preds were normalised → per-field precision / recall /
+    bootstrap CI collapsed and ``F1 > max(P, R)`` appeared in
+    ``extended_metrics.json``.
+    """
     if _import_error is not None:
         raise ImportError(
             "torch and transformers are required for DONUT evaluation. "
@@ -281,4 +275,4 @@ def eval_donut(
                 "global_em": metrics.global_em, "per_field_f1": metrics.per_field_f1,
             }, f, indent=2,
         )
-    return metrics, norm_preds
+    return metrics, norm_preds, norm_test

@@ -124,17 +124,21 @@ def test_canonical_n1_point_outside_ci_raises() -> None:
 
 
 def test_stale_ci_warns_not_raises(caplog: pytest.LogCaptureFixture) -> None:
-    """Stale sidecar: large gap (>2%) must warn, not raise.
+    """Multi-seed stale sidecar: large gap (>2%) must warn, not raise.
 
-    When extended_metrics.json comes from a previous (lower-F1) eval run
-    the gap between the current point estimate and the stale ci_hi can be
-    3–28 percentage points.  assert_ci_bounds_valid must emit a WARNING and
-    not block paper compilation in this scenario.
+    On multi-seed runs the gap between the current point estimate and a
+    stale ``ci_hi`` (from a previous --stage eval) can be 3–28 percentage
+    points; ``assert_ci_bounds_valid`` emits a WARNING and lets the paper
+    compile so reviewers can refresh the sidecar.  PR #110 follow-up:
+    this behaviour is gated on ``n_trials > 1``; single-seed runs raise
+    instead (see ``test_stale_ci_raises_on_single_seed``).
     """
     import logging
 
     metrics = {
-        # n=1: mean equals point (0.88), ci_hi=0.81 — gap=0.07 > _STALE_CI_GAP
+        # n_trials=2: warn-only path
+        "n_trials": 2,
+        # mean equals point (0.88), ci_hi=0.81 — gap=0.07 > _STALE_CI_GAP
         "donut_f1_company": 0.88,
         "donut_f1_company_mean": 0.88,
         "donut_f1_company_ci_lo": 0.75,
@@ -147,3 +151,23 @@ def test_stale_ci_warns_not_raises(caplog: pytest.LogCaptureFixture) -> None:
         "stale" in r.message.lower() and r.levelname == "WARNING"
         for r in caplog.records
     ), "expected a WARNING-level stale-CI log record"
+
+
+def test_stale_ci_raises_on_single_seed() -> None:
+    """PR #110 follow-up: ``n_trials==1`` makes a stale gap a hard failure.
+
+    The asymmetric (normalised pred, raw gold) bundle that produced
+    extreme gaps in single-seed runs is fixed by routing each arm's
+    normalised gold through ``stages.eval_producers.emit_all``; once
+    that producer-side bug is fixed the warn-only workaround should
+    fail loudly so the asymmetry cannot recur silently.
+    """
+    metrics = {
+        "n_trials": 1,
+        "donut_f1_company": 0.88,
+        "donut_f1_company_mean": 0.88,
+        "donut_f1_company_ci_lo": 0.75,
+        "donut_f1_company_ci_hi": 0.81,  # gap=0.07 > 2%
+    }
+    with pytest.raises(ValueError, match="ci_hi=0.8100.* < "):
+        assert_ci_bounds_valid(metrics)

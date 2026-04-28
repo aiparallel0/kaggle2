@@ -87,7 +87,8 @@ def test_emit_all_produces_every_expected_sidecar(tmp_path: Path) -> None:
     )
     counts = emit_all(
         str(tmp_path), ("company", "total"),
-        donut_preds=[pred], pipeline_preds=[pred], receipts=[rec],
+        donut_preds=[pred], pipeline_preds=[pred],
+        donut_receipts=[rec], pipeline_receipts=[rec],
         donut_metrics=m, pipeline_metrics=m,
         n_iter=50,
     )
@@ -119,7 +120,8 @@ def test_emit_all_skips_systems_with_no_data(tmp_path: Path) -> None:
     )
     emit_all(
         str(tmp_path), ("company",),
-        donut_preds=[pred], pipeline_preds=None, receipts=[rec],
+        donut_preds=[pred], pipeline_preds=None,
+        donut_receipts=[rec], pipeline_receipts=[rec],
         donut_metrics=m, pipeline_metrics=None,
         n_iter=50,
     )

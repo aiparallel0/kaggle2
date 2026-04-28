@@ -12,7 +12,6 @@ from __future__ import annotations
 import json
 import logging
 import os
-from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -31,17 +30,11 @@ from core.types import (
 )
 from models.consensus import refine_assignments
 from models.detect import _detect_and_read, _fallback_full_image
-from models.donut_eval import normalize_total
 from models.focus_attn_export import DEFAULT_SAMPLE_K, AttentionSampler
 from models.focus_inference import _load_assigner
 from models.focus_pipeline import _assign_learned_with_attn
 from models.miss_tracker import log_field_breakdown
-from models.normalize import (
-    normalize_address,
-    normalize_company,
-    normalize_date,
-)
-from models.postprocess_address import normalize_address_focus
+from models.normalize_bundle import normalize_bundle as _normalize_bundle
 from models.rule_regex import rule_based_assign
 
 _import_error: ImportError | None = None
@@ -52,47 +45,6 @@ except ImportError as _exc:  # lightweight CI — torch not installed
     _import_error = _exc
 
 log = logging.getLogger("kaggle2")
-
-
-def _normalize_address_pipeline(value: str) -> str:
-    """Compose legacy postcode-repair with FOCUS post-processing (Bug 18).
-
-    Legacy ``normalize_address`` is retained for its OCR digit/letter
-    repair on the 5-digit postcode (``"5O1OO"`` → ``"50100"``); the new
-    ``normalize_address_focus`` adds the symmetric punctuation /
-    casefold pass that closes the comma/period/casing drift the legacy
-    normaliser left on the table.  Applied in this order so postcode
-    repair sees the OCR string untouched.
-    """
-    return normalize_address_focus(normalize_address(value))
-
-
-_FIELD_NORMALISERS: dict[str, Callable[[str], str]] = {
-    "total": normalize_total,
-    "date": normalize_date,
-    "company": normalize_company,
-    "address": _normalize_address_pipeline,
-}
-
-
-def _identity(s: str) -> str:
-    return s
-
-
-def _nt(fields: list[Field]) -> list[Field]:
-    """Apply symmetric per-field normalisation before metric compute.
-
-    Every field (not just TOTAL) is routed through its paired
-    ``normalize_*`` so pred/GT punctuation/spacing mismatches — which
-    token-F1 treats as full token losses — cancel symmetrically on both
-    sides.  This mirrors what the ANLS-style metric reported by the
-    ICDAR SROIE evaluator does and keeps pipeline F1 comparable to
-    DONUT F1 (eval_donut passes through the same normalisers).
-    """
-    return [Field(
-        name=f.name,
-        value=_FIELD_NORMALISERS.get(f.name.lower(), _identity)(f.value),
-    ) for f in fields]
 
 
 def _predictions_by_field(
@@ -249,12 +201,14 @@ def eval_pipeline(config: ExpConfig, test: list[Receipt]) -> PipelineResult:
                 receipt_id=rid,
                 fields=[Field(name=k, value=v) for k, v in rule.items()],
             ))
-    # Symmetric TOTAL normalisation keeps pipeline F1 comparable to DONUT F1.
-    n_preds_l = [Prediction(receipt_id=p.receipt_id, fields=_nt(p.fields))
-                 for p in preds_l]
-    n_preds_r = [Prediction(receipt_id=p.receipt_id, fields=_nt(p.fields))
-                 for p in preds_r]
-    n_test = [Receipt(image_path=r.image_path, fields=_nt(r.fields)) for r in test]
+    # Symmetric per-field normalisation (preds + GT) keeps pipeline F1
+    # comparable to DONUT F1 and — surfaced on PipelineResult below —
+    # gives the extended-metrics producer the same bundle compute_metrics
+    # saw, eliminating the asymmetric (normalised pred, raw gold) bundle
+    # that produced ``F1 > max(P, R)`` in extended_metrics.json (PR #110
+    # follow-up).
+    n_preds_l, n_test = _normalize_bundle(preds_l, test)
+    n_preds_r, _ = _normalize_bundle(preds_r, test)
     m_l = compute_metrics(EvalBundle(n_preds_l, n_test, config.fields))
     m_r = compute_metrics(EvalBundle(n_preds_r, n_test, config.fields))
     field_diag = log_field_breakdown(m_l, n_preds_l, n_test, config.fields)
@@ -312,4 +266,5 @@ def eval_pipeline(config: ExpConfig, test: list[Receipt]) -> PipelineResult:
     return PipelineResult(
         assigner=m_l, rulebased=m_r,
         assigner_preds=n_preds_l, rulebased_preds=n_preds_r,
+        receipts=n_test,
     )

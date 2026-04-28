@@ -232,8 +232,21 @@ def assert_ci_bounds_valid(metrics: dict[str, object]) -> None:
     Both checks tolerate 1e-6 rounding.  Missing keys are silently
     skipped (single-seed runs may emit ``_ci_lo``/``_ci_hi`` as null).
     This is the regression check for the B1 producer-side bootstrap fix.
+
+    PR #110 follow-up: when ``metrics["n_trials"] == 1`` a stale gap
+    (>2 %) is now a hard failure rather than a WARNING.  The
+    warn-only behaviour was a workaround for the asymmetric
+    (normalised pred, raw gold) bundle that produced extreme stale
+    gaps in single-seed runs; once :mod:`stages.eval_producers` plumbs
+    each arm's normalised gold through, that asymmetry can no longer
+    recur and the workaround should fail loudly.  Multi-seed runs
+    (``n_trials >= 2``) keep the WARNING path because the stale-CI
+    semantics there genuinely indicate an out-of-date sidecar rather
+    than a producer-side bug.
     """
     tol = 1e-6
+    n_trials_raw = metrics.get("n_trials")
+    n_trials = int(n_trials_raw) if isinstance(n_trials_raw, int | float) else 1
     errs: list[str] = []
     stale_warns: list[str] = []
     for sys in _CI_SYSTEMS:
@@ -262,13 +275,13 @@ def assert_ci_bounds_valid(metrics: dict[str, object]) -> None:
             for label, vf in checks:
                 if lof > vf + tol:
                     msg = f"{sys}_f1_{field}: ci_lo={lof:.4f} > {label}={vf:.4f}"
-                    if lof - vf > _STALE_CI_GAP:
+                    if lof - vf > _STALE_CI_GAP and n_trials > 1:
                         stale_warns.append(msg)
                     else:
                         errs.append(msg)
                 if hif < vf - tol:
                     msg = f"{sys}_f1_{field}: ci_hi={hif:.4f} < {label}={vf:.4f}"
-                    if vf - hif > _STALE_CI_GAP:
+                    if vf - hif > _STALE_CI_GAP and n_trials > 1:
                         stale_warns.append(msg)
                     else:
                         errs.append(msg)
