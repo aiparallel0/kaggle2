@@ -280,10 +280,17 @@ def _sanitise_tabular(s: str) -> str:
 
     Empty strings pass through (a deliberately-empty emitter under a
     non-applicable variant — see e.g. ``table_competitors`` outside
-    canonical_347).  Returns the input unchanged on success.
+    canonical_347).  Returns a :class:`report.inject.TexSource` marker
+    on success so :func:`report.inject._format_value` emits the raw
+    LaTeX verbatim — without the marker the value would be escaped
+    by ``_latex_escape_text`` (every ``\\`` → ``\\textbackslash{}``,
+    ``{``/``}`` → ``\\{``/``\\}``) which is the failure mode that
+    rendered six tables as escaped string literals in
+    ``paper_filled.pdf`` (Audit A — PR #114).
     """
+    from report.inject import TexSource
     if not s:
-        return s
+        return TexSource(s)
     import re as _re
 
     from core.errors import EvalError
@@ -312,7 +319,7 @@ def _sanitise_tabular(s: str) -> str:
                 "tabular validation failed: \\cite{} keys do not resolve "
                 f"against references.bib: {unresolved[:5]}",
             )
-    return s
+    return TexSource(s)
 
 
 def _competitors() -> Any:  # lazy import keeps the LOC budget here

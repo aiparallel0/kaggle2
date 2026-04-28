@@ -3,7 +3,7 @@
 
 \begin{table}[!t]
 \centering
-\caption{Headline results on the 63-image SROIE test split at
+\caption{Headline results on the \VAR{n_test_images}-image SROIE test split at
          $n_{\text{trials}}=\VAR{n_trials}$.  Headline F1 rounded to
          three decimals; full four-decimal numbers are in
          Appendix~\ref{app:raw}.}
@@ -20,7 +20,7 @@ Pipeline               & \VAR{pipeline_f1}      & \VAR{pipeline_ned}      & \VAR
 
 \begin{table}[!t]
 \centering
-\caption{Per-field F1 on the 63-image SROIE test split.  Pipeline
+\caption{Per-field F1 on the \VAR{n_test_images}-image SROIE test split.  Pipeline
          per-field F1 is also visualised in
          Fig.~\figref{fig:f1_by_system}.}
 \label{tab:perfield}
@@ -34,7 +34,7 @@ Pipeline (learned)    & \VAR{pipeline_f1_company}  & \VAR{pipeline_f1_date}  & \
 \end{tabular}
 \end{table}
 
-On the 63-image test split DONUT and the pipeline are statistically
+On the \VAR{n_test_images}-image test split DONUT and the pipeline are statistically
 indistinguishable ($\Delta$F1 $=$ \VAR{f1_gap}; the paired McNemar
 exact test on per-image correctness gives $p=\VAR{mcnemar_p}$ and
 the paired-bootstrap 95\% CI on $\Delta$F1 is

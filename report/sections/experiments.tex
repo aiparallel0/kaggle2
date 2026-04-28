@@ -1,7 +1,9 @@
 \section{Experiments}
 
 \subsection{Data}
-We use the 500\,/\,63\,/\,63 split of SROIE declared in
+We use the
+\VAR{n_train_images}\,/\,\VAR{n_val_images}\,/\,\VAR{n_test_images}
+split of SROIE declared in
 Section~\ref{sec:formal}; the split is persisted to
 \texttt{results/split.json} at first use and reloaded on subsequent
 runs so val and test stay disjoint (Bug~7 in
@@ -15,9 +17,9 @@ in both image and field counts.
 \begin{tabular}{lrr}
 \toprule
 Split & Images & Fields \\ \midrule
-Train & 500 & 2000 \\
-Val   &  63 &  252 \\
-Test  &  63 &  252 \\ \bottomrule
+Train & \VAR{n_train_images} & \VAR{n_train_fields} \\
+Val   & \VAR{n_val_images}   & \VAR{n_val_fields} \\
+Test  & \VAR{n_test_images}  & \VAR{n_test_fields} \\ \bottomrule
 \end{tabular}
 \end{table}
 
@@ -88,7 +90,7 @@ extra training runs.
 \textbf{Metrics.}  We report whitespace-token F1 averaged uniformly
 over the four fields (``global F1''), per-field token F1, Normalised
 Edit Distance (NED; 1.0 = identical), and strict exact-match (all
-four fields correct) over the 63-image test split.  Statistical
+four fields correct) over the \VAR{n_test_images}-image test split.  Statistical
 uncertainty is reported as a paired-bootstrap 95\% CI on per-image
 correctness (\VAR{bootstrap_n_iter} resamples by default).  McNemar's
 exact test is run on per-image correctness for DONUT vs.\ pipeline
