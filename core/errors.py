@@ -17,5 +17,14 @@ class TrainError(RuntimeError):
     """Training diverged or a Bug-class guardrail tripped (Bug 4/6/7/8)."""
 
 
+class ConfigError(TrainError):
+    """Architecture-flag invariant tripped at config load time (Bug 18).
+
+    Subclasses ``TrainError`` so existing ``except TrainError`` handlers
+    in the train/eval pipeline still surface the failure pre-GPU; the
+    distinct class lets callers (and tests) pin the exact failure mode.
+    """
+
+
 class EvalError(RuntimeError):
     """Post-eval F1 fell below the architecture-specific bug floor."""

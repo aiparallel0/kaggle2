@@ -41,6 +41,7 @@ from models.normalize import (
     normalize_company,
     normalize_date,
 )
+from models.postprocess_address import normalize_address_focus
 from models.rule_regex import rule_based_assign
 
 _import_error: ImportError | None = None
@@ -53,11 +54,24 @@ except ImportError as _exc:  # lightweight CI — torch not installed
 log = logging.getLogger("kaggle2")
 
 
+def _normalize_address_pipeline(value: str) -> str:
+    """Compose legacy postcode-repair with FOCUS post-processing (Bug 18).
+
+    Legacy ``normalize_address`` is retained for its OCR digit/letter
+    repair on the 5-digit postcode (``"5O1OO"`` → ``"50100"``); the new
+    ``normalize_address_focus`` adds the symmetric punctuation /
+    casefold pass that closes the comma/period/casing drift the legacy
+    normaliser left on the table.  Applied in this order so postcode
+    repair sees the OCR string untouched.
+    """
+    return normalize_address_focus(normalize_address(value))
+
+
 _FIELD_NORMALISERS: dict[str, Callable[[str], str]] = {
     "total": normalize_total,
     "date": normalize_date,
     "company": normalize_company,
-    "address": normalize_address,
+    "address": _normalize_address_pipeline,
 }
 
 

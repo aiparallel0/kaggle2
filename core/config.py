@@ -15,7 +15,7 @@ import os
 from pathlib import Path
 from typing import Any, Literal, cast
 
-from core.errors import TrainError
+from core.errors import ConfigError, TrainError
 from core.runlayout import derive_paths
 from core.types import ExpConfig
 
@@ -62,6 +62,17 @@ def load_config(path: str, defaults: dict[str, Any] | None = None) -> ExpConfig:
             "loss=NaN from gradient overflow (Bug 4). Set max_grad_norm=1.0 "
             "or switch to precision='bf16' on Ampere+ GPUs.",
         )
+
+    # Bug 18 — architectural-flag invariants for the FOCUS framework.
+    # The MIL pos-mass loss is one-sided; it rewards mass on positives
+    # but never penalises mass on boilerplate.  Shipping a ``paper_variant
+    # == 'focus'`` run with any of the FOCUS sub-flags off therefore
+    # produces a paper that documents an architecture the run never
+    # actually used (the "no silent placeholders" invariant from
+    # AGENTS.md, applied to architecture flags).  Enforce at load time
+    # so a stale config surfaces the error before any GPU work starts.
+    if bug_flags.get("bug_18", True):
+        _validate_focus_flags(raw)
 
     _optional = {
         "yolo_conf", "trocr_max_new_tokens", "max_regions_per_image",
@@ -113,6 +124,10 @@ def load_config(path: str, defaults: dict[str, Any] | None = None) -> ExpConfig:
         "focus_company_boilerplate_weight",
         "priors_v4",
     }
+    # Bug-18 composite-loss knobs are read via ``_loss_knob`` from
+    # ``config.extra``, so they are intentionally NOT in ``_optional`` —
+    # the parser surfaces them through ``extra`` exactly like the
+    # legacy ``focus_hardneg_weight`` / ``focus_synth_subtotal`` knobs.
     known = set(_REQUIRED) | _optional
     extra = {k: v for k, v in raw.items() if k not in known}
 
@@ -362,14 +377,87 @@ def _parse_sweep_dataset(
     )
 
 
+def _validate_focus_flags(raw: dict[str, Any]) -> None:
+    """Enforce Bug-18 FOCUS architecture-flag invariants at load time.
+
+    Three rules are checked, mirroring the AGENTS.md "no silent
+    placeholders" invariant applied to architecture flags:
+
+    1. ``paper_variant == "focus"`` requires every ``focus_*`` sub-flag
+       (``focus_enabled``, ``focus_total_enabled``, ``focus_company_enabled``)
+       to be True — shipping a focus paper with focus off would document
+       an architecture the run never invoked.
+    2. ``focus_total_enabled`` requires ``priors_v4 == True`` because the
+       FOCUS-T head reads ``arithmetic_witness_self`` from the v4 prior
+       column (paper §III-D).
+    3. ``focus_enabled`` requires ``n_priors >= 20`` (i.e. ``priors_v4``)
+       — the FOCUS-A span head shares the prior projection and a
+       ≤14-d v3 prior tensor would silently truncate the witness column.
+
+    Raises :class:`ConfigError` on any violation; the error message
+    names the offending key(s) so the failure is auditable from the
+    config diff alone.
+    """
+    paper_variant_explicit = "paper_variant" in raw or bool(
+        os.environ.get("KAGGLE2_PAPER_VARIANT"),
+    )
+    paper_variant = (
+        os.environ.get("KAGGLE2_PAPER_VARIANT")
+        or str(raw.get("paper_variant", "focus"))
+    )
+    fa = bool(raw.get("focus_enabled", False))
+    ft = bool(raw.get("focus_total_enabled", False))
+    fc = bool(raw.get("focus_company_enabled", False))
+    pv4 = bool(raw.get("priors_v4", False))
+    # The "shipping a focus paper with focus off" check only fires when
+    # ``paper_variant`` is explicitly set to ``focus`` (i.e. the user
+    # opted in to the focus paper).  Tests that exercise other code
+    # paths with the implicit default value of ``paper_variant`` are
+    # not running a focus paper and must not be tripped here.
+    if paper_variant_explicit and paper_variant == "focus":
+        missing = [
+            n for n, v in (
+                ("focus_enabled", fa),
+                ("focus_total_enabled", ft),
+                ("focus_company_enabled", fc),
+            ) if not v
+        ]
+        if missing:
+            raise ConfigError(
+                f"paper_variant='focus' requires all focus_* sub-flags "
+                f"to be True; got off: {missing} (Bug 18). "
+                "Flip them on in configs/default.json or set "
+                "paper_variant to a non-focus variant.",
+            )
+    if ft and not pv4:
+        raise ConfigError(
+            "focus_total_enabled=True requires priors_v4=True; the "
+            "FOCUS-T head reads arithmetic_witness_self from the v4 "
+            "prior column (Bug 18).",
+        )
+    if fa:
+        # n_priors selector mirrors models/focus_train.py::train_assigner
+        # so the assertion catches v3 / v2 / v1 prior shapes uniformly.
+        priors_v3 = bool(raw.get("priors_v3", False))
+        priors_v2 = bool(raw.get("priors_v2", True))
+        n_priors = 20 if pv4 else 14 if priors_v3 else 9 if priors_v2 else 6
+        if n_priors < 20:
+            raise ConfigError(
+                f"focus_enabled=True requires priors_v4=True (n_priors=20); "
+                f"got n_priors={n_priors} (Bug 18). Set priors_v4=true.",
+            )
+
+
 def _parse_bug_flags(raw: object) -> dict[str, bool]:
-    """Coerce ``raw`` into a {bug_1..bug_17: bool} dict; defaults True.
+    """Coerce ``raw`` into a {bug_1..bug_18: bool} dict; defaults True.
 
     Bugs 1..13 are the original silent-bug guards; 14..17 are the PR-C
     additions (anchor-extender warmup ordering, priors_v3 Bahasa false-
-    fire, KD pooling on 0-box receipts, RAG self-hit on val).
+    fire, KD pooling on 0-box receipts, RAG self-hit on val).  Bug 18
+    is the composite-assigner-loss / FOCUS-flag-architecture guard
+    (one-sided MIL pos-mass loss + disabled FOCUS sub-flags).
     """
-    out = {f"bug_{i}": True for i in range(1, 18)}
+    out = {f"bug_{i}": True for i in range(1, 19)}
     if isinstance(raw, dict):
         for k, v in raw.items():
             if isinstance(k, str) and k in out:

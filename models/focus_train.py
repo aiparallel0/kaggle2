@@ -27,6 +27,10 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
 from core.types import AssignerData, ExpConfig
+from models.assigner_loss import (
+    composite_field_loss,
+    field_distractor_mask,
+)
 from models.focus_data import Group, _build_prior_vectors, _prepare_groups, split_train_val
 from models.focus_inference import (
     N_TEXT_PRIORS_V2,
@@ -80,16 +84,22 @@ def _group_loss(
     teacher: dict[int, list[float]] | None = None,
     hardneg_weight: float = 0.0, kd_weight: float = 0.0,
     idx_to_field: dict[int, str] | None = None,
+    texts: list[str] | None = None,
+    ctkr_k: int = 0, ctkr_margin: float = 0.0,
+    ctkr_weight: float = 0.0, iou_weight: float = 0.0,
+    diagnostics: dict[str, list[float]] | None = None,
 ) -> Tensor:
-    """Augmented loss: pos-mass NLL + hard-neg hinge (B) + KD KL (C).
+    """Composite per-field loss: pos-mass NLL + CTKR + soft-IoU + KD (Bug 18).
 
-    Each extra term is zero-weighted by default so existing training
-    runs reproduce bit-for-bit without ``hardneg_weight`` / ``kd_weight``
-    set.  When enabled, the hinge penalises any negative region whose
-    attn mass exceeds (mean-pos-attn − margin), and KD pulls the
-    full attn row toward the rule-based teacher softmax.  When
-    ``idx_to_field`` is supplied each field's term is additionally
-    multiplied by :data:`FIELD_LOSS_WEIGHTS` (Change E).
+    The default-zero CTKR + IoU weights preserve bit-exact behaviour
+    with pre-Bug-18 runs; the Bug-18 default config flips both to 1.0.
+    Legacy ``hardneg_weight`` (PR-A margin hinge) and ``kd_weight``
+    (KD KL) terms are retained as opt-in for back-compat with older
+    sweeps but are NOT stacked with CTKR by default — see the parent
+    PR description for why two ``stop-here'' terms double-penalise.
+    When ``diagnostics`` is supplied, ``ctkr_active`` and ``iou`` per-
+    field traces are appended in-place for the
+    ``metrics/focus_diagnostics.json`` rollup.
     """
     tf = feats.to(device).unsqueeze(0)
     bf = bboxes.to(device).unsqueeze(0)
@@ -99,8 +109,25 @@ def _group_loss(
     n_fields = 0
     for f_idx, region_idxs in targets.items():
         probs = attn_w[0, f_idx]
-        pos_mass = probs[region_idxs].sum().clamp(min=1e-8)
-        term = -torch.log(pos_mass)
+        field_name = idx_to_field.get(f_idx, "") if idx_to_field is not None else ""
+        if ctkr_weight > 0 or iou_weight > 0:
+            distractor_mask = (
+                field_distractor_mask(field_name, texts) if texts is not None
+                else [False] * int(probs.shape[0])
+            )
+            term, ctkr_active, iou_v = composite_field_loss(
+                probs, list(region_idxs), distractor_mask,
+                ctkr_k=ctkr_k, ctkr_margin=ctkr_margin,
+                ctkr_weight=ctkr_weight, iou_weight=iou_weight,
+            )
+            if diagnostics is not None and field_name:
+                diagnostics.setdefault(f"ctkr_active::{field_name}", []).append(
+                    ctkr_active,
+                )
+                diagnostics.setdefault(f"iou::{field_name}", []).append(iou_v)
+        else:
+            pos_mass = probs[region_idxs].sum().clamp(min=1e-8)
+            term = -torch.log(pos_mass)
         if hardneg_weight > 0 and negatives is not None:
             neg_idxs = negatives.get(f_idx, [])
             if neg_idxs:
@@ -124,7 +151,7 @@ def _group_loss(
                     )
                     term = term + kd_weight * -(tt * log_student).sum()
         if idx_to_field is not None:
-            w = FIELD_LOSS_WEIGHTS.get(idx_to_field.get(f_idx, ""), 1.0)
+            w = FIELD_LOSS_WEIGHTS.get(field_name, 1.0)
             term = term * w
         loss = loss + term
         n_fields += 1
@@ -388,6 +415,9 @@ def _train_epoch(
     synth_subtotal: float, ocr_noise: float,
     focus_enabled: bool = False, focus_iou_w: float = 0.0,
     focus_boundary_w: float = 0.0,
+    ctkr_k: int = 0, ctkr_margin: float = 0.0,
+    ctkr_weight: float = 0.0, attn_iou_weight: float = 0.0,
+    diagnostics: dict[str, list[float]] | None = None,
 ) -> float:
     assigner.train()
     gen = torch.Generator().manual_seed(seed * 1_000 + epoch)
@@ -417,6 +447,10 @@ def _train_epoch(
             negatives=negs, teacher=teacher,
             hardneg_weight=hardneg_weight, kd_weight=kd_weight,
             idx_to_field=idx_to_field,
+            texts=texts,
+            ctkr_k=ctkr_k, ctkr_margin=ctkr_margin,
+            ctkr_weight=ctkr_weight, iou_weight=attn_iou_weight,
+            diagnostics=diagnostics,
         )
         if focus_enabled and address_idx >= 0:
             gold = _focus_gold_span(texts, targets, address_idx)
@@ -494,6 +528,15 @@ def train_assigner(config: ExpConfig, data: AssignerData) -> str:
     kd_weight = config.kd_logits_weight or _loss_knob(config, "assigner_kd_weight", 0.0)
     synth_subtotal = _loss_knob(config, "focus_synth_subtotal", 0.0)
     ocr_noise = _loss_knob(config, "assigner_ocr_noise", 0.0)
+    # Bug 18 — composite-loss knobs (CTKR + soft-IoU on attention).
+    # Default-zero means a bit-exact reproduction of pre-Bug-18 runs;
+    # the Bug-18 default config flips both to 1.0.  ``attn_iou_weight``
+    # reuses ``focus_iou_weight`` per the new-requirement's λ_iou
+    # specification (single knob shared with the FOCUS span-IoU term).
+    ctkr_k = int(_loss_knob(config, "focus_ctkr_k", 0.0))
+    ctkr_margin = _loss_knob(config, "focus_ctkr_margin", 0.0)
+    ctkr_weight = _loss_knob(config, "focus_ctkr_weight", 0.0)
+    attn_iou_weight = float(config.focus_iou_weight) if config.focus_enabled else 0.0
     # FOCUS — write the gold ``(gi, gj)`` per-receipt label sidecar to
     # ``runs/`` (config.output_dir) so the trainer's gold-span alignment
     # is auditable from the run archive.  Persisted once at startup over
@@ -546,7 +589,9 @@ def train_assigner(config: ExpConfig, data: AssignerData) -> str:
     stopped_at = config.epochs_focus
     train_loss_history: list[float] = []
     val_loss_history: list[float] = []
+    diagnostics_per_epoch: list[dict[str, float]] = []
     for epoch in range(config.epochs_focus):
+        epoch_diag: dict[str, list[float]] = {}
         train_loss = _train_epoch(
             assigner, opt, train_groups, config.seed, epoch, device,
             field_to_idx, n_priors,
@@ -554,7 +599,17 @@ def train_assigner(config: ExpConfig, data: AssignerData) -> str:
             focus_enabled=config.focus_enabled,
             focus_iou_w=config.focus_iou_weight,
             focus_boundary_w=config.focus_boundary_weight,
+            ctkr_k=ctkr_k, ctkr_margin=ctkr_margin,
+            ctkr_weight=ctkr_weight, attn_iou_weight=attn_iou_weight,
+            diagnostics=epoch_diag,
         )
+        # Bug 18 — collapse per-receipt-per-field traces to per-epoch
+        # scalars for ``metrics/focus_diagnostics.json``.  The
+        # ``ctkr_active_fraction`` for each field is the mean over
+        # receipts of the 0/1 indicator, and ``iou_per_field`` is the
+        # mean soft-IoU at the field's gold mask granularity.
+        diag_scalars = _summarise_diagnostics(epoch_diag)
+        diagnostics_per_epoch.append(diag_scalars)
         val_loss = _evaluate(assigner, val_groups, device)
         train_loss_history.append(train_loss)
         val_loss_history.append(val_loss)
@@ -626,9 +681,50 @@ def train_assigner(config: ExpConfig, data: AssignerData) -> str:
                 "focus_enabled": bool(config.focus_enabled),
                 "focus_total_enabled": bool(config.focus_total_enabled),
                 "focus_company_enabled": bool(config.focus_company_enabled),
+                # Bug-18 merge-gate inputs: assigner_metrics.json must
+                # carry focus_enabled=true, priors_v4=true, n_priors>=20.
+                "ctkr_k": ctkr_k,
+                "ctkr_margin": ctkr_margin,
+                "ctkr_weight": ctkr_weight,
+                "attn_iou_weight": attn_iou_weight,
                 "train_loss": train_loss_history,
                 "val_loss": val_loss_history,
             },
             f, indent=2,
         )
+    # Bug 18 — separate diagnostics file mirrors the per-epoch CTKR /
+    # IoU trace so the merge gate can verify the FOCUS-A boundary-CE
+    # and IoU losses converged (boundary < 0.3, IoU > 0.6 on val) and
+    # the CTKR active-fraction collapsed below 0.05 by training end.
+    metrics_dir = os.path.join(config.output_dir, "metrics")
+    Path(metrics_dir).mkdir(parents=True, exist_ok=True)
+    with open(os.path.join(metrics_dir, "focus_diagnostics.json"), "w") as fdiag:
+        json.dump(
+            {
+                "schema_version": 1,
+                "n_epochs": len(diagnostics_per_epoch),
+                "fields": [f.lower() for f in config.fields],
+                "ctkr_k": ctkr_k,
+                "ctkr_margin": ctkr_margin,
+                "ctkr_weight": ctkr_weight,
+                "attn_iou_weight": attn_iou_weight,
+                "per_epoch": diagnostics_per_epoch,
+            },
+            fdiag, indent=2,
+        )
     return out_path
+
+
+def _summarise_diagnostics(
+    epoch_diag: dict[str, list[float]],
+) -> dict[str, float]:
+    """Collapse per-receipt CTKR / IoU traces to per-field scalar means."""
+    out: dict[str, float] = {}
+    for key, values in epoch_diag.items():
+        if not values:
+            continue
+        out[key.replace("ctkr_active::", "ctkr_active_fraction::")
+            .replace("iou::", "iou_per_field::")] = (
+            sum(values) / len(values)
+        )
+    return out

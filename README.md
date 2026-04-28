@@ -348,6 +348,10 @@ training runs reproduce bit-exact; set non-zero to opt into the fresh-train regi
 | `focus_company_enabled` | false | FOCUS-C | Add the positional company head (2× `Linear(d,1)`: score + y-bias + boilerplate-penalty). Requires `focus_enabled=True` and `priors_v4=True`. |
 | `focus_company_y_weight` | 1.0 | FOCUS-C | Coefficient on the `-y_norm` top-of-receipt bias in the FOCUS-C `final` logits. |
 | `focus_company_boilerplate_weight` | 1.0 | FOCUS-C | Coefficient on the `-is_company_boilerplate` penalty (pushes "SDN BHD" / "BERHAD" / "PTE LTD" suffix lines down). |
+| `focus_ctkr_k` | 4 | Bug 18 | Contrastive Top-K Repulsion fanout — covers the observed BRN+INV+TEL+GST confuser cluster per receipt. |
+| `focus_ctkr_margin` | 0.05 | Bug 18 | Margin between the most-attended non-gold line and the *weakest* gold line. Uniform softmax over 30 lines ≈ 0.033, so 0.05 is just above the no-info floor. |
+| `focus_ctkr_weight` | 1.0 | Bug 18 | λ for the CTKR term in the composite loss. The plain Σ-neg-mass term originally proposed in the parent prompt's step C is deleted, not stacked — the two push in the same direction but CTKR is sparse + adaptive while plain neg-mass is dense + constant. |
+| `negative_mass_weight` | 0.5 | Bug 18 | Back-compat alias for the deprecated plain Σ-neg-mass term. Active loss is the CTKR + soft-IoU composite; this knob is read by triage scripts for ablation comparisons only. |
 | `focus_synth_subtotal` | 0.0 | I | Per-receipt probability of injecting a synthetic `SUBTOTAL: RM xx.yy` line before the true TOTAL. 0.3–0.5 suggested. |
 | `assigner_ocr_noise` | 0.0 | F | Per-receipt probability of re-deriving priors from OCR-noised text (digit split, O↔0, trailing-zero drop). 0.2 suggested. |
 | `focus_hidden_dim` | 384 | G | Backbone width. Plan recommends 192 for fresh trains with B/C/E enabled (~1.4M params, better match for 500 receipts). |
