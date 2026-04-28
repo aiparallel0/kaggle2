@@ -12,7 +12,24 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Literal
+from typing import Literal, TypedDict
+
+
+class AddrPred(TypedDict):
+    """One address-span prediction from the FOCUS span-cohesion head.
+
+    ``i`` / ``j`` are the inclusive start / end region indices over the
+    detected line list (so the span is ``texts[i:j+1]``).  ``span_text``
+    is the joined region text for the predicted span.  ``confidence``
+    is the softmax probability of the argmax cell over the masked
+    flattened ``score[i, j]`` matrix; gate downstream consumers via
+    :attr:`ExpConfig.focus_confidence_floor`.
+    """
+
+    i: int
+    j: int
+    span_text: str
+    confidence: float
 
 
 @dataclass
@@ -375,4 +392,18 @@ class ExpConfig:
     # default; override via ``ExpConfig.extra["grid_factor"]`` for
     # CI-pinned reruns from a different region.
     carbon_grid_factor_kgco2e_per_kwh: float = 0.475
+    # FOCUS address-span head (PR-FOCUS).  Off by default so the headline
+    # checkpoints stay bit-exact.  When ``focus_enabled`` is True the
+    # ``AttentionAssigner`` instantiates a 3-projection ``_AddressSpanHead``
+    # over its post-encoder ``kv`` tensor and the trainer adds the
+    # span-IoU + boundary-CE term (weights below) on address-field
+    # receipts only.  ``focus_max_span`` caps the contiguous span length
+    # (8 covers >99 % of SROIE addresses; see ``_tier_a_clean``).
+    # ``focus_confidence_floor`` is the deployment gate consumers apply
+    # to ``AddrPred.confidence`` before accepting a predicted span.
+    focus_enabled: bool = False
+    focus_max_span: int = 8
+    focus_iou_weight: float = 1.0
+    focus_boundary_weight: float = 1.0
+    focus_confidence_floor: float = 0.10
     extra: dict[str, object] = field(default_factory=dict)
