@@ -30,7 +30,7 @@ import sys
 
 from core.config import load_config
 from data.sroie import download_sroie, load_or_create_split
-from models.pipeline_eval import eval_pipeline
+from models.eval_pipeline import eval_pipeline
 from models.rule_eval import eval_gtocr_rulebased
 
 log = logging.getLogger("kaggle2")
@@ -41,7 +41,7 @@ def main(argv: list[str] | None = None) -> int:
     logging.basicConfig(
         level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
-    config_path = (argv or sys.argv[1:] + ["config.json"])[0]
+    config_path = (argv or sys.argv[1:] + ["configs/default.json"])[0]
     config = load_config(config_path)
     data_path = download_sroie(config)
     data = load_or_create_split(config, data_path)

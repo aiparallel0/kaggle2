@@ -66,7 +66,7 @@ def _apply_total_normalizer(preds: list[Prediction], gts: list[Receipt]) -> tupl
     """Symmetric per-field normalisation (preds + GT) so token-F1 measures
     semantic match. Mirrors ``pipeline_eval._nt`` for DONUT/pipeline parity."""
     # Lazy import — keeps DONUT eval importable in torch-free CI.
-    from models.pipeline_normalize import (
+    from models.normalize import (
         normalize_address,
         normalize_company,
         normalize_date,

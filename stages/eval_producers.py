@@ -12,8 +12,8 @@ import logging
 from collections.abc import Iterable
 from pathlib import Path
 
-from core.metrics_errors import classify_miss
-from core.metrics_extended import summarise_extended
+from core.error_metrics import classify_miss
+from core.extended_metrics import summarise_extended
 from core.types import EvalBundle, Metrics, Prediction, Receipt
 
 log = logging.getLogger("kaggle2")

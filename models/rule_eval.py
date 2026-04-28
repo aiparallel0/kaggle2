@@ -19,12 +19,12 @@ from core.metrics import compute_metrics
 from core.types import EvalBundle, ExpConfig, Field, Metrics, Prediction, Receipt
 from data.sroie_crops import _parse_box_file
 from models.donut_eval import normalize_total
-from models.pipeline_normalize import (
+from models.normalize import (
     normalize_address,
     normalize_company,
     normalize_date,
 )
-from models.rule_based import rule_based_assign
+from models.rule_regex import rule_based_assign
 
 
 def _receipt_to_regions(
@@ -128,7 +128,7 @@ def combined_from_rulebased(
         "epochs_donut": config.epochs_donut,
         "epochs_trocr": config.epochs_trocr,
         "epochs_yolo": config.epochs_yolo,
-        "epochs_assigner": config.epochs_assigner,
+        "epochs_assigner": config.epochs_focus,
         "batch_size": config.batch_size,
         "lr": config.lr,
         "lr_encoder": config.lr,
@@ -136,7 +136,7 @@ def combined_from_rulebased(
         "precision": config.precision,
         "label_smoothing": config.label_smoothing,
         "warmup_steps": config.warmup_steps,
-        "yolo_img_size": config.yolo_img_size,
+        "yolo_img_size": config.yolo_image_size,
         "img_w": config.image_size[0],
         "img_h": config.image_size[1],
         "kd_attn_weight": config.kd_attn_weight,

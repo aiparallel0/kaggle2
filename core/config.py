@@ -21,8 +21,8 @@ from core.types import ExpConfig
 
 _REQUIRED = [
     "seed", "base_model", "trocr_model", "yolo_model", "image_size",
-    "yolo_img_size", "max_length", "trocr_max_len", "epochs_donut",
-    "epochs_yolo", "epochs_trocr", "epochs_assigner", "batch_size",
+    "yolo_image_size", "max_length", "trocr_max_len", "epochs_donut",
+    "epochs_yolo", "epochs_trocr", "epochs_focus", "batch_size",
     "grad_accum", "lr", "lr_decoder", "warmup_steps", "weight_decay",
     "label_smoothing", "precision", "patience", "max_grad_norm",
     "fields", "new_tokens", "sroie_url", "data_dir", "output_dir",
@@ -66,16 +66,16 @@ def load_config(path: str, defaults: dict[str, Any] | None = None) -> ExpConfig:
     _optional = {
         "yolo_conf", "trocr_max_new_tokens", "max_regions_per_image",
         "warmup_ratio", "lr_scheduler_type", "gradient_checkpointing",
-        "num_beams", "expected_f1_warn", "skip_donut",
-        "assigner_hidden", "assigner_n_layers_level2",
+        "num_beams", "f1_warn_threshold", "skip_donut",
+        "focus_hidden_dim", "focus_n_layers_level2",
         "emit_hidden", "emit_vocab_size", "emit_max_len", "emit_beam_width",
         "kd_attn_weight", "kd_logits_weight",
-        "assigner_patience", "assigner_min_delta",
-        "weight_decay_assigner", "dropout_assigner", "priors_v2",
+        "focus_patience", "focus_min_delta",
+        "weight_decay_focus", "dropout_focus", "priors_v2",
         "seeds", "n_trials", "bootstrap_n_iter", "bootstrap_ci_level",
         "address_accept_fraction", "regex_router", "text_pool_learned",
         "total_confidence_threshold",
-        "lr_assigner", "warmup_ratio_assigner",
+        "lr_focus", "warmup_ratio_focus",
         "bug_flags",  # P1 — 13-bug ablation gating dict (now 17 with PR-C)
         "rag_enabled", "rag_k",  # P2 — retrieval-augmented DONUT
         "gat_enabled",  # P3 — graph-attention assigner opt-in
@@ -146,7 +146,7 @@ def load_config(path: str, defaults: dict[str, Any] | None = None) -> ExpConfig:
     # --paper-variant can flip the choice without editing config.json.
     paper_variant = (
         os.environ.get("KAGGLE2_PAPER_VARIANT")
-        or str(raw.get("paper_variant", "advanced"))
+        or str(raw.get("paper_variant", "focus"))
     )
     template_path = str(raw["paper_template"])
     candidate = Path(template_path).with_name(f"template_{paper_variant}.tex")
@@ -164,11 +164,11 @@ def load_config(path: str, defaults: dict[str, Any] | None = None) -> ExpConfig:
         base_model=str(raw["base_model"]), trocr_model=str(raw["trocr_model"]),
         yolo_model=str(raw["yolo_model"]),
         image_size=(int(img[0]), int(img[1])),
-        yolo_img_size=int(raw["yolo_img_size"]),
+        yolo_image_size=int(raw["yolo_image_size"]),
         max_length=int(raw["max_length"]), trocr_max_len=int(raw["trocr_max_len"]),
         epochs_donut=int(raw["epochs_donut"]), epochs_yolo=int(raw["epochs_yolo"]),
         epochs_trocr=int(raw["epochs_trocr"]),
-        epochs_assigner=int(raw["epochs_assigner"]),
+        epochs_focus=int(raw["epochs_focus"]),
         batch_size=int(raw["batch_size"]), grad_accum=int(raw["grad_accum"]),
         lr=float(raw["lr"]), lr_decoder=float(raw["lr_decoder"]),
         warmup_steps=int(raw["warmup_steps"]),
@@ -187,20 +187,20 @@ def load_config(path: str, defaults: dict[str, Any] | None = None) -> ExpConfig:
         lr_scheduler_type=str(raw.get("lr_scheduler_type", "cosine")),
         gradient_checkpointing=bool(raw.get("gradient_checkpointing", True)),
         num_beams=int(raw.get("num_beams", 4)),
-        expected_f1_warn=float(raw.get("expected_f1_warn", 0.75)),
+        f1_warn_threshold=float(raw.get("f1_warn_threshold", 0.75)),
         skip_donut=bool(raw.get("skip_donut", False)),
-        assigner_hidden=int(raw.get("assigner_hidden", 384)),
-        assigner_n_layers_level2=int(raw.get("assigner_n_layers_level2", 6)),
+        focus_hidden_dim=int(raw.get("focus_hidden_dim", 384)),
+        focus_n_layers_level2=int(raw.get("focus_n_layers_level2", 6)),
         emit_hidden=int(raw.get("emit_hidden", 128)),
         emit_vocab_size=int(raw.get("emit_vocab_size", 259)),
         emit_max_len=int(raw.get("emit_max_len", 96)),
         emit_beam_width=int(raw.get("emit_beam_width", 4)),
         kd_attn_weight=float(raw.get("kd_attn_weight", 0.0)),
         kd_logits_weight=float(raw.get("kd_logits_weight", 0.0)),
-        assigner_patience=int(raw.get("assigner_patience", 7)),
-        assigner_min_delta=float(raw.get("assigner_min_delta", 0.005)),
-        weight_decay_assigner=float(raw.get("weight_decay_assigner", 5e-4)),
-        dropout_assigner=float(raw.get("dropout_assigner", 0.2)),
+        focus_patience=int(raw.get("focus_patience", 7)),
+        focus_min_delta=float(raw.get("focus_min_delta", 0.005)),
+        weight_decay_focus=float(raw.get("weight_decay_focus", 5e-4)),
+        dropout_focus=float(raw.get("dropout_focus", 0.2)),
         priors_v2=bool(raw.get("priors_v2", True)),
         seeds=seeds_list, n_trials=n_trials,
         bootstrap_n_iter=int(raw.get("bootstrap_n_iter", 1000)),
@@ -209,8 +209,8 @@ def load_config(path: str, defaults: dict[str, Any] | None = None) -> ExpConfig:
         regex_router=bool(raw.get("regex_router", True)),
         text_pool_learned=bool(raw.get("text_pool_learned", False)),
         total_confidence_threshold=float(raw.get("total_confidence_threshold", 0.55)),
-        lr_assigner=float(raw.get("lr_assigner", 1e-3)),
-        warmup_ratio_assigner=float(raw.get("warmup_ratio_assigner", 0.0)),
+        lr_focus=float(raw.get("lr_focus", 1e-3)),
+        warmup_ratio_focus=float(raw.get("warmup_ratio_focus", 0.0)),
         bug_flags=bug_flags,
         rag_enabled=bool(raw.get("rag_enabled", False)),
         rag_k=int(raw.get("rag_k", 3)),
@@ -235,7 +235,7 @@ def load_config(path: str, defaults: dict[str, Any] | None = None) -> ExpConfig:
         canonical_sroie_hf_revision=str(raw.get(
             "canonical_sroie_hf_revision", "main",
         )),
-        paper_variant=str(raw.get("paper_variant", "advanced")),
+        paper_variant=str(raw.get("paper_variant", "focus")),
         layoutlmv3_enabled=bool(raw.get("layoutlmv3_enabled", False)),
         layoutlmv3_model=str(raw.get("layoutlmv3_model", "microsoft/layoutlmv3-base")),
         measure_latency=bool(raw.get("measure_latency", False)),

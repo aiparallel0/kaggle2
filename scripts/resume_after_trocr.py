@@ -28,7 +28,7 @@ from data.sroie import (  # noqa: E402
     extract_receipt_regions,
     load_or_create_split,
 )
-from models.assigner_train import train_assigner  # noqa: E402
+from models.focus_train import train_assigner  # noqa: E402
 from scripts.resume_cleanup import cleanup_disk, print_disk  # noqa: E402
 from scripts.resume_promote import promote_trocr  # noqa: E402
 
@@ -62,13 +62,13 @@ def _remaining_train_steps(config: ExpConfig) -> None:
         log.info("Assigner → %s", out)
 
     meta_path = Path(config.output_dir) / "pipeline_meta.json"
-    meta_path.write_text(json.dumps({"yolo_img_size": config.yolo_img_size}))
+    meta_path.write_text(json.dumps({"yolo_image_size": config.yolo_image_size}))
     log.info("pipeline_meta.json → %s", meta_path)
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--config", default="config.json")
+    parser.add_argument("--config", default="configs/default.json")
     parser.add_argument("--log-level", default="INFO")
     parser.add_argument(
         "--skip-cleanup", action="store_true",

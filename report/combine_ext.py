@@ -220,7 +220,7 @@ def _introspect_assigner_ckpt(
     paper stage running on torch-less CI boxes without raising.
     """
     try:
-        from models.attention_assign import _load_assigner
+        from models.focus_inference import _load_assigner
     except Exception:  # noqa: BLE001 — torch import inside attention_assign
         return None
     candidates = [

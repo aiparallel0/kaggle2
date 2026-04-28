@@ -27,7 +27,7 @@
 #
 # Environment knobs:
 #   PYTHON         python interpreter (default: python)
-#   CONFIG         config.json path (default: config.json)
+#   CONFIG         config path (default: configs/default.json)
 #   SKIP_CLEANUP=1 keep the DONUT checkpoint-* dirs and yolo_data/ (fast
 #                  re-run after the first cleanup already freed disk).
 
@@ -35,7 +35,7 @@ set -euo pipefail
 if [ "${VERBOSE:-0}" = "1" ]; then set -x; fi
 
 PYTHON="${PYTHON:-python}"
-CONFIG="${CONFIG:-config.json}"
+CONFIG="${CONFIG:-configs/default.json}"
 SKIP_CLEANUP="${SKIP_CLEANUP:-0}"
 
 log() { printf '\033[1;36m[resume]\033[0m %s\n' "$*"; }

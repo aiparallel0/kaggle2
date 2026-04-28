@@ -328,7 +328,7 @@ def ensure_canonical_test_set(
     if primary is not None:
         adapter, extract_dir = _RRC_ADAPTER, primary
     else:
-        from data.sroie_canonical_hf import try_huggingface
+        from data.sroie_hf import try_huggingface
         hf = try_huggingface(
             workdir,
             repo_id=config.canonical_sroie_hf_repo,

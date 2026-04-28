@@ -24,8 +24,8 @@ The repo bifurcates into two **paper variants** that share one codebase:
 
 | variant     | test set                                               | arms                                                | leaderboard-comparable | template                       |
 |-------------|--------------------------------------------------------|-----------------------------------------------------|------------------------|--------------------------------|
-| `advanced`  | 347 official ICDAR-2019 Task-3 (auto-downloaded)       | DONUT vs YOLO+TrOCR+**Attention assigner**           | **yes**                | `report/template_advanced.tex` |
-| `basic`     | 63-image internal (from 500/63/63 of 626 train)        | DONUT vs YOLO+TrOCR+**regex** vs **GT-OCR+regex**    | no                     | `report/template_basic.tex`    |
+| `focus`  | 347 official ICDAR-2019 Task-3 (auto-downloaded)       | DONUT vs YOLO+TrOCR+**Attention assigner**           | **yes**                | `report/template_focus.tex` |
+| `baseline`     | 63-image internal (from 500/63/63 of 626 train)        | DONUT vs YOLO+TrOCR+**regex** vs **GT-OCR+regex**    | no                     | `report/template_baseline.tex`    |
 
 The advanced variant is the **default**.  `data/sroie_canonical.py`
 sha256-verifies and extracts the 347 Task-3 images on first run
@@ -39,14 +39,14 @@ Overleaf upload instructions.
 | level            | threshold                           | behaviour |
 |------------------|-------------------------------------|-----------|
 | hard floor       | DONUT < 0.50 / pipeline == 0.0      | raises `EvalError` (indicates a bug, not underperformance) |
-| soft expectation | `config.expected_f1_warn` (def 0.75) | logs a WARNING, does not fail the run |
+| soft expectation | `config.f1_warn_threshold` (def 0.75) | logs a WARNING, does not fail the run |
 
-Set `KAGGLE2_VALIDATE_F1_WARN_ONLY=1` to downgrade the DONUT hard floor
+Set `KAGGLE2_F1_WARN_ONLY=1` to downgrade the DONUT hard floor
 to a `WARNING` so forensic artifacts (`donut_eval_diag.json`,
 `combined_metrics.json`) are written even when F1 < 0.50:
 
 ```bash
-KAGGLE2_VALIDATE_F1_WARN_ONLY=1 python main.py --stage eval
+KAGGLE2_F1_WARN_ONLY=1 python main.py --stage eval
 ```
 
 For a targeted one-shot DONUT re-eval that always terminates and writes
@@ -57,7 +57,7 @@ For a targeted one-shot DONUT re-eval that always terminates and writes
 python -m scripts.donut_eval_only
 
 # target a specific run directory
-python -m scripts.donut_eval_only config.json --run-dir runs/<run_id>
+python -m scripts.donut_eval_only configs/default.json --run-dir runs/<run_id>
 
 # inspect the diag artifact
 jq '.lm_head_out_features, .tokenizer_vocab_size, .decoder_start_token_id' \
@@ -84,7 +84,7 @@ regex heuristics) to quantify the assigner's contribution.
 core/         config, types, errors, shared metrics, seed_everything
 data/         SROIE download, split (persisted), crop extraction
 models/       donut_train, donut_eval, yolo_train, trocr_train,
-              assigner_train, attention_assign, pipeline_eval
+              focus_train, focus_inference, eval_pipeline
 report/       LaTeX template injection, references
 scripts/      vastai_bootstrap.sh — one-shot install+check
 main.py       orchestrator (--stage train | eval | paper | all)
@@ -222,7 +222,7 @@ runs/<run_id>/                          # one folder per run
 │   ├── git_sha.txt
 │   ├── pip_freeze.txt
 │   ├── nvidia_smi.txt
-│   ├── config_snapshot.json            # exact config.json used
+│   ├── config_snapshot.json            # exact configs/default.json used
 │   └── hostinfo.json                   # CPU, RAM, GPU model, driver, CUDA
 ├── figures/                            # every PDF the paper cites
 ├── paper/
@@ -272,13 +272,13 @@ make check         # ruff + mypy --strict + import smoke
 make test          # pytest (no GPU needed)
 python main.py --stage train
 python main.py --stage eval
-python main.py --stage eval_gtocr_rulebased  # real F1 on GT-OCR stream, no HF needed
+python main.py --stage eval_rule_gtocr  # real F1 on GT-OCR stream, no HF needed
 python main.py --stage paper
 ```
 
 ### Offline / no-HF eval path
 
-`--stage eval_gtocr_rulebased` runs the rule-based assignment head over
+`--stage eval_rule_gtocr` runs the rule-based assignment head over
 SROIE's GT-OCR box-file text (bypassing YOLO+TrOCR by feeding ground-truth
 bboxes/text directly) and writes real F1 / NED / EM into
 `results/gtocr_rulebased_metrics.json` plus a paper-ready
@@ -287,7 +287,7 @@ and tagged `artifact_mode: gtocr_rulebased_only`; the paper's results
 table honestly reflects that). This path needs only SROIE (GitHub) —
 no Hugging Face Hub access, no GPU, ~1 second on CPU.
 
-The old `--stage eval_rulebased_gold` name is kept as a backward-compatible
+The old `--stage eval_rule_gtocr` name is kept as a backward-compatible
 alias and invokes the same stage.
 
 The split (500 / 63 / 63) is persisted to `results/split.json` on the
@@ -310,7 +310,7 @@ docker run --gpus all -v $(pwd)/results:/app/results kaggle2
 
 ## Configuration
 
-All hyperparameters live in `config.json`. F1-affecting knobs:
+All hyperparameters live in `configs/default.json`. F1-affecting knobs:
 
 | Parameter | Default | Effect on expected F1 |
 |---|---|---|
@@ -322,23 +322,23 @@ All hyperparameters live in `config.json`. F1-affecting knobs:
 | `gradient_checkpointing` | true | Lets batch 8 × 1280 × 960 fit in 24 GB. |
 | `patience` | 3 | EarlyStopping on plateau of eval F1. |
 | `precision` | bf16 | bf16 on Ampere+; fp16 with grad-clip otherwise (Bug 4). |
-| `yolo_img_size` | 1024 | MUST match training and inference (Bug 5). |
+| `yolo_image_size` | 1024 | MUST match training and inference (Bug 5). |
 | `epochs_trocr` | 12 | Floor of 5 enforced in config.py (Bug 6). |
-| `expected_f1_warn` | 0.75 | Soft WARN threshold (non-fatal). |
+| `f1_warn_threshold` | 0.75 | Soft WARN threshold (non-fatal). |
 | `canonical_sroie_enabled` | true | When true, `data.sroie_canonical.ensure_canonical_test_set` auto-downloads the official ICDAR-2019 SROIE Task-3 test set (347 images + KIE GT) from `rrc.cvc.uab.es` (sha256-pinned docTR mirror as fallback) and replaces the 500/63/63 internal test split with it.  Numbers become directly comparable to the public SROIE leaderboard.  Set `false` for the basic 500/63/63 study. |
 | `canonical_sroie_test_url` | `https://rrc.cvc.uab.es/downloads/SROIE_test_images_task_3.zip` | Primary download URL for the 347 test images. |
 | `canonical_sroie_gt_url` | `https://rrc.cvc.uab.es/downloads/SROIE_test_gt_task_3.zip` | Primary download URL for the Task-3 GT entities. |
 | `canonical_sroie_mirror_url` | docTR | Fallback mirror used when the RRC primary fails (sha256 verified before extraction). |
-| `paper_variant` | `advanced` | `advanced` → `report/template_advanced.tex` (DONUT vs YOLO+TrOCR+Assigner on 626 train + 347 canonical test); `basic` → `report/template_basic.tex` (DONUT vs YOLO+TrOCR+regex vs GT-OCR+regex on 500/63/63 internal split).  CLI override: `--paper-variant {advanced,basic}` — flips `canonical_sroie_enabled` to match. |
+| `paper_variant` | `focus` | `focus` → `report/template_focus.tex` (DONUT vs YOLO+TrOCR+Assigner on 626 train + 347 canonical test); `baseline` → `report/template_baseline.tex` (DONUT vs YOLO+TrOCR+regex vs GT-OCR+regex on 500/63/63 internal split).  CLI override: `--paper-variant {focus,baseline}` — flips `canonical_sroie_enabled` to match. |
 
 ### Assigner-fix knobs (strategies B / C / E / F / G / I from `docs/assigner_fix_plan.md`)
 
-Added under `extra` in `config.json`. All default to `0.0` (disabled) so existing
+Added under `extra` in `configs/default.json`. All default to `0.0` (disabled) so existing
 training runs reproduce bit-exact; set non-zero to opt into the fresh-train regime.
 
 | Parameter | Default | Strategy | Effect |
 |---|---|---|---|
-| `assigner_hardneg_weight` | 0.0 | B | λ for the listwise hinge over SUBTOTAL/CASH/CHANGE/TAX/header distractors. 0.5 is a reasonable starting point. |
+| `focus_hardneg_weight` | 0.0 | B | λ for the listwise hinge over SUBTOTAL/CASH/CHANGE/TAX/header distractors. 0.5 is a reasonable starting point. |
 | `assigner_kd_weight` | 0.0 | C | λ for KL-divergence KD from the rule-based teacher (`_score_money` softmax). 0.1 is a reasonable starting point. |
 | `priors_v3` | false | E | Upgrade priors from 9-d to 14-d (adds `is_subtotal / cash / change / tax / rounding` bits). Requires a fresh train; v2 checkpoints still load. |
 | `priors_v4` | false | FOCUS | Upgrade priors from 14-d to 20-d (adds 6 FOCUS-T/C dims: `is_subtotal_kw, is_tax_kw, is_company_boilerplate, line_y_normalised, money_value_normalised, arithmetic_witness_self`). Required by `focus_total_enabled` / `focus_company_enabled`. Requires a fresh assigner train. |
@@ -348,42 +348,18 @@ training runs reproduce bit-exact; set non-zero to opt into the fresh-train regi
 | `focus_company_enabled` | false | FOCUS-C | Add the positional company head (2× `Linear(d,1)`: score + y-bias + boilerplate-penalty). Requires `focus_enabled=True` and `priors_v4=True`. |
 | `focus_company_y_weight` | 1.0 | FOCUS-C | Coefficient on the `-y_norm` top-of-receipt bias in the FOCUS-C `final` logits. |
 | `focus_company_boilerplate_weight` | 1.0 | FOCUS-C | Coefficient on the `-is_company_boilerplate` penalty (pushes "SDN BHD" / "BERHAD" / "PTE LTD" suffix lines down). |
-| `assigner_synth_subtotal` | 0.0 | I | Per-receipt probability of injecting a synthetic `SUBTOTAL: RM xx.yy` line before the true TOTAL. 0.3–0.5 suggested. |
+| `focus_synth_subtotal` | 0.0 | I | Per-receipt probability of injecting a synthetic `SUBTOTAL: RM xx.yy` line before the true TOTAL. 0.3–0.5 suggested. |
 | `assigner_ocr_noise` | 0.0 | F | Per-receipt probability of re-deriving priors from OCR-noised text (digit split, O↔0, trailing-zero drop). 0.2 suggested. |
-| `assigner_hidden` | 384 | G | Backbone width. Plan recommends 192 for fresh trains with B/C/E enabled (~1.4M params, better match for 500 receipts). |
-| `assigner_n_layers_level2` | 6 | G | Backbone depth. Plan recommends 3 for fresh trains. |
+| `focus_hidden_dim` | 384 | G | Backbone width. Plan recommends 192 for fresh trains with B/C/E enabled (~1.4M params, better match for 500 receipts). |
+| `focus_n_layers_level2` | 6 | G | Backbone depth. Plan recommends 3 for fresh trains. |
 
 Inference-side strategies L (additive attn×rule ensemble) and H (confidence-gated
 delegation to rule-based) are always on — they need no retrain and no checkpoint
-change; see `models/pipeline_consensus.py`.
+change; see `models/consensus.py`.
 
-## F1-destroying bugs (all thirteen guarded in code)
+## F1-destroying bugs
 
- 1. lm_head weight deduplication (safetensors drops tied weights)
- 2. Wrong decoder_start_token_id (string-form tokeniser)
- 3. token2json list return (CORD-style multi-page output); merge prefers
-    longest non-empty value per field
- 4. fp16 gradient overflow (bf16 on Ampere+, else fp16 + max_grad_norm)
- 5. YOLO imgsz mismatch (inference default ≠ training size;
-    train/eval parity asserted via `pipeline_meta.json`)
- 6. TrOCR undertrained (<5 epochs produces all-empty outputs)
- 7. Val == Test leakage (physically separate splits, persisted to disk)
- 8. YOLO project path resolution (ultralytics ≥8.3 relative-path bug)
- 9. Stale `generation_config` on reload (eval_F1 ≡ 0 with healthy
-    eval_loss; `Seq2SeqTrainer(predict_with_generate=True)` reads the
-    snapshot, not live overrides on `model.config`); guard is now
-    symmetric across DONUT and TrOCR trainers via
-    `models/_gen_config.py::_persist_generation_config`, with a
-    disk-assertion that raises `TrainError` on any mismatch
-10. `tie_word_embeddings=False` subtlety (post-resize `lm_head` must
-    be re-initialised explicitly)
-11. `num_items_in_batch` kwargs leak into `SwinModel.forward`
-    (transformers ≥4.48); guarded via `accepts_loss_kwargs=False`
-12. Outer `<s_sroie>` wrapper flattening in `token2json` (per-field
-    F1 = 0 with healthy eval_loss); `_flatten_token2json` recursively
-    unwraps the root tag
-13. Warmup-steps-vs-ratio precedence in HF `Trainer`; we force
-    `warmup_steps=0` when `warmup_ratio > 0`
+See [docs/bugs.md](docs/bugs.md) for the full Bug 1..14 ledger and code guards.
 
 ## Testing
 

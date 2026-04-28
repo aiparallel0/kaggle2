@@ -39,7 +39,7 @@ fi
 # sync with `git diff --name-only origin/main...HEAD` whenever the branch adds
 # new files — this is the single source of truth for what the sync copies.
 FILES=(
-    config.json
+    configs/default.json
     core/config.py
     core/types.py
     models/assigner_train.py

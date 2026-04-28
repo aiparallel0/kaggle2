@@ -7,7 +7,7 @@ Role: queries a multimodal LLM for SROIE 4-field extraction; results
     are content-hash-keyed in ``ExpConfig.llm_eval_cache_path`` so
     reruns are deterministic and zero-cost.  API keys are sourced
     from ``.env`` only and never logged.  Mirrors the cache pattern
-    in :mod:`models.foundation_oracle`.
+    in :mod:`models.oracle`.
 
 Returns zeroed :class:`Metrics` when the gating flag is False or the
 provider SDK is not installed.
