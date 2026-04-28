@@ -64,7 +64,8 @@ _FIELD_KEY_VARIANTS: dict[str, tuple[str, ...]] = {
 
 # Guard against missing huggingface_hub at import time (mypy-strict safe).
 try:
-    from huggingface_hub import snapshot_download as _snapshot_download
+    from huggingface_hub import snapshot_download as _hf_snapshot_download
+    _snapshot_download: Any = _hf_snapshot_download
     _HF_AVAILABLE = True
 except ImportError:  # pragma: no cover
     _snapshot_download = None  # guarded by _HF_AVAILABLE
