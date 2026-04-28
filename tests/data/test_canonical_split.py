@@ -96,7 +96,12 @@ def test_canonical_idempotent_when_already_extracted(tmp_path: Path) -> None:
 
 def test_paper_variant_advanced_picks_advanced_template(tmp_path: Path) -> None:
     """paper_variant=advanced selects template_focus.tex when present."""
-    cfg_path = _write_min_config(tmp_path, paper_variant="focus")
+    # Bug 18 — paper_variant='focus' now requires the FOCUS sub-flags.
+    cfg_path = _write_min_config(
+        tmp_path, paper_variant="focus",
+        focus_enabled=True, focus_total_enabled=True,
+        focus_company_enabled=True, priors_v4=True, priors_v3=True,
+    )
     os.environ.pop("KAGGLE2_PAPER_VARIANT", None)
     config = load_config(str(cfg_path))
     assert config.paper_template.endswith("template_focus.tex"), (
@@ -152,6 +157,12 @@ def test_canonical_config_keys_round_trip(tmp_path: Path) -> None:
         canonical_sroie_hf_repo="Metric-AI/icdar_sroie",
         canonical_sroie_hf_revision="main",
         paper_variant="focus",
+        # Bug 18 — paper_variant='focus' requires FOCUS sub-flags + v4.
+        focus_enabled=True,
+        focus_total_enabled=True,
+        focus_company_enabled=True,
+        priors_v4=True,
+        priors_v3=True,
     )
     os.environ.pop("KAGGLE2_PAPER_VARIANT", None)
     config = load_config(str(cfg_path))

@@ -81,3 +81,48 @@ canonical-347 F1 in early runs. The loader in `data/sroie_canonical.py`
 now validates `entities` is a JSON object with the four KIE field keys
 (`company`, `date`, `address`, `total`) before accepting a record,
 raising `DataError` on shape mismatch.
+
+## Bug 18: One-sided MIL pos-mass loss + disabled FOCUS flags
+
+**Mechanism.** The legacy assigner loss is
+``L_f = -log Σ_{i∈T_f} softmax(A)_{f,i}``. It rewards mass on positives
+but never penalises mass on boilerplate, so the assigner over-merges
+``INV NO`` / ``CASHIER`` / ``TEL`` / ``BRN`` / ``GST`` / ``TAX INVOICE``
+into address, and ``SUBTOTAL`` / ``TAX`` / ``CHANGE`` / ``ROUNDING``
+into total. PRs #106 (FOCUS-A span head) and #107 (FOCUS-T/C +
+priors_v4) shipped the architectural fix as opt-in, but
+``configs/default.json`` left every ``focus_*`` flag and ``priors_v4``
+at False — the shipped run never invoked the new heads. Two failure
+modes stacked: (a) the loss had no "stop-here" signal, (b) the
+configured paper variant was ``focus`` but the architecture was off.
+
+**F1 impact.** Address P=0.386, R=0.613, F1=0.708, EM=0.029
+(P≪R is the over-merge signature). Total F1=0.703, EM=0.703.
+Pipeline F1 sits below DONUT (0.818).
+
+**Guard.** Three guards, all enforced in code:
+1. `core/config.py::_validate_focus_flags` raises
+   :class:`core.errors.ConfigError` at load time when
+   ``paper_variant=='focus'`` and any ``focus_*`` sub-flag is False, or
+   when ``focus_total_enabled`` and not ``priors_v4``, or when
+   ``focus_enabled`` and ``n_priors < 20``. This is the AGENTS.md
+   "no silent placeholders" invariant applied to architecture flags.
+2. `models/assigner_loss.py::composite_field_loss` replaces the
+   one-sided NLL with ``L_pos + λ_ctkr·L_ctkr + λ_iou·L_iou_attn``.
+   CTKR is contrastive top-K repulsion against the *weakest* gold line
+   — sparse, adaptive, and margin-referenced to ``a_min``, so long
+   addresses with thin per-line mass still get a usable margin and
+   short ones get a tighter one. Soft-IoU on the row-max-normalised
+   attention is the differentiable analogue of token-F1 at line-mask
+   granularity, closing the loss/metric gap that plain pos-mass NLL
+   has by construction. Priors_v3 distractor bits act as a tie-breaker
+   inside top-K only — never as a stacked penalty.
+3. `models/postprocess_address.py::normalize_address_focus` is applied
+   symmetrically to pred AND gold inside `eval_pipeline._nt`,
+   collapsing whitespace, stripping ``,.:;`` from non-numeric tokens
+   (postcodes / phones / lot numbers preserved), and casefolding so
+   comma/period drift does not destroy F1 and EM on receipts whose
+   line set is already correct.
+
+The guard is `bug_flags["bug_18"]`; flipping it False is the
+documented escape hatch for replay runs that need the legacy loss.
