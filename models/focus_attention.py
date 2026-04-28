@@ -425,13 +425,30 @@ class AttentionAssigner(_NN_BASE):  # type: ignore[misc]
         ``company`` while the cross-attention output stays canonical for
         ``date`` and ``address``.
         """
+        logits, attn_w, _kv = self.forward_with_kv(
+            text_feats, bbox_feats, text_priors,
+        )
+        return logits, attn_w
+
+    def forward_with_kv(
+        self, text_feats: Tensor, bbox_feats: Tensor,
+        text_priors: Tensor | None = None,
+    ) -> tuple[Tensor, Tensor, Tensor]:
+        """Sibling of :meth:`forward` that also returns the post-encoder ``kv``.
+
+        Used by :func:`models.focus_pipeline._assign_learned_with_attn`
+        (PR #113 / H1 fix) so the address branch can feed the trained
+        FOCUS-A :meth:`address_span` head without re-encoding.  Output
+        ``logits`` and ``attn_w`` are bit-identical to :meth:`forward`;
+        ``kv`` has shape ``(B, N, hidden_dim)``.
+        """
         kv = self._encode_kv(text_feats, bbox_feats, text_priors)
         q = self.field_queries.unsqueeze(0).expand(kv.size(0), -1, -1)
         attn_out, attn_w = self.cross_attn(q, kv, kv)
         attn_out = self.cross_norm(attn_out + q)
         logits = self.classifier(attn_out).squeeze(-1)
         attn_w = self._maybe_focus_override(kv, attn_w, text_priors)
-        return logits, attn_w
+        return logits, attn_w, kv
 
     def _maybe_focus_override(
         self, kv: Tensor, attn_w: Tensor, text_priors: Tensor | None,

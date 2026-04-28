@@ -81,6 +81,13 @@ class AssignerPolicy:
     address_score_line_count_w: float = 0.25
     address_score_postcode_w: float = 0.05
     address_score_money_penalty: float = 0.10
+    # PR #113 / H1 — FOCUS-A address-span dispatch gate.  Default 0.0
+    # keeps callers that omit the knob bit-exact (legacy threshold-band
+    # path), but ``configs/default.json`` sets ``focus_confidence_floor``
+    # on :class:`ExpConfig` to 0.10 so eval runs gate the trained head
+    # at the deployment threshold.  Used by :func:`_assign_learned_with_attn`
+    # to decide when to fall back to ``_legacy_address_pick``.
+    focus_confidence_floor: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -310,6 +317,33 @@ def _confidence_gate_total(
     return pick
 
 
+def _legacy_address_pick(
+    attn_row: torch.Tensor, texts: list[str],
+    bboxes: list[list[float]], used: set[int], frac: float,
+) -> tuple[list[int], str]:
+    """Legacy threshold-band → :func:`enforce_address_contiguity` → join.
+
+    Extracted as a private helper (PR #113 / H1) so the FOCUS-A
+    :meth:`AttentionAssigner.address_span` dispatch in
+    :func:`_assign_learned_with_attn` can fall back to this exact chain
+    when the span head is absent or abstains.  Returns the picked
+    indices (top→bottom by ``bboxes[i][1]``) and the joined text.
+    """
+    max_w = float(attn_row.max().item())
+    if max_w <= 0:
+        return [], ""
+    picks = [
+        i for i in range(attn_row.shape[0])
+        if i not in used and float(attn_row[i].item()) >= frac * max_w
+    ]
+    if not picks:
+        return [], ""
+    picks.sort(key=lambda i: bboxes[i][1])
+    picks = enforce_address_contiguity(picks, bboxes)
+    value = " ".join(texts[i].strip() for i in picks if texts[i].strip())
+    return picks, value
+
+
 def _assign_learned(
     assigner: AttentionAssigner, texts: list[str],
     feats: list[torch.Tensor], bboxes: list[list[float]],
@@ -329,14 +363,26 @@ def _assign_learned_with_attn(
     address_accept_fraction: float | None = None,
     regex_router: bool = True,
     total_confidence_threshold: float = 0.0,
+    focus_confidence_floor: float = 0.0,
 ) -> tuple[dict[str, str], torch.Tensor | None]:
     """Field-assign and return (F, N) cross-attention for fig_attn_heatmap.
 
-    Multi-line fields (address) pick all regions with attn ≥
-    ``address_accept_fraction`` × max (Change B, default 0.5 via
-    ``_MULTI_LINE_FRACTION``) then run through ``enforce_address_contiguity``
-    so diffuse-head picks cannot glue phone/GST/tax lines to the
-    address.  Regex-deterministic fields (date/total) are resolved via
+    Multi-line fields (address) are dispatched in two layers (PR #113
+    / H1):
+
+    * If the assigner carries a trained FOCUS-A span head
+      (``assigner._span_head is not None``), call
+      :meth:`AttentionAssigner.address_span` over the per-receipt
+      post-encoder ``kv`` slice and accept its prediction when
+      ``j >= i`` and ``confidence >= focus_confidence_floor``.  This
+      crops the over-prediction band that drives address P down on
+      diffuse-head receipts.
+    * Otherwise (or when the span head abstains), fall back to the
+      legacy threshold-band → :func:`enforce_address_contiguity`
+      chain via :func:`_legacy_address_pick` so ``focus_enabled=False``
+      runs reproduce bit-for-bit.
+
+    Regex-deterministic fields (date/total) are resolved via
     :func:`_route_regex_field` first when ``regex_router`` is True
     (Change A); attention is the fallback.  When
     ``total_confidence_threshold > 0`` the attention fallback for
@@ -352,7 +398,15 @@ def _assign_learned_with_attn(
     priors = torch.tensor(
         prior_list, dtype=torch.float32,
     ).unsqueeze(0).to(device)
-    _logits, attn_w = assigner(tf, bf, priors)
+    # PR #113 / H1 — only request ``kv`` when the FOCUS-A span head is
+    # present; the no-span path stays bit-identical to the legacy
+    # ``assigner(...)`` call.
+    kv: torch.Tensor | None
+    if assigner._span_head is not None:
+        _logits, attn_w, kv = assigner.forward_with_kv(tf, bf, priors)
+    else:
+        _logits, attn_w = assigner(tf, bf, priors)
+        kv = None
     attn_sample = attn_w[0].detach().cpu()  # (F, N), kept for the sampler
     used: set[int] = set()
     out: dict[str, str] = {}
@@ -378,23 +432,30 @@ def _assign_learned_with_attn(
         for u in used:
             w[u] = -1e9
         if name in _MULTI_LINE_FIELDS:
-            max_w = float(w.max().item())
-            if max_w <= 0:
-                continue
-            picks = [
-                i for i in range(w.shape[0])
-                if i not in used and float(w[i].item()) >= addr_frac * max_w
-            ]
+            # PR #113 / H1 — FOCUS-A span dispatch.  The trained head
+            # crops the diffuse threshold band to a contiguous
+            # ``[i, j]`` interval; we accept it iff it returned a
+            # well-formed span at or above the configured confidence
+            # floor.  Otherwise fall through to the legacy chain.
+            span_value: str | None = None
+            picks: list[int] = []
+            if assigner._span_head is not None and kv is not None:
+                pred = assigner.address_span(kv[0], texts)
+                if (
+                    pred["j"] >= pred["i"]
+                    and pred["confidence"] >= focus_confidence_floor
+                ):
+                    picks = list(range(pred["i"], pred["j"] + 1))
+                    span_value = pred["span_text"]
+            if span_value is None:
+                picks, span_value = _legacy_address_pick(
+                    w, texts, bboxes, used, addr_frac,
+                )
             if not picks:
                 continue
-            picks.sort(key=lambda i: bboxes[i][1])  # spatial top→bottom
-            # Change B — spatial-contiguity gate excises tax/phone/GST
-            # lines that the diffuse head sometimes drags in when its
-            # attention mass is > addr_frac of max.
-            picks = enforce_address_contiguity(picks, bboxes)
             for i in picks:
                 used.add(i)
-            value = " ".join(texts[i].strip() for i in picks if texts[i].strip())
+            value = span_value
         else:
             # Regex fields (total/date): argmax with runner-up fallback so
             # a label-only pick (``"TOTAL:"``) doesn't score F1=0.
@@ -449,4 +510,5 @@ def assign_with_policy(
         address_accept_fraction=policy.address_accept_fraction,
         regex_router=policy.regex_router,
         total_confidence_threshold=policy.total_confidence_threshold,
+        focus_confidence_floor=policy.focus_confidence_floor,
     )
