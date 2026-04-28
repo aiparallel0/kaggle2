@@ -74,6 +74,8 @@ def _architecture_config(model: AttentionAssigner) -> dict[str, int | bool]:
         "n_text_priors": model.n_text_priors,
         "text_feat_dim": model.text_feat_dim,
         "text_pool_learned": bool(model.text_pool_learned),
+        "focus_enabled": bool(model.focus_enabled),
+        "focus_max_span": int(model.focus_max_span),
     }
 
 
@@ -118,6 +120,8 @@ def _load_assigner(
         n_text_priors=int(cfg.get("n_text_priors", N_TEXT_PRIORS)),
         text_feat_dim=int(cfg.get("text_feat_dim", 768)),
         text_pool_learned=bool(cfg.get("text_pool_learned", False)),
+        focus_enabled=bool(cfg.get("focus_enabled", False)),
+        focus_max_span=int(cfg.get("focus_max_span", 8)),
     )
     m.load_state_dict(sd)
     if m.n_text_priors not in (N_TEXT_PRIORS, N_TEXT_PRIORS_V2, N_TEXT_PRIORS_V3):

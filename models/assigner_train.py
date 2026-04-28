@@ -39,6 +39,7 @@ from models.attention_assign import (
     AttentionAssigner,
     save_assigner,
 )
+from models.pipeline_oracle import _best_span
 
 _import_error: ImportError | None = None
 try:
@@ -127,6 +128,100 @@ def _group_loss(
         loss = loss + term
         n_fields += 1
     return loss / max(n_fields, 1)
+
+
+def span_iou_boundary_ce(
+    start: Tensor, end: Tensor, gold: tuple[int, int], max_span: int,
+) -> tuple[Tensor, Tensor]:
+    """FOCUS loss — span-IoU + boundary cross-entropy.
+
+    ``start`` / ``end`` are per-token logits ``(N,)`` from the
+    ``_AddressSpanHead`` projections.  ``gold`` is the gold ``(gi, gj)``
+    pair (inclusive) the trainer aligned via ``pipeline_oracle._best_span``.
+    ``max_span`` mirrors :attr:`ExpConfig.focus_max_span`.
+
+    Computes:
+
+    * ``L_iou = 1 - (p_pair * iou).sum()`` where ``p_pair`` is the
+      outer product ``softmax(start) ⊗ softmax(end)``, masked to
+      ``j >= i`` AND ``j - i + 1 <= max_span`` and renormalised; and
+      ``iou[i, j]`` is the standard 1-D IoU between ``[i, j]`` and the
+      gold span ``[gi, gj]``.
+    * ``L_bce = CE(start, gi) + CE(end, gj)`` — boundary cross-entropy.
+    """
+    n = int(start.shape[0])
+    gi, gj = int(gold[0]), int(gold[1])
+    device = start.device
+    p_s = torch.softmax(start, dim=0)
+    p_e = torch.softmax(end, dim=0)
+    p_pair = p_s.unsqueeze(1) * p_e.unsqueeze(0)  # (N, N)
+    i_idx = torch.arange(n, device=device).view(n, 1)
+    j_idx = torch.arange(n, device=device).view(1, n)
+    mask = (j_idx >= i_idx) & ((j_idx - i_idx + 1) <= max_span)
+    p_pair = p_pair * mask.to(p_pair.dtype)
+    p_pair = p_pair / p_pair.sum().clamp(min=1e-12)
+    inter = (
+        torch.minimum(j_idx, j_idx.new_full((1, 1), gj))
+        - torch.maximum(i_idx, i_idx.new_full((1, 1), gi)) + 1
+    ).clamp(min=0).to(p_pair.dtype)
+    union = (
+        torch.maximum(j_idx, j_idx.new_full((1, 1), gj))
+        - torch.minimum(i_idx, i_idx.new_full((1, 1), gi)) + 1
+    ).clamp(min=1).to(p_pair.dtype)
+    iou = inter / union
+    l_iou = 1.0 - (p_pair * iou).sum()
+    gi_t = torch.tensor([gi], device=device, dtype=torch.long)
+    gj_t = torch.tensor([gj], device=device, dtype=torch.long)
+    l_bce = (
+        torch.nn.functional.cross_entropy(start.unsqueeze(0), gi_t)
+        + torch.nn.functional.cross_entropy(end.unsqueeze(0), gj_t)
+    )
+    return l_iou, l_bce
+
+
+def _focus_gold_span(
+    texts: list[str], targets: dict[int, list[int]], address_idx: int,
+) -> tuple[int, int] | None:
+    """Align gold address text → contiguous ``(gi, gj)`` via token-set F1.
+
+    Returns ``None`` when the receipt has no address-labeled regions or
+    when ``_best_span`` reports no overlap (best F1 == 0).  Reuses
+    :func:`models.pipeline_oracle._best_span` so the training-time
+    alignment matches the inference-side oracle helper bit-for-bit.
+    """
+    pos = targets.get(address_idx, [])
+    if not pos:
+        return None
+    gold = " ".join(texts[k] for k in sorted(pos) if 0 <= k < len(texts))
+    if not gold.strip():
+        return None
+    gi, gj, f1 = _best_span(texts, gold)
+    if f1 <= 0.0 or gj < gi:
+        return None
+    return gi, gj
+
+
+def _focus_loss(
+    assigner: AttentionAssigner, feats: Tensor, bboxes: Tensor, priors: Tensor,
+    gold: tuple[int, int], device: str, iou_w: float, boundary_w: float,
+) -> Tensor:
+    """Compute the FOCUS span-cohesion loss on one address-field receipt.
+
+    Encodes ``kv`` via ``AttentionAssigner._encode_kv``, projects to
+    ``start`` / ``end`` logits via ``_span_head``, then weights and
+    sums :func:`span_iou_boundary_ce`.  Caller is responsible for
+    gating on ``cfg.focus_enabled`` and the address-field guard.
+    """
+    head = assigner._span_head
+    if head is None:
+        return torch.zeros((), device=device)
+    tf = feats.to(device).unsqueeze(0)
+    bf = bboxes.to(device).unsqueeze(0)
+    pf = priors.to(device).unsqueeze(0)
+    kv = assigner._encode_kv(tf, bf, pf)[0]  # (N, d)
+    start, end = head.start_end(kv)
+    l_iou, l_bce = span_iou_boundary_ce(start, end, gold, assigner.focus_max_span)
+    return iou_w * l_iou + boundary_w * l_bce
 
 
 def _evaluate(assigner: AttentionAssigner, groups: list[Group], device: str) -> float:
@@ -290,6 +385,8 @@ def _train_epoch(
     device: str, field_to_idx: dict[str, int], n_priors: int,
     hardneg_weight: float, kd_weight: float,
     synth_subtotal: float, ocr_noise: float,
+    focus_enabled: bool = False, focus_iou_w: float = 0.0,
+    focus_boundary_w: float = 0.0,
 ) -> float:
     assigner.train()
     gen = torch.Generator().manual_seed(seed * 1_000 + epoch)
@@ -297,6 +394,7 @@ def _train_epoch(
     perm = torch.randperm(len(groups), generator=gen).tolist()
     total, steps = 0.0, 0
     idx_to_field = {v: k for k, v in field_to_idx.items()}
+    address_idx = field_to_idx.get("address", -1)
     for idx in perm:
         feats, bboxes, priors, targets, texts = groups[idx]
         feats, bboxes, priors, targets, texts = _augment(
@@ -319,6 +417,13 @@ def _train_epoch(
             hardneg_weight=hardneg_weight, kd_weight=kd_weight,
             idx_to_field=idx_to_field,
         )
+        if focus_enabled and address_idx >= 0:
+            gold = _focus_gold_span(texts, targets, address_idx)
+            if gold is not None:
+                loss = loss + _focus_loss(
+                    assigner, feats, bboxes, priors_eff, gold, device,
+                    focus_iou_w, focus_boundary_w,
+                )
         cast(Any, loss).backward()
         torch.nn.utils.clip_grad_norm_(assigner.parameters(), max_norm=1.0)
         opt.step()
@@ -367,6 +472,8 @@ def train_assigner(config: ExpConfig, data: AssignerData) -> str:
         text_feat_dim=text_feat_dim, dropout=config.dropout_assigner,
         n_text_priors=n_priors,
         text_pool_learned=config.text_pool_learned,
+        focus_enabled=config.focus_enabled,
+        focus_max_span=config.focus_max_span,
     ).to(device)
     hardneg_weight = _loss_knob(config, "assigner_hardneg_weight", 0.0)
     # P6 — prefer typed ExpConfig KD knobs over legacy ``config.extra``.
@@ -376,6 +483,26 @@ def train_assigner(config: ExpConfig, data: AssignerData) -> str:
     kd_weight = config.kd_logits_weight or _loss_knob(config, "assigner_kd_weight", 0.0)
     synth_subtotal = _loss_knob(config, "assigner_synth_subtotal", 0.0)
     ocr_noise = _loss_knob(config, "assigner_ocr_noise", 0.0)
+    # FOCUS — write the gold ``(gi, gj)`` per-receipt label sidecar to
+    # ``runs/`` (config.output_dir) so the trainer's gold-span alignment
+    # is auditable from the run archive.  Persisted once at startup over
+    # the un-shuffled training groups; the in-loop alignment recomputes
+    # against the shuffled regions on every step.
+    if config.focus_enabled:
+        addr_idx = field_to_idx.get("address", -1)
+        if addr_idx >= 0:
+            labels: list[dict[str, int | None]] = []
+            for gi_, (_f, _b, _p, t_, txts_) in enumerate(train_groups):
+                span = _focus_gold_span(txts_, t_, addr_idx)
+                labels.append({
+                    "group_id": gi_,
+                    "gi": span[0] if span is not None else None,
+                    "gj": span[1] if span is not None else None,
+                    "n_regions": len(txts_),
+                })
+            Path(config.output_dir).mkdir(parents=True, exist_ok=True)
+            with open(os.path.join(config.output_dir, "focus_labels.json"), "w") as fh:
+                json.dump({"labels": labels}, fh, indent=2)
     opt = torch.optim.AdamW(
         assigner.parameters(), lr=config.lr_assigner,
         weight_decay=config.weight_decay_assigner,
@@ -413,6 +540,9 @@ def train_assigner(config: ExpConfig, data: AssignerData) -> str:
             assigner, opt, train_groups, config.seed, epoch, device,
             field_to_idx, n_priors,
             hardneg_weight, kd_weight, synth_subtotal, ocr_noise,
+            focus_enabled=config.focus_enabled,
+            focus_iou_w=config.focus_iou_weight,
+            focus_boundary_w=config.focus_boundary_weight,
         )
         val_loss = _evaluate(assigner, val_groups, device)
         train_loss_history.append(train_loss)

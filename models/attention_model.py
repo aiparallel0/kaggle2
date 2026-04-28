@@ -17,7 +17,7 @@ Architecture (trains in <10 min on RTX 4090):
 """
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from models.attention_priors import N_TEXT_PRIORS
 
@@ -31,6 +31,8 @@ except ImportError:  # lightweight CI — torch not installed
 
 if TYPE_CHECKING:
     from torch import Tensor
+
+from core.types import AddrPred
 
 # Architecture defaults — single-source-of-truth (PR-A / T-A2 / L1).
 #
@@ -87,6 +89,54 @@ def _pick_n_heads(hidden_dim: int, requested: int) -> int:
     return 1
 
 
+class _AddressSpanHead(_NN_BASE):  # type: ignore[misc]
+    """FOCUS span-cohesion head — 3 ``Linear(d, 1)`` projections.
+
+    Operates on the post-encoder pre-cross-attn ``kv`` tensor ``H``
+    (shape ``(N, d)``).  Produces per-token ``start`` / ``end`` logits
+    plus a ``cohesion[i, j]`` matrix derived from the cumulative-sum
+    span-mean trick — no quadratic materialisation of full token
+    sequences, only of the span-mean ``(N, N, d)`` tensor (which is
+    bounded by ``focus_max_span * N * d`` after the mask is applied).
+    """
+
+    def __init__(self, hidden_dim: int) -> None:
+        super().__init__()
+        self.start_proj = nn.Linear(hidden_dim, 1)
+        self.end_proj = nn.Linear(hidden_dim, 1)
+        self.cohesion_proj = nn.Linear(hidden_dim, 1)
+
+    def start_end(self, kv: Tensor) -> tuple[Tensor, Tensor]:
+        """Per-token start / end logits ``(N,)`` for one receipt's ``kv``."""
+        return self.start_proj(kv).squeeze(-1), self.end_proj(kv).squeeze(-1)
+
+    def score_matrix(
+        self, kv: Tensor, max_span: int,
+    ) -> tuple[Tensor, Tensor, Tensor, Tensor]:
+        """Compute ``(start, end, score, mask)`` for one receipt's ``kv``.
+
+        ``score[i, j] = start[i] + end[j] + cohesion[i, j]`` with
+        ``cohesion[i, j] = cohesion_proj(span_mean[i, j])`` and
+        ``span_mean[i, j] = (cumH[j+1] - cumH[i]) / (j - i + 1)``.
+        ``mask`` is ``True`` for valid cells (``j >= i`` AND
+        ``j - i + 1 <= max_span``).
+        """
+        n, d = kv.shape
+        zeros = kv.new_zeros(1, d)
+        cum = torch.cat([zeros, kv], dim=0).cumsum(0)  # (N+1, d)
+        i_idx = torch.arange(n, device=kv.device).view(n, 1)
+        j_idx = torch.arange(n, device=kv.device).view(1, n)
+        length = (j_idx - i_idx + 1).clamp(min=1).to(kv.dtype)
+        # span_mean[i, j] = (cum[j+1] - cum[i]) / (j - i + 1)
+        span_sum = cum[j_idx + 1] - cum[i_idx]  # (N, N, d)
+        span_mean = span_sum / length.unsqueeze(-1)
+        cohesion = self.cohesion_proj(span_mean).squeeze(-1)  # (N, N)
+        start, end = self.start_end(kv)
+        score = start.view(n, 1) + end.view(1, n) + cohesion
+        mask = (j_idx >= i_idx) & ((j_idx - i_idx + 1) <= max_span)
+        return start, end, score, mask
+
+
 class AttentionAssigner(_NN_BASE):  # type: ignore[misc]
     """Transformer + 4-query cross-attention field assigner (~380K params)."""
 
@@ -100,6 +150,8 @@ class AttentionAssigner(_NN_BASE):  # type: ignore[misc]
         n_text_priors: int = N_TEXT_PRIORS,
         text_feat_dim: int = 768,
         text_pool_learned: bool = False,
+        focus_enabled: bool = False,
+        focus_max_span: int = 8,
     ) -> None:
         super().__init__()
         self.hidden_dim = hidden_dim
@@ -150,6 +202,15 @@ class AttentionAssigner(_NN_BASE):  # type: ignore[misc]
         self.classifier = nn.Sequential(
             nn.Linear(hidden_dim, hidden_dim), nn.GELU(), nn.Linear(hidden_dim, 1),
         )
+        # FOCUS — opt-in span-cohesion head over the post-encoder ``kv``.
+        # ``None`` when disabled so legacy state_dicts load bit-exact.
+        self.focus_enabled = focus_enabled
+        self.focus_max_span = focus_max_span
+        self._span_head: _AddressSpanHead | None
+        if focus_enabled:
+            self._span_head = _AddressSpanHead(hidden_dim)
+        else:
+            self._span_head = None
 
     @staticmethod
     def _enrich_bbox(bbox: Tensor) -> Tensor:
@@ -205,6 +266,32 @@ class AttentionAssigner(_NN_BASE):  # type: ignore[misc]
         weights = torch.softmax(scores, dim=-1).unsqueeze(-1)  # (B, N, T, 1)
         return (text_feats * weights).sum(dim=-2)  # (B, N, D)
 
+    def _encode_kv(
+        self, text_feats: Tensor, bbox_feats: Tensor,
+        text_priors: Tensor | None = None,
+    ) -> Tensor:
+        """Run the text+bbox+prior fusion + transformer encoder.
+
+        Returns the post-encoder pre-cross-attn tensor ``kv`` of shape
+        ``(B, N, hidden_dim)`` — the ``H`` consumed by the FOCUS span
+        head.  Centralises the encode path so :meth:`forward` and
+        :meth:`address_span` share a single implementation (and a
+        single bit-exact code path when ``focus_enabled=False``).
+        """
+        text_feats = self._maybe_attn_pool(text_feats)
+        bbox_feats = self._enrich_bbox(bbox_feats)
+        kv = self.text_proj(text_feats) + self.bbox_proj(bbox_feats)
+        if self.prior_proj is not None:
+            if text_priors is None:
+                text_priors = torch.zeros(
+                    kv.size(0), kv.size(1), self.n_text_priors,
+                    device=kv.device, dtype=kv.dtype,
+                )
+            kv = kv + self.prior_proj(text_priors)
+        kv = self.input_norm(kv)
+        kv = self.encoder(kv)
+        return cast("Tensor", kv)
+
     def forward(
         self, text_feats: Tensor, bbox_feats: Tensor,
         text_priors: Tensor | None = None,
@@ -219,20 +306,46 @@ class AttentionAssigner(_NN_BASE):  # type: ignore[misc]
         ``attn_w`` is the per-field soft assignment over regions used
         for inference and rendered as Fig.~\\ref{fig:attn_heatmap}.
         """
-        text_feats = self._maybe_attn_pool(text_feats)
-        bbox_feats = self._enrich_bbox(bbox_feats)
-        kv = self.text_proj(text_feats) + self.bbox_proj(bbox_feats)
-        if self.prior_proj is not None:
-            if text_priors is None:
-                text_priors = torch.zeros(
-                    kv.size(0), kv.size(1), self.n_text_priors,
-                    device=kv.device, dtype=kv.dtype,
-                )
-            kv = kv + self.prior_proj(text_priors)
-        kv = self.input_norm(kv)
-        kv = self.encoder(kv)
+        kv = self._encode_kv(text_feats, bbox_feats, text_priors)
         q = self.field_queries.unsqueeze(0).expand(kv.size(0), -1, -1)
         attn_out, attn_w = self.cross_attn(q, kv, kv)
         attn_out = self.cross_norm(attn_out + q)
         logits = self.classifier(attn_out).squeeze(-1)
         return logits, attn_w
+
+    def address_span(self, kv: Tensor, texts: list[str]) -> AddrPred:
+        """FOCUS inference: argmax span over the post-encoder ``kv``.
+
+        ``kv`` is the ``(N, d)`` slice for one receipt (the caller is
+        responsible for batch-squeezing).  ``texts`` is the list of
+        per-region texts in the same order as ``kv``; the predicted
+        ``span_text`` is ``" ".join(texts[i:j+1])``.  ``confidence`` is
+        ``softmax(score_flat)[argmax]`` with invalid cells masked to
+        ``-inf`` before softmax so they contribute zero mass.
+
+        Raises if the FOCUS head is not configured (caller should gate
+        on :attr:`focus_enabled`).
+        """
+        if self._span_head is None:
+            raise RuntimeError(
+                "address_span called but focus_enabled=False; "
+                "instantiate AttentionAssigner(focus_enabled=True).",
+            )
+        n = kv.shape[0]
+        if n == 0 or len(texts) != n:
+            return AddrPred(i=0, j=-1, span_text="", confidence=0.0)
+        _, _, score, mask = self._span_head.score_matrix(kv, self.focus_max_span)
+        neg_inf = torch.full_like(score, float("-inf"))
+        score_masked = torch.where(mask, score, neg_inf)
+        flat = score_masked.flatten()
+        if not torch.isfinite(flat).any():
+            return AddrPred(i=0, j=-1, span_text="", confidence=0.0)
+        probs = torch.softmax(flat, dim=0)
+        idx = int(torch.argmax(flat).item())
+        i_star, j_star = idx // n, idx % n
+        conf = float(probs[idx].item())
+        return AddrPred(
+            i=i_star, j=j_star,
+            span_text=" ".join(texts[i_star : j_star + 1]),
+            confidence=conf,
+        )
