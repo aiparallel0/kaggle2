@@ -341,6 +341,13 @@ training runs reproduce bit-exact; set non-zero to opt into the fresh-train regi
 | `assigner_hardneg_weight` | 0.0 | B | λ for the listwise hinge over SUBTOTAL/CASH/CHANGE/TAX/header distractors. 0.5 is a reasonable starting point. |
 | `assigner_kd_weight` | 0.0 | C | λ for KL-divergence KD from the rule-based teacher (`_score_money` softmax). 0.1 is a reasonable starting point. |
 | `priors_v3` | false | E | Upgrade priors from 9-d to 14-d (adds `is_subtotal / cash / change / tax / rounding` bits). Requires a fresh train; v2 checkpoints still load. |
+| `priors_v4` | false | FOCUS | Upgrade priors from 14-d to 20-d (adds 6 FOCUS-T/C dims: `is_subtotal_kw, is_tax_kw, is_company_boilerplate, line_y_normalised, money_value_normalised, arithmetic_witness_self`). Required by `focus_total_enabled` / `focus_company_enabled`. Requires a fresh assigner train. |
+| `focus_enabled` | false | FOCUS-A | Master toggle for the FOCUS framework. Adds the address-span head (PR #106). Sub-flags below gate FOCUS-T / FOCUS-C independently. |
+| `focus_total_enabled` | false | FOCUS-T | Add the relational total head (3× `Linear(d,1)`: score + sigmoid-gated arithmetic-witness term). Requires `focus_enabled=True` and `priors_v4=True`. |
+| `focus_total_witness_weight` | 1.0 | FOCUS-T | Coefficient on the arithmetic-witness gate term in the FOCUS-T `final` logits. |
+| `focus_company_enabled` | false | FOCUS-C | Add the positional company head (2× `Linear(d,1)`: score + y-bias + boilerplate-penalty). Requires `focus_enabled=True` and `priors_v4=True`. |
+| `focus_company_y_weight` | 1.0 | FOCUS-C | Coefficient on the `-y_norm` top-of-receipt bias in the FOCUS-C `final` logits. |
+| `focus_company_boilerplate_weight` | 1.0 | FOCUS-C | Coefficient on the `-is_company_boilerplate` penalty (pushes "SDN BHD" / "BERHAD" / "PTE LTD" suffix lines down). |
 | `assigner_synth_subtotal` | 0.0 | I | Per-receipt probability of injecting a synthetic `SUBTOTAL: RM xx.yy` line before the true TOTAL. 0.3–0.5 suggested. |
 | `assigner_ocr_noise` | 0.0 | F | Per-receipt probability of re-deriving priors from OCR-noised text (digit split, O↔0, trailing-zero drop). 0.2 suggested. |
 | `assigner_hidden` | 384 | G | Backbone width. Plan recommends 192 for fresh trains with B/C/E enabled (~1.4M params, better match for 500 receipts). |

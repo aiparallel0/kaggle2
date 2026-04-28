@@ -22,12 +22,16 @@ from models.attention_assign import (
     N_TEXT_PRIORS,
     N_TEXT_PRIORS_V2,
     N_TEXT_PRIORS_V3,
+    N_TEXT_PRIORS_V4,
     AttentionAssigner,
+    arithmetic_witnesses_v4,
     text_priors,
     text_priors_v2,
     text_priors_v3,
+    text_priors_v4,
 )
 from models.attention_priors import _MONEY_RE as _PRIORS_MONEY_RE
+from models.attention_priors import _parse_money as _PRIORS_PARSE_MONEY
 from models.date_postprocess import fallback_from_ocr_lines, is_plausible
 from models.pipeline_consensus import enforce_address_contiguity
 from models.rule_based import DATE_RE, MONEY_RE
@@ -124,17 +128,21 @@ _FIELD_REGEX = {"date": DATE_RE, "total": MONEY_RE}
 def _build_priors(
     texts: list[str], bboxes: list[list[float]], n_priors: int,
 ) -> list[list[float]]:
-    """Per-region text priors matching the assigner's expected dim (6/9/14).
+    """Per-region text priors matching the assigner's expected dim (6/9/14/20).
 
     v2 mirrors :mod:`models.assigner_data`: ``y_norm = bbox[3] / max_y`` and
     ``is_last_money_line = (i == argmax_i(_MONEY_RE.search(texts[i])))``.
     v3 extends v2 with five distractor-aware bits (SUBTOTAL / CASH /
     CHANGE / TAX / ROUNDING) — strategy E of the assigner plan.
-    Unknown ``n_priors`` raise ``ValueError`` (no silent zero-padding).
+    v4 extends v3 with the FOCUS-T/C structural priors (FOCUS framework,
+    paper §III-D rewrite): is_subtotal_kw, is_tax_kw,
+    is_company_boilerplate, line_y_normalised, money_value_normalised,
+    arithmetic_witness_self.  Unknown ``n_priors`` raise ``ValueError``
+    (no silent zero-padding).
     """
     if n_priors == N_TEXT_PRIORS:
         return [text_priors(t) for t in texts]
-    if n_priors in (N_TEXT_PRIORS_V2, N_TEXT_PRIORS_V3):
+    if n_priors in (N_TEXT_PRIORS_V2, N_TEXT_PRIORS_V3, N_TEXT_PRIORS_V4):
         money_idxs = [i for i, t in enumerate(texts) if _PRIORS_MONEY_RE.search(t)]
         last_money = max(money_idxs) if money_idxs else -1
         y_vals = [bb[3] for bb in bboxes]
@@ -144,13 +152,30 @@ def _build_priors(
                 text_priors_v2(texts[i], bboxes[i][3] / denom, i == last_money)
                 for i in range(len(texts))
             ]
+        if n_priors == N_TEXT_PRIORS_V3:
+            return [
+                text_priors_v3(texts[i], bboxes[i][3] / denom, i == last_money)
+                for i in range(len(texts))
+            ]
+        # v4 — FOCUS-T/C: receipt-level witness column + money_value_norm.
+        witnesses = arithmetic_witnesses_v4(texts)
+        monies = [_PRIORS_PARSE_MONEY(t) for t in texts]
+        max_money = max((m for m in monies if m is not None), default=0.0)
+        money_denom = max(max_money, 1e-6)
+        money_norm = [
+            (m / money_denom) if m is not None else 0.0 for m in monies
+        ]
         return [
-            text_priors_v3(texts[i], bboxes[i][3] / denom, i == last_money)
+            text_priors_v4(
+                texts[i], bboxes[i][3] / denom, i == last_money,
+                money_norm[i], witnesses[i],
+            )
             for i in range(len(texts))
         ]
     raise ValueError(
         f"Unsupported n_text_priors={n_priors}; "
-        f"expected {N_TEXT_PRIORS}, {N_TEXT_PRIORS_V2}, or {N_TEXT_PRIORS_V3}.",
+        f"expected {N_TEXT_PRIORS}, {N_TEXT_PRIORS_V2}, "
+        f"{N_TEXT_PRIORS_V3}, or {N_TEXT_PRIORS_V4}.",
     )
 
 

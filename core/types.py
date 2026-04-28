@@ -32,6 +32,38 @@ class AddrPred(TypedDict):
     confidence: float
 
 
+class TotalPred(TypedDict):
+    """One total-line prediction from the FOCUS-T relational head.
+
+    ``i`` is the picked region index (``argmax`` over the per-region
+    ``final = score + witness_weight * gate * arithmetic_witness_self``
+    logits); ``text`` is the raw region text at index ``i``;
+    ``confidence`` is ``softmax(final)[i]``.  Returns ``i = -1`` and
+    ``confidence = 0.0`` when the head is invoked on a zero-region
+    receipt.
+    """
+
+    i: int
+    text: str
+    confidence: float
+
+
+class CompanyPred(TypedDict):
+    """One merchant-line prediction from the FOCUS-C positional head.
+
+    ``i`` is the picked region index (``argmax`` over
+    ``final = score - y_weight * y_norm - boilerplate_weight * boilerplate``);
+    ``text`` is the raw region text at index ``i``; ``confidence`` is
+    ``softmax(final)[i]``.  The y-normalised prior pulls toward the top
+    of the receipt; the boilerplate prior pushes ``"SDN BHD"``-style
+    suffix lines down so the head selects the merchant trade name.
+    """
+
+    i: int
+    text: str
+    confidence: float
+
+
 @dataclass
 class Field:
     """One of the four SROIE KIE fields (company, date, address, total)."""
@@ -406,4 +438,19 @@ class ExpConfig:
     focus_iou_weight: float = 1.0
     focus_boundary_weight: float = 1.0
     focus_confidence_floor: float = 0.10
+    # FOCUS framework (paper §III-D rewrite).  ``focus_enabled`` remains
+    # the master toggle (back-compat: PR #106's FOCUS-A); the four sub-flags
+    # below gate FOCUS-T (relational total head), FOCUS-C (positional
+    # company head), and the priors_v4 builder.  Defaults preserve baseline
+    # bit-for-bit: ``focus_enabled=True`` with all sub-flags False
+    # reproduces PR #106 exactly (FOCUS-A only).  FOCUS-D (date) stays on
+    # the existing point head — its 0.92 baseline F1 confirms the
+    # regex-conforming substring is already near-saturated by token-level
+    # cross-attention, so a structural prior would only add bias.
+    focus_total_enabled: bool = False
+    focus_total_witness_weight: float = 1.0
+    focus_company_enabled: bool = False
+    focus_company_y_weight: float = 1.0
+    focus_company_boilerplate_weight: float = 1.0
+    priors_v4: bool = False
     extra: dict[str, object] = field(default_factory=dict)

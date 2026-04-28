@@ -19,7 +19,12 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, cast
 
-from models.attention_priors import N_TEXT_PRIORS
+from models.attention_priors import (
+    N_TEXT_PRIORS,
+    V4_IS_COMPANY_BOILERPLATE_IDX,
+    V4_WITNESS_IDX,
+    V4_Y_NORM_IDX,
+)
 
 try:
     import torch
@@ -32,7 +37,7 @@ except ImportError:  # lightweight CI — torch not installed
 if TYPE_CHECKING:
     from torch import Tensor
 
-from core.types import AddrPred
+from core.types import AddrPred, CompanyPred, TotalPred
 
 # Architecture defaults — single-source-of-truth (PR-A / T-A2 / L1).
 #
@@ -137,6 +142,76 @@ class _AddressSpanHead(_NN_BASE):  # type: ignore[misc]
         return start, end, score, mask
 
 
+class _TotalHead(_NN_BASE):  # type: ignore[misc]
+    """FOCUS-T relational head — 3 ``Linear(d, 1)`` projections.
+
+    Operates on the post-encoder ``kv`` tensor ``H`` ``(N, d)`` for one
+    receipt.  Forward returns the per-region ``final`` logits
+
+        ``final = score_proj(H) + witness_weight * sigmoid(witness_gate(H))
+                  * arithmetic_witness_self``
+
+    with ``arithmetic_witness_self`` read from ``priors_v4[:, V4_WITNESS_IDX]``.
+    The ``money_gate`` projection is exposed so the trainer can also gate
+    on the per-region money-presence prior; it is unused inside
+    :meth:`forward` (the witness column already encodes the money signal)
+    but kept as a placeholder weight slot so future ablations that toggle
+    a money-only baseline don't reshape the state_dict.
+    """
+
+    def __init__(self, hidden_dim: int) -> None:
+        super().__init__()
+        self.score_proj = nn.Linear(hidden_dim, 1)
+        self.witness_gate = nn.Linear(hidden_dim, 1)
+        self.money_gate = nn.Linear(hidden_dim, 1)
+
+    def forward(
+        self, kv: Tensor, prior_witness_col: Tensor, witness_weight: float,
+    ) -> Tensor:
+        """Per-region final logits ``(N,)`` for FOCUS-T pos-mass NLL."""
+        score = self.score_proj(kv).squeeze(-1)
+        gate = torch.sigmoid(self.witness_gate(kv).squeeze(-1))
+        return cast("Tensor", score + witness_weight * gate * prior_witness_col)
+
+
+class _CompanyHead(_NN_BASE):  # type: ignore[misc]
+    """FOCUS-C positional head — 2 ``Linear(d, 1)`` projections.
+
+    Operates on the post-encoder ``kv`` tensor ``H`` ``(N, d)`` for one
+    receipt.  Forward returns the per-region ``final`` logits
+
+        ``final = score_proj(H) - y_weight * y_norm
+                  - boilerplate_weight * is_company_boilerplate``
+
+    with the two prior columns read from
+    ``priors_v4[:, V4_Y_NORM_IDX]`` and
+    ``priors_v4[:, V4_IS_COMPANY_BOILERPLATE_IDX]``.  Both bias terms enter
+    the logit ADDITIVELY so ``score_proj`` can compensate (the priors are
+    a structural inductive bias, not a hard constraint).  The
+    ``position_gate`` projection is held as a learnable slot for future
+    work that may want to softly gate the y-bias on receipts where the
+    top-of-page heuristic is unreliable; unused inside :meth:`forward`.
+    """
+
+    def __init__(self, hidden_dim: int) -> None:
+        super().__init__()
+        self.score_proj = nn.Linear(hidden_dim, 1)
+        self.position_gate = nn.Linear(hidden_dim, 1)
+
+    def forward(
+        self, kv: Tensor, prior_y_col: Tensor, prior_boilerplate_col: Tensor,
+        y_weight: float, boilerplate_weight: float,
+    ) -> Tensor:
+        """Per-region final logits ``(N,)`` for FOCUS-C pos-mass NLL."""
+        score = self.score_proj(kv).squeeze(-1)
+        return cast(
+            "Tensor",
+            score
+            - y_weight * prior_y_col
+            - boilerplate_weight * prior_boilerplate_col,
+        )
+
+
 class AttentionAssigner(_NN_BASE):  # type: ignore[misc]
     """Transformer + 4-query cross-attention field assigner (~380K params)."""
 
@@ -152,6 +227,12 @@ class AttentionAssigner(_NN_BASE):  # type: ignore[misc]
         text_pool_learned: bool = False,
         focus_enabled: bool = False,
         focus_max_span: int = 8,
+        focus_total_enabled: bool = False,
+        focus_total_witness_weight: float = 1.0,
+        focus_company_enabled: bool = False,
+        focus_company_y_weight: float = 1.0,
+        focus_company_boilerplate_weight: float = 1.0,
+        field_names: list[str] | None = None,
     ) -> None:
         super().__init__()
         self.hidden_dim = hidden_dim
@@ -211,6 +292,34 @@ class AttentionAssigner(_NN_BASE):  # type: ignore[misc]
             self._span_head = _AddressSpanHead(hidden_dim)
         else:
             self._span_head = None
+        # FOCUS-T / FOCUS-C — opt-in factored heads (paper §III-D rewrite).
+        # The master ``focus_enabled`` toggle is preserved for back-compat
+        # with PR #106; the sub-flags below gate FOCUS-T (relational) and
+        # FOCUS-C (positional) independently so a baseline config with
+        # ``focus_enabled=True`` and both sub-flags False reproduces PR #106
+        # bit-for-bit (FOCUS-A only).  ``field_names`` is the optional
+        # ``["company", "address", "date", "total"]``-shaped list used by
+        # :meth:`forward` to find which row of ``attn_w`` to override
+        # with the FOCUS-T / FOCUS-C output.  ``None`` keeps the legacy
+        # behaviour (no override).
+        self.focus_total_enabled = bool(focus_total_enabled)
+        self.focus_total_witness_weight = float(focus_total_witness_weight)
+        self.focus_company_enabled = bool(focus_company_enabled)
+        self.focus_company_y_weight = float(focus_company_y_weight)
+        self.focus_company_boilerplate_weight = float(focus_company_boilerplate_weight)
+        self.field_names: list[str] | None = (
+            list(field_names) if field_names is not None else None
+        )
+        self._total_head: _TotalHead | None
+        if focus_enabled and focus_total_enabled:
+            self._total_head = _TotalHead(hidden_dim)
+        else:
+            self._total_head = None
+        self._company_head: _CompanyHead | None
+        if focus_enabled and focus_company_enabled:
+            self._company_head = _CompanyHead(hidden_dim)
+        else:
+            self._company_head = None
 
     @staticmethod
     def _enrich_bbox(bbox: Tensor) -> Tensor:
@@ -305,13 +414,83 @@ class AttentionAssigner(_NN_BASE):  # type: ignore[misc]
         ``(logits (B, n_fields), attn_w (B, n_fields, N))`` where
         ``attn_w`` is the per-field soft assignment over regions used
         for inference and rendered as Fig.~\\ref{fig:attn_heatmap}.
+
+        FOCUS-T / FOCUS-C — when the corresponding sub-head is configured
+        AND :attr:`field_names` resolves the row for ``"total"`` /
+        ``"company"``, the head's ``softmax(final)`` over regions
+        replaces that row of ``attn_w``.  This keeps the pos-mass NLL in
+        :func:`models.assigner_train._group_loss` unchanged: the trainer
+        still reads ``attn_w[0, f_idx]`` per field, and the FOCUS heads
+        simply furnish a different probability mass for ``total`` and
+        ``company`` while the cross-attention output stays canonical for
+        ``date`` and ``address``.
         """
         kv = self._encode_kv(text_feats, bbox_feats, text_priors)
         q = self.field_queries.unsqueeze(0).expand(kv.size(0), -1, -1)
         attn_out, attn_w = self.cross_attn(q, kv, kv)
         attn_out = self.cross_norm(attn_out + q)
         logits = self.classifier(attn_out).squeeze(-1)
+        attn_w = self._maybe_focus_override(kv, attn_w, text_priors)
         return logits, attn_w
+
+    def _maybe_focus_override(
+        self, kv: Tensor, attn_w: Tensor, text_priors: Tensor | None,
+    ) -> Tensor:
+        """Replace the ``total`` / ``company`` rows of ``attn_w`` with the
+        FOCUS-T / FOCUS-C ``softmax(final)`` distributions when those heads
+        are configured AND :attr:`field_names` resolves the row index AND
+        ``text_priors`` carries the v4 columns.  No-op otherwise so legacy
+        callers stay bit-exact.
+        """
+        if self.field_names is None or text_priors is None:
+            return attn_w
+        n_priors = text_priors.shape[-1]
+        # FOCUS-T / FOCUS-C both index priors_v4 columns; the witness col
+        # (last) is the highest index we need, so any tensor at least that
+        # wide carries the FOCUS-T/C signal.  Narrower tensors mean the
+        # caller is on v1/v2/v3 priors and the override is a no-op.
+        if n_priors <= V4_WITNESS_IDX:
+            return attn_w
+        # Single-clone optimisation: clone ``attn_w`` at most once even
+        # when both FOCUS-T and FOCUS-C fire.
+        new_attn = attn_w
+        cloned = False
+        if (
+            self._total_head is not None
+            and "total" in self.field_names
+        ):
+            t_idx = self.field_names.index("total")
+            witness_col = text_priors[..., V4_WITNESS_IDX]
+            # text_priors is (B, N, P); witness_col is (B, N).  Iterate over
+            # the (small) batch so each receipt's head fires on its own kv.
+            t_rows: list[Tensor] = []
+            for b in range(kv.size(0)):
+                final_b = self._total_head(
+                    kv[b], witness_col[b], self.focus_total_witness_weight,
+                )
+                t_rows.append(torch.softmax(final_b, dim=-1))
+            new_attn = new_attn.clone()
+            cloned = True
+            new_attn[:, t_idx, :] = torch.stack(t_rows, dim=0)
+        if (
+            self._company_head is not None
+            and "company" in self.field_names
+        ):
+            c_idx = self.field_names.index("company")
+            y_col = text_priors[..., V4_Y_NORM_IDX]
+            boil_col = text_priors[..., V4_IS_COMPANY_BOILERPLATE_IDX]
+            c_rows: list[Tensor] = []
+            for b in range(kv.size(0)):
+                final_b = self._company_head(
+                    kv[b], y_col[b], boil_col[b],
+                    self.focus_company_y_weight,
+                    self.focus_company_boilerplate_weight,
+                )
+                c_rows.append(torch.softmax(final_b, dim=-1))
+            if not cloned:
+                new_attn = new_attn.clone()
+            new_attn[:, c_idx, :] = torch.stack(c_rows, dim=0)
+        return new_attn
 
     def address_span(self, kv: Tensor, texts: list[str]) -> AddrPred:
         """FOCUS inference: argmax span over the post-encoder ``kv``.
@@ -348,4 +527,73 @@ class AttentionAssigner(_NN_BASE):  # type: ignore[misc]
             i=i_star, j=j_star,
             span_text=" ".join(texts[i_star : j_star + 1]),
             confidence=conf,
+        )
+
+    def total_pick(
+        self, kv: Tensor, texts: list[str], prior_witness_col: Tensor,
+    ) -> TotalPred:
+        """FOCUS-T inference — argmax over ``final`` for one receipt.
+
+        ``kv`` is the ``(N, d)`` slice for one receipt; ``texts`` is the
+        per-region text list in the same order; ``prior_witness_col`` is
+        the ``(N,)`` slice of ``priors_v4[:, V4_WITNESS_IDX]``.  Returns
+        a :class:`TotalPred` with ``i = argmax(final)`` and
+        ``confidence = softmax(final)[i]``.  Raises if FOCUS-T was not
+        configured (caller should gate on
+        :attr:`focus_total_enabled`).
+        """
+        if self._total_head is None:
+            raise RuntimeError(
+                "total_pick called but focus_total_enabled=False; "
+                "instantiate AttentionAssigner(focus_total_enabled=True).",
+            )
+        n = kv.shape[0]
+        if n == 0 or len(texts) != n:
+            return TotalPred(i=-1, text="", confidence=0.0)
+        final = self._total_head(
+            kv, prior_witness_col, self.focus_total_witness_weight,
+        )
+        if not torch.isfinite(final).any():
+            return TotalPred(i=-1, text="", confidence=0.0)
+        probs = torch.softmax(final, dim=0)
+        i_star = int(torch.argmax(final).item())
+        return TotalPred(
+            i=i_star, text=texts[i_star],
+            confidence=float(probs[i_star].item()),
+        )
+
+    def company_pick(
+        self, kv: Tensor, texts: list[str],
+        prior_y_col: Tensor, prior_boilerplate_col: Tensor,
+    ) -> CompanyPred:
+        """FOCUS-C inference — argmax over ``final`` for one receipt.
+
+        ``kv`` is the ``(N, d)`` slice for one receipt; ``texts`` is the
+        per-region text list; ``prior_y_col`` and ``prior_boilerplate_col``
+        are the ``(N,)`` slices of ``priors_v4`` columns
+        :data:`V4_Y_NORM_IDX` and :data:`V4_IS_COMPANY_BOILERPLATE_IDX`.
+        Returns a :class:`CompanyPred` with ``i = argmax(final)`` and
+        ``confidence = softmax(final)[i]``.  Raises if FOCUS-C was not
+        configured.
+        """
+        if self._company_head is None:
+            raise RuntimeError(
+                "company_pick called but focus_company_enabled=False; "
+                "instantiate AttentionAssigner(focus_company_enabled=True).",
+            )
+        n = kv.shape[0]
+        if n == 0 or len(texts) != n:
+            return CompanyPred(i=-1, text="", confidence=0.0)
+        final = self._company_head(
+            kv, prior_y_col, prior_boilerplate_col,
+            self.focus_company_y_weight,
+            self.focus_company_boilerplate_weight,
+        )
+        if not torch.isfinite(final).any():
+            return CompanyPred(i=-1, text="", confidence=0.0)
+        probs = torch.softmax(final, dim=0)
+        i_star = int(torch.argmax(final).item())
+        return CompanyPred(
+            i=i_star, text=texts[i_star],
+            confidence=float(probs[i_star].item()),
         )

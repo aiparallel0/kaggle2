@@ -78,6 +78,59 @@ def _emit_foundation_metrics(config: ExpConfig, test: list) -> None:  # type: ig
              m.global_f1, m.global_ned, m.global_em)
 
 
+def _emit_focus_diagnostics(config: ExpConfig) -> None:
+    """PR-FOCUS — record which FOCUS sub-heads are configured for this run.
+
+    Writes ``runs/<run_id>/metrics/focus_diagnostics.json`` so the paper
+    stage and downstream auditors can verify which factored decoder
+    (FOCUS-A / FOCUS-T / FOCUS-C) was active without grepping the run
+    config.  Best-effort: a write failure is logged but never blocks
+    eval (mirrors :func:`write_env_snapshot`).
+    """
+    try:
+        out_dir = Path(config.output_dir) / "metrics"
+        out_dir.mkdir(parents=True, exist_ok=True)
+        payload = {
+            "framework": "FOCUS — Field-specific Output heads with "
+                         "Cohesive Unified Selection",
+            "focus_enabled": bool(config.focus_enabled),
+            "sub_heads": {
+                "FOCUS-A": {  # span head, address — PR #106
+                    "enabled": bool(config.focus_enabled),
+                    "max_span": int(config.focus_max_span),
+                    "iou_weight": float(config.focus_iou_weight),
+                    "boundary_weight": float(config.focus_boundary_weight),
+                },
+                "FOCUS-T": {  # relational head, total
+                    "enabled": bool(
+                        config.focus_enabled and config.focus_total_enabled,
+                    ),
+                    "witness_weight": float(config.focus_total_witness_weight),
+                },
+                "FOCUS-C": {  # positional head, company
+                    "enabled": bool(
+                        config.focus_enabled and config.focus_company_enabled,
+                    ),
+                    "y_weight": float(config.focus_company_y_weight),
+                    "boilerplate_weight": float(
+                        config.focus_company_boilerplate_weight,
+                    ),
+                },
+                "FOCUS-D": {  # date — stays on the existing point head
+                    "enabled": False,
+                    "note": "regex-conforming substring, near-saturated by "
+                            "token-level cross-attention",
+                },
+            },
+            "priors_v4": bool(config.priors_v4),
+        }
+        (out_dir / "focus_diagnostics.json").write_text(
+            json.dumps(payload, indent=2),
+        )
+    except OSError as exc:  # pragma: no cover — diagnostics are best-effort
+        log.warning("focus_diagnostics emit failed: %s", exc)
+
+
 def _eval_donut_or_skip(
     config: ExpConfig, data: DataSplit,
 ) -> tuple[Metrics, list[Prediction]]:
@@ -215,6 +268,7 @@ def stage_eval(
         )
     except OSError as exc:  # pragma: no cover — env snapshot is best-effort
         log.warning("env_snapshot failed: %s", exc)
+    _emit_focus_diagnostics(config)
     data_path = download_sroie(config)
     data = load_or_create_split(config, data_path)
     if oracle_address:
