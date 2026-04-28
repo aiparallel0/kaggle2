@@ -67,7 +67,7 @@ try:
     from huggingface_hub import snapshot_download as _snapshot_download
     _HF_AVAILABLE = True
 except ImportError:  # pragma: no cover
-    _snapshot_download = None  # type: ignore[assignment]  # guarded by _HF_AVAILABLE
+    _snapshot_download = None  # guarded by _HF_AVAILABLE
     _HF_AVAILABLE = False
 
 
