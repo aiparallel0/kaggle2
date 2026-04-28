@@ -1,0 +1,148 @@
+{
+  "_doc": "PR-ADDR-PREC-2 regression fixture — 10 representative SROIE-Task-3 receipts whose FOCUS-A span head over-predicts the address (start above GT and/or end below GT). Each entry pairs a synthetic ``texts`` array (the per-region OCR output for the receipt) with the GT address span and the ``addr_pred`` (i, j) the trained head emits today. The post-shrink + boundary-penalty + leading/trailing trim pipeline must produce a normalised prediction whose token-level precision against the GT is >= 0.85. Receipt IDs and text shape are taken from the failure modes documented in PR #116's address_mismatches.json (X00000000 / X00000003 / X00000012 / etc.).",
+  "receipts": [
+    {
+      "id": "X00000000",
+      "texts": [
+        "UNIHAKKA INTERNATIONAL SDN BHD",
+        "12, JALAN TAMPOI 7/4",
+        "KAWASAN PERINDUSTRIAN TAMPOI",
+        "81200 JOHOR BAHRU",
+        "JOHOR",
+        "TEL: 07-3349663",
+        "TOTAL RM 12.50"
+      ],
+      "addr_pred": [0, 4],
+      "gt": "12, JALAN TAMPOI 7/4 KAWASAN PERINDUSTRIAN TAMPOI 81200 JOHOR BAHRU JOHOR"
+    },
+    {
+      "id": "X00000003",
+      "texts": [
+        "RESTORAN WAN SHENG",
+        "NO 2, JALAN TEMENGGUNG 19/9",
+        "SEKSYEN 9, BANDAR MAHKOTA CHERAS",
+        "43200 CHERAS, SELANGOR",
+        "CASHIER: ALICE",
+        "INV NO: 2018-001",
+        "TABLE 3 WAITER 02",
+        "TOTAL 16.30"
+      ],
+      "addr_pred": [1, 6],
+      "gt": "NO 2, JALAN TEMENGGUNG 19/9 SEKSYEN 9, BANDAR MAHKOTA CHERAS 43200 CHERAS, SELANGOR"
+    },
+    {
+      "id": "X00000012",
+      "texts": [
+        "SANYU STATIONERY SHOP",
+        "NO. 31G&33G, JALAN SETIA INDAH X",
+        "U13/X 40170 SHAH ALAM",
+        "CASH RECEIPT # CS00068955",
+        "DATE 06/01/2018 TIME 10:47",
+        "TOTAL RM 5.30"
+      ],
+      "addr_pred": [0, 4],
+      "gt": "NO. 31G&33G, JALAN SETIA INDAH X U13/X 40170 SHAH ALAM"
+    },
+    {
+      "id": "X00000020",
+      "texts": [
+        "GERBANG ALAF RESTAURANTS SDN BHD",
+        "LEVEL 6, BANGUNAN TH UPTOWN 3",
+        "NO 3, JALAN SS 21/39",
+        "47400 PETALING JAYA",
+        "SELANGOR DARUL EHSAN",
+        "GST NO: 000504664064",
+        "TEL: 03-77291002",
+        "TOTAL 18.95"
+      ],
+      "addr_pred": [0, 6],
+      "gt": "LEVEL 6, BANGUNAN TH UPTOWN 3 NO 3, JALAN SS 21/39 47400 PETALING JAYA SELANGOR DARUL EHSAN"
+    },
+    {
+      "id": "X00000028",
+      "texts": [
+        "TAX INVOICE",
+        "AEON CO. (M) BHD",
+        "LOT 1.01, AEON BUKIT TINGGI",
+        "NO 1 PERSIARAN BATU NILAM 1/KS6",
+        "BANDAR BUKIT TINGGI 2",
+        "41200 KLANG",
+        "DOC NO: 88421",
+        "TOTAL: 23.40"
+      ],
+      "addr_pred": [0, 6],
+      "gt": "LOT 1.01, AEON BUKIT TINGGI NO 1 PERSIARAN BATU NILAM 1/KS6 BANDAR BUKIT TINGGI 2 41200 KLANG"
+    },
+    {
+      "id": "X00000035",
+      "texts": [
+        "ECONSAVE CASH & CARRY SDN BHD",
+        "LOT 12, JALAN INDUSTRI 3/5",
+        "TAMAN PERINDUSTRIAN MERU",
+        "41050 KLANG SELANGOR",
+        "ROC NO: 220197-D",
+        "TEL 03-33446677",
+        "TOTAL 47.20"
+      ],
+      "addr_pred": [0, 5],
+      "gt": "LOT 12, JALAN INDUSTRI 3/5 TAMAN PERINDUSTRIAN MERU 41050 KLANG SELANGOR"
+    },
+    {
+      "id": "X00000041",
+      "texts": [
+        "PASARAYA BORONG PINTAR SDN BHD",
+        "NO 8 JALAN SS 14/1",
+        "47500 SUBANG JAYA",
+        "SELANGOR",
+        "INVOICE NO: SJ-2017-9981",
+        "TIME 14:32",
+        "TOTAL RM 8.90"
+      ],
+      "addr_pred": [0, 5],
+      "gt": "NO 8 JALAN SS 14/1 47500 SUBANG JAYA SELANGOR"
+    },
+    {
+      "id": "X00000058",
+      "texts": [
+        "SIMPLIFIED TAX INVOICE",
+        "MR D.I.Y. (M) SDN BHD",
+        "LOT G-15 GROUND FLOOR",
+        "PAVILION KUALA LUMPUR",
+        "55100 KUALA LUMPUR",
+        "GST NO: 001234567890",
+        "TOTAL 6.80"
+      ],
+      "addr_pred": [0, 5],
+      "gt": "LOT G-15 GROUND FLOOR PAVILION KUALA LUMPUR 55100 KUALA LUMPUR"
+    },
+    {
+      "id": "X00000063",
+      "texts": [
+        "POPULAR BOOK CO. (M) SDN BHD",
+        "LOT F-22, 1ST FLOOR",
+        "SUNWAY PYRAMID SHOPPING MALL",
+        "47500 PETALING JAYA",
+        "RECEIPT NO: SP123456",
+        "CASHIER 02 COUNTER 5",
+        "TOTAL 22.90"
+      ],
+      "addr_pred": [0, 5],
+      "gt": "LOT F-22, 1ST FLOOR SUNWAY PYRAMID SHOPPING MALL 47500 PETALING JAYA"
+    },
+    {
+      "id": "X00000077",
+      "texts": [
+        "GUARDIAN HEALTH AND BEAUTY",
+        "SDN BHD",
+        "LG-23 LOWER GROUND FLOOR",
+        "MID VALLEY MEGAMALL",
+        "59200 KUALA LUMPUR",
+        "TEL 03-22834455",
+        "ORDER NO 99012",
+        "TOTAL 14.50"
+      ],
+      "addr_pred": [0, 6],
+      "gt": "LG-23 LOWER GROUND FLOOR MID VALLEY MEGAMALL 59200 KUALA LUMPUR"
+    }
+  ]
+}

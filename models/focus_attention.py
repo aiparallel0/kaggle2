@@ -19,6 +19,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, cast
 
+from models.focus_addr_penalty import boundary_prior_vec
 from models.focus_priors import (
     N_TEXT_PRIORS,
     V4_IS_COMPANY_BOILERPLATE_IDX,
@@ -38,6 +39,18 @@ if TYPE_CHECKING:
     from torch import Tensor
 
 from core.types import AddrPred, CompanyPred, TotalPred
+
+# PR-ADDR-PREC-2 — additive penalty applied at inference-time only to
+# the FOCUS-A ``score`` matrix before argmax.  ``-FOCUS_ADDR_BOUNDARY_PENALTY``
+# is added to row ``i`` and column ``j`` whenever the corresponding text
+# carries a boundary signal (company-boilerplate / money / date / phone
+# / GST / receipt-metadata via :func:`models.consensus._is_addr_boundary`).
+# Empirically the head's logits sit in roughly ``[-3, +3]`` after warm-up
+# so a penalty of ``5.0`` is large enough to repel a header / footer cell
+# without saturating the argmax on long, valid addresses (whose interior
+# regions all carry ``prior=0``).  Kept as a module constant so callers
+# don't have to plumb it through the inference path.
+FOCUS_ADDR_BOUNDARY_PENALTY = 5.0
 
 # Architecture defaults — single-source-of-truth (PR-A / T-A2 / L1).
 #
@@ -531,6 +544,20 @@ class AttentionAssigner(_NN_BASE):  # type: ignore[misc]
         if n == 0 or len(texts) != n:
             return AddrPred(i=0, j=-1, span_text="", confidence=0.0)
         _, _, score, mask = self._span_head.score_matrix(kv, self.focus_max_span)
+        # PR-ADDR-PREC-2 — repel boundary lines at the span endpoints.
+        # ``prior`` is ``1.0`` on header / footer rows; subtracting
+        # ``λ * (prior[i] + prior[j])`` from the ``(N, N)`` score so a
+        # cell whose start OR end leaks into receipt boilerplate falls
+        # below any clean interior cell.  Inference-side only — the
+        # trainer's ``span_iou_boundary_ce`` loss path goes through
+        # ``_span_head.start_end`` and never touches this method.
+        prior_list = boundary_prior_vec(texts)
+        if any(p > 0.0 for p in prior_list):
+            prior = score.new_tensor(prior_list)
+            penalty = FOCUS_ADDR_BOUNDARY_PENALTY * (
+                prior.view(n, 1) + prior.view(1, n)
+            )
+            score = score - penalty
         neg_inf = torch.full_like(score, float("-inf"))
         score_masked = torch.where(mask, score, neg_inf)
         flat = score_masked.flatten()
