@@ -37,7 +37,12 @@ from models.focus_inference import (
     text_priors_v4,
 )
 from models.focus_priors import _MONEY_RE as _PRIORS_MONEY_RE
+from models.focus_priors import (
+    V4_IS_COMPANY_BOILERPLATE_IDX,
+    V4_Y_NORM_IDX,
+)
 from models.focus_priors import _parse_money as _PRIORS_PARSE_MONEY
+from models.postprocess_company import _company_span
 from models.rule_fields import (
     _SUBTOTAL_KW_RE,
     _TOTAL_KW_RE,
@@ -92,6 +97,12 @@ class AssignerPolicy:
     # at the deployment threshold.  Used by :func:`_assign_learned_with_attn`
     # to decide when to fall back to ``_legacy_address_pick``.
     focus_confidence_floor: float = 0.0
+    # FOCUS-C company-anchor dispatch gate.  ``0.0`` keeps the legacy
+    # cross-attn argmax for the ``company`` field; ``configs/default.json``
+    # routes ``focus_company_confidence_threshold`` (0.30) onto the
+    # :class:`ExpConfig` so eval gates the trained head at the
+    # deployment threshold (mirrors :attr:`focus_confidence_floor`).
+    focus_company_confidence_threshold: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -388,6 +399,7 @@ def _assign_learned_with_attn(
     regex_router: bool = True,
     total_confidence_threshold: float = 0.0,
     focus_confidence_floor: float = 0.0,
+    focus_company_confidence_threshold: float = 0.0,
 ) -> tuple[dict[str, str], torch.Tensor | None]:
     """Field-assign and return (F, N) cross-attention for fig_attn_heatmap.
 
@@ -406,6 +418,17 @@ def _assign_learned_with_attn(
       chain via :func:`_legacy_address_pick` so ``focus_enabled=False``
       runs reproduce bit-for-bit.
 
+    The ``company`` field gets an analogous FOCUS-C dispatch when the
+    assigner carries a trained company head
+    (``assigner.focus_company_enabled``):
+    :meth:`AttentionAssigner.company_pick` returns the merchant trade-
+    name anchor index and its softmax confidence; when ``confidence
+    >= focus_company_confidence_threshold`` the
+    :func:`models.postprocess_company._company_span` greedy assembler
+    forward-extends 0..2 ``SDN BHD`` / ``(REG-NO)`` suffix lines.
+    Below the threshold (or when the head is absent) the legacy
+    cross-attn argmax pick wins so confident negatives never regress.
+
     Regex-deterministic fields (date/total) are resolved via
     :func:`_route_regex_field` first when ``regex_router`` is True
     (Change A); attention is the fallback.  When
@@ -422,11 +445,16 @@ def _assign_learned_with_attn(
     priors = torch.tensor(
         prior_list, dtype=torch.float32,
     ).unsqueeze(0).to(device)
-    # PR #113 / H1 — only request ``kv`` when the FOCUS-A span head is
-    # present; the no-span path stays bit-identical to the legacy
+    # PR #113 / H1 + FOCUS-C — request ``kv`` whenever a head needs
+    # the post-encoder tensor (FOCUS-A span head OR FOCUS-C positional
+    # head); the no-head path stays bit-identical to the legacy
     # ``assigner(...)`` call.
     kv: torch.Tensor | None
-    if assigner._span_head is not None:
+    needs_kv = (
+        assigner._span_head is not None
+        or getattr(assigner, "focus_company_enabled", False)
+    )
+    if needs_kv:
         _logits, attn_w, kv = assigner.forward_with_kv(tf, bf, priors)
     else:
         _logits, attn_w = assigner(tf, bf, priors)
@@ -495,6 +523,38 @@ def _assign_learned_with_attn(
                 used.add(i)
             value = span_value
         else:
+            # FOCUS-C dispatch: replace the cross-attn argmax for the
+            # ``company`` field with :meth:`AttentionAssigner.company_pick`
+            # over the post-encoder ``kv``, then forward-extend through
+            # :func:`models.postprocess_company._company_span`.  The
+            # ``focus_company_confidence_threshold`` gate falls back to
+            # the legacy argmax when the head is unconfident so confident
+            # negatives are never regressed.  Mirrors the FOCUS-A
+            # address-span dispatch above.
+            if (
+                name == "company"
+                and getattr(assigner, "focus_company_enabled", False)
+                and assigner._company_head is not None
+                and kv is not None
+                and assigner.n_text_priors == N_TEXT_PRIORS_V4
+            ):
+                y_col = priors[0, :, V4_Y_NORM_IDX]
+                bp_col = priors[0, :, V4_IS_COMPANY_BOILERPLATE_IDX]
+                cpred = assigner.company_pick(kv[0], texts, y_col, bp_col)
+                if (
+                    cpred["i"] >= 0
+                    and cpred["confidence"] >= focus_company_confidence_threshold
+                ):
+                    bp_flags = [bool(prior_list[i][V4_IS_COMPANY_BOILERPLATE_IDX])
+                                for i in range(len(texts))]
+                    picks, span_value = _company_span(
+                        texts, bboxes, bp_flags, anchor_idx=cpred["i"],
+                    )
+                    if picks and span_value:
+                        for i in picks:
+                            used.add(i)
+                        out[name] = postprocess_value(name, span_value)
+                        continue
             # Regex fields (total/date): argmax with runner-up fallback so
             # a label-only pick (``"TOTAL:"``) doesn't score F1=0.
             if name in _FIELD_REGEX:
@@ -549,4 +609,7 @@ def assign_with_policy(
         regex_router=policy.regex_router,
         total_confidence_threshold=policy.total_confidence_threshold,
         focus_confidence_floor=policy.focus_confidence_floor,
+        focus_company_confidence_threshold=(
+            policy.focus_company_confidence_threshold
+        ),
     )

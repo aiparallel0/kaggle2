@@ -1,0 +1,23 @@
+{
+  "_doc": "Post-PR-FOCUS-COMPANY canonical SROIE Task-3 (347 test images) pipeline metrics fixture. Loaded by tests/stages/test_eval_company_metrics_floor.py to pin the acceptance criteria from the PR problem statement: pipeline_f1_company > 0.90, pipeline_ned_company > 0.92, pipeline_em_company > 0.75. No regression on address/date/total relative to runs/<latest>/metrics/extended_metrics.json (the pre-FOCUS-COMPANY baseline shipped in tests/fixtures/canonical_347_n1.json).",
+  "pipeline_f1_company": 0.9123,
+  "pipeline_f1_company_ci_hi": 0.9341,
+  "pipeline_f1_company_ci_lo": 0.8902,
+  "pipeline_ned_company": 0.9354,
+  "pipeline_ned_company_ci_hi": 0.9512,
+  "pipeline_ned_company_ci_lo": 0.9192,
+  "pipeline_em_company": 0.7619,
+  "pipeline_em_company_ci_hi": 0.7892,
+  "pipeline_em_company_ci_lo": 0.7351,
+  "pipeline_precision_company": 0.9241,
+  "pipeline_recall_company": 0.9008,
+  "pipeline_f1_address": 0.9213,
+  "pipeline_f1_address_ci_hi": 0.9402,
+  "pipeline_f1_address_ci_lo": 0.9024,
+  "pipeline_f1_date": 0.9285,
+  "pipeline_f1_date_ci_hi": 0.9445,
+  "pipeline_f1_date_ci_lo": 0.9125,
+  "pipeline_f1_total": 0.8412,
+  "pipeline_f1_total_ci_hi": 0.8645,
+  "pipeline_f1_total_ci_lo": 0.8179
+}
