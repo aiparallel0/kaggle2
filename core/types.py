@@ -64,6 +64,22 @@ class CompanyPred(TypedDict):
     confidence: float
 
 
+class CompanySpanPred(TypedDict):
+    """Multi-line company-span prediction from FOCUS-C span head.
+
+    Mirrors :class:`AddrPred`: ``i`` / ``j`` are the inclusive start / end
+    region indices over the detected line list (so the span is
+    ``texts[i:j+1]``); ``span_text`` is the joined region text for the
+    predicted span; ``confidence`` is the softmax probability of the
+    argmax cell over the masked flattened score matrix.
+    """
+
+    i: int
+    j: int
+    span_text: str
+    confidence: float
+
+
 @dataclass
 class Field:
     """One of the four SROIE KIE fields (company, date, address, total)."""
@@ -470,5 +486,17 @@ class ExpConfig:
     # (FOCUS-C head trained head outputs ~0.05 mass per region on a
     # 20-region receipt; 0.30 is 6× the uniform prior).
     focus_company_confidence_threshold: float = 0.30
+    # FOCUS-C span head (mirrors FOCUS-A).  When ``focus_company_span_enabled``
+    # is True the AttentionAssigner instantiates a 3-projection
+    # ``_CompanySpanHead`` and the trainer adds the span-IoU + boundary-CE
+    # term on company-field receipts.  ``focus_company_span_max_span`` caps
+    # the contiguous span length (4 covers >99% of SROIE company names).
+    # ``focus_company_confidence_floor`` is the deployment gate consumers
+    # apply to ``CompanySpanPred.confidence`` before accepting a span.
+    focus_company_span_enabled: bool = False
+    focus_company_span_max_span: int = 4
+    focus_company_span_iou_w: float = 1.0
+    focus_company_span_boundary_w: float = 1.0
+    focus_company_confidence_floor: float = 0.20
     priors_v4: bool = False
     extra: dict[str, object] = field(default_factory=dict)

@@ -252,6 +252,29 @@ def _focus_loss(
     return iou_w * l_iou + boundary_w * l_bce
 
 
+def _focus_company_loss(
+    assigner: AttentionAssigner, feats: Tensor, bboxes: Tensor, priors: Tensor,
+    gold: tuple[int, int], device: str, iou_w: float, boundary_w: float,
+) -> Tensor:
+    """Compute the FOCUS-C span-cohesion loss on one company-field receipt.
+
+    Mirrors :func:`_focus_loss` but uses ``_company_span_head`` and
+    ``focus_company_span_max_span``.
+    """
+    head = assigner._company_span_head
+    if head is None:
+        return torch.zeros((), device=device)
+    tf = feats.to(device).unsqueeze(0)
+    bf = bboxes.to(device).unsqueeze(0)
+    pf = priors.to(device).unsqueeze(0)
+    kv = assigner._encode_kv(tf, bf, pf)[0]  # (N, d)
+    start, end = head.start_end(kv)
+    l_iou, l_bce = span_iou_boundary_ce(
+        start, end, gold, assigner.focus_company_span_max_span,
+    )
+    return iou_w * l_iou + boundary_w * l_bce
+
+
 def _evaluate(assigner: AttentionAssigner, groups: list[Group], device: str) -> float:
     """Mean per-receipt pos-mass NLL on validation set (grads disabled)."""
     if not groups:
@@ -418,6 +441,9 @@ def _train_epoch(
     ctkr_k: int = 0, ctkr_margin: float = 0.0,
     ctkr_weight: float = 0.0, attn_iou_weight: float = 0.0,
     diagnostics: dict[str, list[float]] | None = None,
+    focus_company_span_enabled: bool = False,
+    focus_company_span_iou_w: float = 0.0,
+    focus_company_span_boundary_w: float = 0.0,
 ) -> float:
     assigner.train()
     gen = torch.Generator().manual_seed(seed * 1_000 + epoch)
@@ -426,6 +452,7 @@ def _train_epoch(
     total, steps = 0.0, 0
     idx_to_field = {v: k for k, v in field_to_idx.items()}
     address_idx = field_to_idx.get("address", -1)
+    company_idx = field_to_idx.get("company", -1)
     for idx in perm:
         feats, bboxes, priors, targets, texts = groups[idx]
         feats, bboxes, priors, targets, texts = _augment(
@@ -458,6 +485,13 @@ def _train_epoch(
                 loss = loss + _focus_loss(
                     assigner, feats, bboxes, priors_eff, gold, device,
                     focus_iou_w, focus_boundary_w,
+                )
+        if focus_company_span_enabled and company_idx >= 0:
+            gold_c = _focus_gold_span(texts, targets, company_idx)
+            if gold_c is not None:
+                loss = loss + _focus_company_loss(
+                    assigner, feats, bboxes, priors_eff, gold_c, device,
+                    focus_company_span_iou_w, focus_company_span_boundary_w,
                 )
         cast(Any, loss).backward()
         torch.nn.utils.clip_grad_norm_(assigner.parameters(), max_norm=1.0)
@@ -519,6 +553,8 @@ def train_assigner(config: ExpConfig, data: AssignerData) -> str:
         focus_company_y_weight=config.focus_company_y_weight,
         focus_company_boilerplate_weight=config.focus_company_boilerplate_weight,
         field_names=[f.lower() for f in config.fields],
+        focus_company_span_enabled=config.focus_company_span_enabled,
+        focus_company_span_max_span=config.focus_company_span_max_span,
     ).to(device)
     hardneg_weight = _loss_knob(config, "focus_hardneg_weight", 0.0)
     # P6 — prefer typed ExpConfig KD knobs over legacy ``config.extra``.
@@ -602,6 +638,9 @@ def train_assigner(config: ExpConfig, data: AssignerData) -> str:
             ctkr_k=ctkr_k, ctkr_margin=ctkr_margin,
             ctkr_weight=ctkr_weight, attn_iou_weight=attn_iou_weight,
             diagnostics=epoch_diag,
+            focus_company_span_enabled=config.focus_company_span_enabled,
+            focus_company_span_iou_w=config.focus_company_span_iou_w,
+            focus_company_span_boundary_w=config.focus_company_span_boundary_w,
         )
         # Bug 18 — collapse per-receipt-per-field traces to per-epoch
         # scalars for ``metrics/focus_diagnostics.json``.  The

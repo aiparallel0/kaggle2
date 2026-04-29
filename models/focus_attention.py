@@ -38,7 +38,7 @@ except ImportError:  # lightweight CI — torch not installed
 if TYPE_CHECKING:
     from torch import Tensor
 
-from core.types import AddrPred, CompanyPred, TotalPred
+from core.types import AddrPred, CompanyPred, CompanySpanPred, TotalPred
 
 # PR-ADDR-PREC-2 — additive penalty applied at inference-time only to
 # the FOCUS-A ``score`` matrix before argmax.  ``-FOCUS_ADDR_BOUNDARY_PENALTY``
@@ -116,6 +116,52 @@ class _AddressSpanHead(_NN_BASE):  # type: ignore[misc]
     span-mean trick — no quadratic materialisation of full token
     sequences, only of the span-mean ``(N, N, d)`` tensor (which is
     bounded by ``focus_max_span * N * d`` after the mask is applied).
+    """
+
+    def __init__(self, hidden_dim: int) -> None:
+        super().__init__()
+        self.start_proj = nn.Linear(hidden_dim, 1)
+        self.end_proj = nn.Linear(hidden_dim, 1)
+        self.cohesion_proj = nn.Linear(hidden_dim, 1)
+
+    def start_end(self, kv: Tensor) -> tuple[Tensor, Tensor]:
+        """Per-token start / end logits ``(N,)`` for one receipt's ``kv``."""
+        return self.start_proj(kv).squeeze(-1), self.end_proj(kv).squeeze(-1)
+
+    def score_matrix(
+        self, kv: Tensor, max_span: int,
+    ) -> tuple[Tensor, Tensor, Tensor, Tensor]:
+        """Compute ``(start, end, score, mask)`` for one receipt's ``kv``.
+
+        ``score[i, j] = start[i] + end[j] + cohesion[i, j]`` with
+        ``cohesion[i, j] = cohesion_proj(span_mean[i, j])`` and
+        ``span_mean[i, j] = (cumH[j+1] - cumH[i]) / (j - i + 1)``.
+        ``mask`` is ``True`` for valid cells (``j >= i`` AND
+        ``j - i + 1 <= max_span``).
+        """
+        n, d = kv.shape
+        zeros = kv.new_zeros(1, d)
+        cum = torch.cat([zeros, kv], dim=0).cumsum(0)  # (N+1, d)
+        i_idx = torch.arange(n, device=kv.device).view(n, 1)
+        j_idx = torch.arange(n, device=kv.device).view(1, n)
+        length = (j_idx - i_idx + 1).clamp(min=1).to(kv.dtype)
+        # span_mean[i, j] = (cum[j+1] - cum[i]) / (j - i + 1)
+        span_sum = cum[j_idx + 1] - cum[i_idx]  # (N, N, d)
+        span_mean = span_sum / length.unsqueeze(-1)
+        cohesion = self.cohesion_proj(span_mean).squeeze(-1)  # (N, N)
+        start, end = self.start_end(kv)
+        score = start.view(n, 1) + end.view(1, n) + cohesion
+        mask = (j_idx >= i_idx) & ((j_idx - i_idx + 1) <= max_span)
+        return start, end, score, mask
+
+
+class _CompanySpanHead(_NN_BASE):  # type: ignore[misc]
+    """FOCUS-C span-cohesion head — 3 ``Linear(d, 1)`` projections.
+
+    Mirrors :class:`_AddressSpanHead`: operates on the post-encoder
+    pre-cross-attn ``kv`` tensor ``H`` (shape ``(N, d)``).  Produces
+    per-token ``start`` / ``end`` logits plus a ``cohesion[i, j]``
+    matrix derived from the cumulative-sum span-mean trick.
     """
 
     def __init__(self, hidden_dim: int) -> None:
@@ -245,6 +291,8 @@ class AttentionAssigner(_NN_BASE):  # type: ignore[misc]
         focus_company_enabled: bool = False,
         focus_company_y_weight: float = 1.0,
         focus_company_boilerplate_weight: float = 1.0,
+        focus_company_span_enabled: bool = False,
+        focus_company_span_max_span: int = 4,
         field_names: list[str] | None = None,
     ) -> None:
         super().__init__()
@@ -333,6 +381,14 @@ class AttentionAssigner(_NN_BASE):  # type: ignore[misc]
             self._company_head = _CompanyHead(hidden_dim)
         else:
             self._company_head = None
+        # FOCUS-C span head (mirrors FOCUS-A).
+        self.focus_company_span_enabled = bool(focus_company_span_enabled)
+        self.focus_company_span_max_span = int(focus_company_span_max_span)
+        self._company_span_head: _CompanySpanHead | None
+        if focus_enabled and focus_company_span_enabled:
+            self._company_span_head = _CompanySpanHead(hidden_dim)
+        else:
+            self._company_span_head = None
 
     @staticmethod
     def _enrich_bbox(bbox: Tensor) -> Tensor:
@@ -640,4 +696,47 @@ class AttentionAssigner(_NN_BASE):  # type: ignore[misc]
         return CompanyPred(
             i=i_star, text=texts[i_star],
             confidence=float(probs[i_star].item()),
+        )
+
+    def company_span(self, kv: Tensor, texts: list[str]) -> CompanySpanPred:
+        """FOCUS-C span inference: argmax span over the post-encoder ``kv``.
+
+        ``kv`` is the ``(N, d)`` slice for one receipt (the caller is
+        responsible for batch-squeezing).  ``texts`` is the list of
+        per-region texts in the same order as ``kv``; the predicted
+        ``span_text`` is ``" ".join(texts[i:j+1])``.  ``confidence`` is
+        ``softmax(score_flat)[argmax]`` with invalid cells masked to
+        ``-inf`` before softmax so they contribute zero mass.
+
+        NOTE: Unlike :meth:`address_span`, this method does NOT apply
+        boundary-prior penalty internally — the lexical anchor filter
+        happens downstream in :func:`models.focus_pipeline._company_anchor_filter`.
+
+        Raises if the FOCUS-C span head is not configured (caller should gate
+        on :attr:`focus_company_span_enabled`).
+        """
+        if self._company_span_head is None:
+            raise RuntimeError(
+                "company_span called but focus_company_span_enabled=False; "
+                "instantiate AttentionAssigner(focus_company_span_enabled=True).",
+            )
+        n = kv.shape[0]
+        if n == 0 or len(texts) != n:
+            return CompanySpanPred(i=0, j=-1, span_text="", confidence=0.0)
+        _, _, score, mask = self._company_span_head.score_matrix(
+            kv, self.focus_company_span_max_span,
+        )
+        neg_inf = torch.full_like(score, float("-inf"))
+        score_masked = torch.where(mask, score, neg_inf)
+        flat = score_masked.flatten()
+        if not torch.isfinite(flat).any():
+            return CompanySpanPred(i=0, j=-1, span_text="", confidence=0.0)
+        probs = torch.softmax(flat, dim=0)
+        idx = int(torch.argmax(flat).item())
+        i_star, j_star = idx // n, idx % n
+        conf = float(probs[idx].item())
+        return CompanySpanPred(
+            i=i_star, j=j_star,
+            span_text=" ".join(texts[i_star : j_star + 1]),
+            confidence=conf,
         )

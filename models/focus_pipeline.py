@@ -15,6 +15,7 @@ as a thin shim so existing callers do not break.
 """
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -61,6 +62,108 @@ except ImportError:  # lightweight CI — torch not installed
 if TYPE_CHECKING:
     import torch
 
+# FOCUS-C span head — anchor and boundary regex patterns.
+_COMPANY_ANCHOR = re.compile(
+    r"\b(SDN\.?\s*BHD|BERHAD|ENTERPRISE|RESTAURANT|TRADING|CORPORATION|"
+    r"HOLDINGS|MARKETING|GROUP|CAFE|RESOURCES|MART|MAJU|JAYA|SERVICES|"
+    r"S/B|\(M\)\s*SDN)\b",
+    re.IGNORECASE,
+)
+_COMPANY_REG_ID_RE = re.compile(
+    r"\b(NO\.?\s*)?[0-9]{5,}-?[A-Z]?\b|\bROC\s*NO\b|\bGST\s*ID\b|"
+    r"\bCO\.?\s*NO\b|\bID\s*NO\b",
+    re.IGNORECASE,
+)
+_COMPANY_HEADER_RE = re.compile(
+    r"^(TAX\s+INVOICE|CASH\s+RECEIPT|OFFICIAL\s+RECEIPT|RECEIPT|INVOICE|"
+    r"WELCOME|TERIMA\s+KASIH|THANK\s+YOU)\b",
+    re.IGNORECASE,
+)
+_COMPANY_UPPER_CONT_RE = re.compile(r"^[A-Z][A-Z0-9 \-&.'()/]+$")
+
+
+def _is_company_boundary(text: str) -> bool:
+    """Return True for lines that should NOT anchor/extend a company span.
+
+    Unlike address boundaries, company names (SDN BHD, ENTERPRISE, etc.) are
+    NOT boundaries here — they ARE company spans. Boundaries are:
+    - Registration IDs like (123456-W)
+    - Receipt headers like RECEIPT, INVOICE, etc.
+    - Money values
+    - Date values
+    - Phone/fax numbers
+    """
+    from models.rule_regex import _DATE_RE, _MONEY_RE
+    s = text.strip()
+    if not s:
+        return True
+    if _COMPANY_REG_ID_RE.search(s):
+        return True
+    if _COMPANY_HEADER_RE.match(s):
+        return True
+    if _MONEY_RE.search(s) or _DATE_RE.search(s):
+        return True
+    # Phone/fax lines are boundaries
+    phone_re = re.compile(r"(?:TEL|FAX|PHONE)[:\s]*\d", re.IGNORECASE)
+    if phone_re.search(s):
+        return True
+    return False
+
+
+def _company_anchor_filter(
+    picks: list[int], texts: list[str], bboxes: list[list[float]],
+) -> list[int]:
+    """Filter FOCUS-C span picks via lexical anchor + contiguity rules.
+
+    1. Sort picks top-down by ``bboxes[i][1]`` (y1).
+    2. Drop boundary lines (``_is_company_boundary``) from picks.
+    3. Find topmost remaining pick whose text matches ``_COMPANY_ANCHOR``;
+       if none, return ``picks[:1]`` (no-anchor fallback: keep first only).
+    4. Extend backward 1 line: if the pick immediately before the anchor
+       in the original picks list is a non-boundary short alpha line
+       (≤6 tokens, all letters/spaces), include it as parent brand.
+    5. Extend forward only while the next pick (after anchor in original
+       picks) hits ``_COMPANY_ANCHOR`` OR matches ``_COMPANY_UPPER_CONT_RE``.
+       Stop on first non-matching line.
+    6. Return the resulting contiguous sub-list in original picks order.
+    """
+    if not picks or not texts or not bboxes:
+        return []
+    # Sort picks top-down.
+    sorted_picks = sorted(picks, key=lambda i: bboxes[i][1] if i < len(bboxes) else 999)
+    # Drop boundary lines.
+    clean = [i for i in sorted_picks if not _is_company_boundary(texts[i])]
+    if not clean:
+        return picks[:1] if picks else []
+    # Find anchor.
+    anchor_idx_in_clean: int | None = None
+    for ci, pi in enumerate(clean):
+        if _COMPANY_ANCHOR.search(texts[pi]):
+            anchor_idx_in_clean = ci
+            break
+    if anchor_idx_in_clean is None:
+        return clean[:1]
+    anchor_pick = clean[anchor_idx_in_clean]
+    result = [anchor_pick]
+    # Extend backward (parent brand).
+    if anchor_idx_in_clean > 0:
+        prev_pick = clean[anchor_idx_in_clean - 1]
+        prev_text = texts[prev_pick].strip()
+        tokens = prev_text.split()
+        if len(tokens) <= 6 and all(c.isalpha() or c.isspace() for c in prev_text):
+            result.insert(0, prev_pick)
+    # Extend forward.
+    for ci in range(anchor_idx_in_clean + 1, len(clean)):
+        cand = clean[ci]
+        t = texts[cand].strip()
+        if _COMPANY_ANCHOR.search(t) or _COMPANY_UPPER_CONT_RE.match(t):
+            result.append(cand)
+        else:
+            break
+    # Return in original picks order.
+    pick_set = set(result)
+    return [p for p in picks if p in pick_set]
+
 
 @dataclass(frozen=True)
 class AssignerPolicy:
@@ -103,6 +206,10 @@ class AssignerPolicy:
     # :class:`ExpConfig` so eval gates the trained head at the
     # deployment threshold (mirrors :attr:`focus_confidence_floor`).
     focus_company_confidence_threshold: float = 0.0
+    # FOCUS-C span dispatch gate.  When the span head confidence is at
+    # or above this floor, the span path fires; below falls through to
+    # the single-line ``company_pick`` argmax path.
+    focus_company_confidence_floor: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -400,6 +507,7 @@ def _assign_learned_with_attn(
     total_confidence_threshold: float = 0.0,
     focus_confidence_floor: float = 0.0,
     focus_company_confidence_threshold: float = 0.0,
+    focus_company_confidence_floor: float = 0.0,
 ) -> tuple[dict[str, str], torch.Tensor | None]:
     """Field-assign and return (F, N) cross-attention for fig_attn_heatmap.
 
@@ -429,6 +537,11 @@ def _assign_learned_with_attn(
     Below the threshold (or when the head is absent) the legacy
     cross-attn argmax pick wins so confident negatives never regress.
 
+    Additionally, when the FOCUS-C span head is enabled
+    (``focus_company_span_enabled``), the span head prediction is tried
+    first and filtered via :func:`_company_anchor_filter`; the existing
+    ``company_pick`` + ``_company_span`` path is the fallback.
+
     Regex-deterministic fields (date/total) are resolved via
     :func:`_route_regex_field` first when ``regex_router`` is True
     (Change A); attention is the fallback.  When
@@ -447,12 +560,14 @@ def _assign_learned_with_attn(
     ).unsqueeze(0).to(device)
     # PR #113 / H1 + FOCUS-C — request ``kv`` whenever a head needs
     # the post-encoder tensor (FOCUS-A span head OR FOCUS-C positional
-    # head); the no-head path stays bit-identical to the legacy
-    # ``assigner(...)`` call.
+    # head OR FOCUS-C span head); when all heads are disabled
+    # (focus_company_span_enabled=False by default), the no-head path
+    # stays bit-identical to the legacy ``assigner(...)`` call.
     kv: torch.Tensor | None
     needs_kv = (
         assigner._span_head is not None
         or getattr(assigner, "focus_company_enabled", False)
+        or getattr(assigner, "focus_company_span_enabled", False)
     )
     if needs_kv:
         _logits, attn_w, kv = assigner.forward_with_kv(tf, bf, priors)
@@ -523,6 +638,32 @@ def _assign_learned_with_attn(
                 used.add(i)
             value = span_value
         else:
+            # FOCUS-C span dispatch: when the span head is configured,
+            # try it first; filter via ``_company_anchor_filter``.
+            # Fall through to the single-line ``company_pick`` path
+            # when the span head is absent or unconfident.
+            if (
+                name == "company"
+                and getattr(assigner, "focus_company_span_enabled", False)
+                and assigner._company_span_head is not None
+                and kv is not None
+            ):
+                cspan = assigner.company_span(kv[0], texts)
+                if (
+                    cspan["j"] >= cspan["i"]
+                    and cspan["confidence"] >= focus_company_confidence_floor
+                ):
+                    cpicks = list(range(cspan["i"], cspan["j"] + 1))
+                    cpicks = _company_anchor_filter(cpicks, texts, bboxes)
+                    cpicks = [i for i in cpicks if i not in used]
+                    cspan_value = " ".join(
+                        t for t in (texts[i].strip() for i in cpicks) if t
+                    )
+                    if cpicks and cspan_value:
+                        for i in cpicks:
+                            used.add(i)
+                        out[name] = postprocess_value(name, cspan_value)
+                        continue
             # FOCUS-C dispatch: replace the cross-attn argmax for the
             # ``company`` field with :meth:`AttentionAssigner.company_pick`
             # over the post-encoder ``kv``, then forward-extend through
@@ -611,5 +752,8 @@ def assign_with_policy(
         focus_confidence_floor=policy.focus_confidence_floor,
         focus_company_confidence_threshold=(
             policy.focus_company_confidence_threshold
+        ),
+        focus_company_confidence_floor=(
+            policy.focus_company_confidence_floor
         ),
     )
