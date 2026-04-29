@@ -32,6 +32,13 @@ from models.rule_fields import (
     extract_date,
     extract_total,
 )
+from models.total_arithmetic import (
+    _classify as _classify_money_lines,
+)
+from models.total_arithmetic import (
+    _identity_cash_change,
+    _identity_sub_tax,
+)
 from models.total_arithmetic import total_arithmetic_consensus
 from models.rule_regex import (
     _ADDR_ANCHOR,
@@ -177,6 +184,7 @@ def _money_value_at(text: str) -> float | None:
 def _score_money(
     i: int, texts: list[str], rank: dict[int, int], money_idxs: list[int],
     attn_row: list[float] | None = None,
+    arithmetic_targets: list[float] | None = None,
 ) -> float:
     """Higher = more likely the real TOTAL line.
 
@@ -255,6 +263,19 @@ def _score_money(
             s -= 3.5
         elif val < 1.0:
             s -= 1.0
+        # Arithmetic-witness boost: a value satisfying one of the
+        # receipt's identities (cash − change, subtotal + tax + svc −
+        # disc) is strong out-of-band evidence that this is the grand
+        # total — independent of any keyword anchor.  Two witnesses
+        # (rare) is essentially proof on SROIE.  This boost is what
+        # turns ``_score_money`` from a keyword-matching heuristic into
+        # an arithmetic-validated scorer.
+        if arithmetic_targets:
+            wit = _arithmetic_witness_count(val, arithmetic_targets)
+            if wit >= 2:
+                s += 6.0
+            elif wit == 1:
+                s += 3.0
     return s
 
 
@@ -266,6 +287,76 @@ def _parse_money_value(s: str) -> float | None:
         return float(s.strip().replace(",", ""))
     except ValueError:
         return None
+
+
+def _arithmetic_targets(
+    classified: list[tuple[int, str, float]],
+) -> list[float]:
+    """Candidate grand totals derived from receipt arithmetic identities.
+
+    Returns every value the identity solvers can produce — not just the
+    consensus.  A line whose float matches *any* of these within ±2¢ is
+    treated as arithmetic-validated and gets a strong score boost in
+    :func:`_score_money`.  When the OCR'd total line has a single-digit
+    drift (``70.45`` vs the real ``79.45``) this list lets us identify
+    the true value and substitute it without trusting the corrupted
+    line's raw digits.
+    """
+    out: list[float] = []
+    cash = _identity_cash_change(classified)
+    if cash is not None:
+        out.append(cash)
+    sub = _identity_sub_tax(classified)
+    if sub is not None:
+        out.append(sub)
+    return out
+
+
+def _arithmetic_witness_count(value: float, targets: list[float]) -> int:
+    """How many arithmetic identities ``value`` satisfies to ±2¢."""
+    return sum(1 for t in targets if abs(value - t) <= 0.02)
+
+
+def _value_close(a: str, b: str, eps: float = 0.02) -> bool:
+    """Compare two money strings as floats within ``eps``; safe on parse fail."""
+    fa = _parse_money_value(a.lstrip("-"))
+    fb = _parse_money_value(b.lstrip("-"))
+    if fa is None or fb is None:
+        return False
+    return abs(fa - fb) <= eps
+
+
+def _ocr_drift_distance(a: str, b: str) -> int:
+    """Levenshtein on the digit sequences of two money strings.
+
+    Returns the smaller of (1) absolute difference in digit length plus
+    edit distance on aligned digits, or (2) full Levenshtein over the
+    original strings.  Used to pair an arithmetic-synthesised value
+    with an OCR-corrupted line — ``70.45`` vs ``79.45`` differs by
+    one digit, ``118.55`` vs ``119.55`` differs by one digit, etc.
+    A non-positive return is impossible; callers should treat
+    ``<= 2`` as "OCR-plausibly the same value".
+    """
+    sa, sb = a.lstrip("-"), b.lstrip("-")
+    if sa == sb:
+        return 0
+    # Quick reject: very different lengths almost always means a
+    # genuinely different value (e.g. 75.00 vs 750.00 is a real
+    # missing-digit OCR but pairs only at distance 1).
+    if abs(len(sa) - len(sb)) > 2:
+        return abs(len(sa) - len(sb))
+    # Standard Levenshtein, capped at small values for cheapness.
+    m, n = len(sa), len(sb)
+    if m == 0 or n == 0:
+        return max(m, n)
+    prev = list(range(n + 1))
+    for i in range(1, m + 1):
+        cur = [i] + [0] * n
+        for j in range(1, n + 1):
+            cost = 0 if sa[i - 1] == sb[j - 1] else 1
+            cur[j] = min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + cost)
+        prev = cur
+    return prev[n]
 
 
 def _attach_sign(value: str, source_line: str) -> str:
@@ -325,9 +416,21 @@ def _refine_total(
     money_idxs = [i for i, t in enumerate(repaired) if _MONEY_RE.search(t)]
     if not money_idxs:
         return learned
+    # Arithmetic identities computed once; passed to the scorer so a
+    # value satisfying ``cash − change`` or ``subtotal + tax`` is
+    # promoted regardless of the keyword anchor on its line.
+    classified = _classify_money_lines(repaired)
+    targets = _arithmetic_targets(classified)
+    # OCR-drift correction: if arithmetic produces a clean target value
+    # but the closest line value is within edit distance 1 (single OCR
+    # digit drift — ``79.45`` vs ``70.45``, ``119.55`` vs ``118.55``,
+    # ``848.00`` vs ``48.00``), prefer the arithmetic target itself.
+    # The keyword-match boundary is already enforced by the identities
+    # — they only fire when SUBTOTAL/CASH lines are present — so this
+    # path never invents a value out of thin air.
     rank = _attn_rank(attn_row) if attn_row else {}
     scored: list[tuple[float, int, str]] = sorted(
-        ((_score_money(i, repaired, rank, money_idxs, attn_row), i,
+        ((_score_money(i, repaired, rank, money_idxs, attn_row, targets), i,
           _MONEY_RE.search(repaired[i]).group(0))  # type: ignore[union-attr]
          for i in money_idxs),
         reverse=True,
@@ -352,6 +455,48 @@ def _refine_total(
             return None
         return value
 
+    # ARITHMETIC-FIRST PATH (transformative): when an identity gives a
+    # clean target and a TOTAL-keyword'd line carries a value within
+    # 1-edit OCR drift of that target, the arithmetic value wins.  This
+    # catches the dominant single-digit-drift failure mode (``70.45`` ↔
+    # ``79.45``, ``118.55`` ↔ ``119.55``, ``30.68`` ↔ ``30.70``,
+    # ``25.10`` ↔ ``24.10``) where the score-based path has no signal
+    # that the printed digits are wrong.
+    for tgt in targets:
+        tgt_str = f"{tgt:.2f}"
+        # Already exact on some line — let the witness boost in the
+        # scorer carry it; no substitution needed here.  Use strict
+        # equality (no eps): if the line value differs by even 1¢ we
+        # may need to substitute, since the arithmetic target is
+        # exact-by-construction and any OCR drift is what we are
+        # trying to correct.
+        def _exact_match(idx: int) -> bool:
+            raw = _MONEY_RE.search(repaired[idx]).group(0).strip()  # type: ignore[union-attr]
+            raw = re.sub(
+                r"^(RM|USD|SGD|MYR|\$)\s*", "", raw, flags=re.IGNORECASE,
+            )
+            return raw == tgt_str
+        if any(_exact_match(i) for i in money_idxs):
+            continue
+        # Find an OCR-drift sibling: a line within 1 char of tgt whose
+        # neighbourhood carries a TOTAL keyword (so we don't substitute
+        # against a cash/subtotal line that happens to be 1 digit off).
+        for i in money_idxs:
+            line_val = _MONEY_RE.search(repaired[i]).group(0).strip()  # type: ignore[union-attr]
+            line_val = re.sub(
+                r"^(RM|USD|SGD|MYR|\$)\s*", "", line_val, flags=re.IGNORECASE,
+            )
+            if _ocr_drift_distance(line_val, tgt_str) > 1:
+                continue
+            nbr = " ".join(repaired[max(0, i - 1): i + 2])
+            if _SUBTOTAL_KW_RE.search(nbr):
+                continue
+            if _TOTAL_NEGATIVE.search(repaired[i]):
+                continue
+            # Match: the corrupted line's value is within 1 OCR edit of
+            # the arithmetic target AND its context is TOTAL-positive.
+            if _TOTAL_STRONG.search(nbr) or _TOTAL_WEAK.search(nbr):
+                return tgt_str
     if not _MONEY_RE.fullmatch(learned_clean):
         # Learned value isn't a usable money string; take the scored
         # pick unconditionally (fall back to learned if no positive
