@@ -127,6 +127,12 @@ def main() -> None:
     config = load_config(args.config)
     if args.skip_donut:
         config.skip_donut = True
+        config.kd_attn_weight = 0.0    # no DONUT teacher → KD disabled
+        config.kd_logits_weight = 0.0  # no DONUT teacher → KD disabled
+        logging.getLogger("kaggle2").info(
+            "--skip-donut: kd_attn_weight and kd_logits_weight forced to 0.0 "
+            "(no DONUT teacher available)."
+        )
     # CLI --paper-variant flips both the template choice (via env in
     # load_config) AND the canonical_sroie_enabled toggle so the basic
     # variant always evaluates on the 500/63/63 internal split.
