@@ -46,7 +46,7 @@ def eval_gtocr_rulebased(config: ExpConfig, test: list[Receipt]) -> Metrics:
     Mirrors the YOLO+TrOCR+Regex pipeline interface but bypasses YOLO and
     TrOCR by feeding SROIE ground-truth box text/bboxes directly as the OCR
     stream.  The bboxes are normalised [x1,y1,x2,y2] — the same coordinate
-    convention produced by ``models/pipeline_detect._detect_and_read``.
+    convention produced by ``models/detect._detect_and_read``.
     This GT-OCR-stream baseline lets us compare the hybrid pipeline output
     against the same rule_based_assign logic running on perfect OCR input.
     """

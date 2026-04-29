@@ -14,9 +14,9 @@ Role: canonical home of the small (~120K-param) opt-in assigner that
 
 Public API — ``mini_assign(feats, config) -> FieldAssignment`` —
 matches the legacy 2-in/1-out contract.  The legacy
-:mod:`models.gat_assigner` module remains importable as a thin
-re-export so callers do not break in PR-A; PR-C will drop the
-legacy alias.
+``models.gat_assigner`` alias has been dropped; callers must import
+``mini_assign`` from this module (or :mod:`models.focus_gat` for the
+underlying scatter-softmax GAT primitives).
 """
 from __future__ import annotations
 

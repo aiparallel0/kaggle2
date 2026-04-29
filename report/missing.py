@@ -55,7 +55,7 @@ MISSING_OK_PREFIXES: tuple[str, ...] = (
     # --stage latency that measures per-inference timing; absent on
     # standard train+eval runs.  Latency cells render \textit{n/a} so
     # the table compiles without a build blocker. Applies to both
-    # template_basic.tex and template_advanced.tex.
+    # template_baseline.tex and template_focus.tex.
     "donut_latency_",
     "pipeline_latency_",
     "donut_throughput_",
@@ -83,7 +83,7 @@ MISSING_OK_KEYS: frozenset[str] = frozenset({
     # defined in core/schemas.py but the producer (--stage latency or
     # the new CostDiagnostics writer) is scoped-out.  Until that stage
     # lands, the training table renders these cells as \textit{n/a}.
-    # Applies to both template_basic.tex and template_advanced.tex.
+    # Applies to both template_baseline.tex and template_focus.tex.
     "donut_wall_clock_s", "pipeline_wall_clock_s",
     "donut_energy_wh", "pipeline_energy_wh",
     # Per-image inference cost — emitted by the latency stage alongside
@@ -107,8 +107,8 @@ MISSING_OK_KEYS: frozenset[str] = frozenset({
     # collector for it (the collector amortises infrastructure cost
     # over the dominant DONUT/TrOCR stages).  These cells render
     # \textit{n/a} on every standard build until a dedicated
-    # --stage cost_assigner producer lands.  Applies to template_basic
-    # and template_advanced (Tables X & XI assigner sub-stage rows).
+    # --stage cost_assigner producer lands.  Applies to template_baseline
+    # and template_focus (Tables X & XI assigner sub-stage rows).
     "assigner_train_minutes", "assigner_peak_vram_gb",
     "assigner_cost_usd", "assigner_energy_kwh", "assigner_co2_kg",
     # Item 5: param ratio is computed from donut_params_m / pipeline_params_m.

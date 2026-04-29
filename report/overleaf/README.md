@@ -11,18 +11,18 @@ pick the one that matches your run.
 
 | Variant     | Template file                  | Test set            | Arms compared                                                                          | Comparable to public leaderboard? |
 |-------------|--------------------------------|---------------------|----------------------------------------------------------------------------------------|------------------------------------|
-| `advanced`  | `report/template_advanced.tex` | 347 canonical Task-3 (auto-downloaded, sha256-pinned) | DONUT vs YOLO+TrOCR+**Attention assigner**                                              | **Yes**                            |
-| `basic`     | `report/template_basic.tex`    | 63-image internal (from 500/63/63 split of 626 train) | DONUT vs YOLO+TrOCR+**regex** vs **GT-OCR+regex** baseline                              | No (internal split)                |
+| `focus`     | `report/template_focus.tex`    | 347 canonical Task-3 (auto-downloaded, sha256-pinned) | DONUT vs YOLO+TrOCR+**Attention assigner**                                              | **Yes**                            |
+| `baseline`  | `report/template_baseline.tex` | 63-image internal (from 500/63/63 split of 626 train) | DONUT vs YOLO+TrOCR+**regex** vs **GT-OCR+regex** baseline                              | No (internal split)                |
 
-`advanced` is the default.  Run with the basic variant via:
+`focus` is the default.  Run with the baseline variant via:
 
 ```bash
-python main.py --paper-variant basic --stage all
+python main.py --paper-variant baseline --stage all
 ```
 
 `config.json` mirrors the choice via the `paper_variant` key, and
 `main.py` automatically flips `canonical_sroie_enabled` to match
-(`advanced`→`true`, `basic`→`false`).
+(`focus`→`true`, `baseline`→`false`).
 
 ---
 
@@ -62,7 +62,7 @@ identical to the one `make all` produces locally.
 
 ## Per-variant editing notes
 
-### Advanced (`template_advanced.tex`)
+### Focus (`template_focus.tex`)
 - Title and abstract are scoped to the **626 train + 347 canonical
   test** evaluation.
 - The GT-OCR-rulebased baseline is intentionally absent — Task-3 ships
@@ -73,11 +73,11 @@ identical to the one `make all` produces locally.
 - Reported numbers ARE comparable to public SROIE Task-3 leaderboard
   entries (every leaderboard entry uses the same 347-image set).
 
-### Basic (`template_basic.tex`)
+### Baseline (`template_baseline.tex`)
 - Title and abstract are scoped to the **500/63/63 internal split**.
 - All three arms (DONUT, YOLO+TrOCR+regex, GT-OCR+regex) are present.
 - Reported numbers are **not** directly comparable to the public
-  leaderboard — for that, switch to the advanced variant.
+  leaderboard — for that, switch to the focus variant.
 
 ---
 

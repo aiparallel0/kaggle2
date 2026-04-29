@@ -9,7 +9,7 @@ gaps remain, and how to unstick a run without retraining using
 
 ## 1. Symptom
 
-The guardrail in `models/pipeline_eval.py` fires with:
+The guardrail in `models/eval_pipeline.py` fires with:
 
 > `Pipeline F1=0.0 — YOLO imgsz mismatch (Bug 5), TrOCR undertrained (Bug 6), or stale generation_config decoder_start_token_id (Bug 9)`
 
@@ -71,7 +71,7 @@ is not in the SROIE target vocabulary.
 | #45  | Fix Bug 9: stale generation_config causing eval F1=0.0 in pipeline          | Post-`save_model` re-pin, no disk assertion |
 | #49  | Bug 9: symmetric generation_config re-pin + TrainError assertion            | Symmetric + `TrainError` disk round-trip    |
 
-PR #49 introduced `models/_gen_config.py::_persist_generation_config`
+PR #49 introduced `models/gen_config.py::_persist_generation_config`
 which is the canonical fix for the training path.
 
 ## 4. Residual gaps (not covered by #49)
@@ -79,13 +79,13 @@ which is the canonical fix for the training path.
 Even with #49 merged, a pipeline run can still land at F1=0.0 through
 paths that aren't a literal "wrong `decoder_start_token_id` on disk":
 
-1. **Tokenizer drift at eval load.** `models/pipeline_detect.py` passes
+1. **Tokenizer drift at eval load.** `models/detect.py` passes
    `decoder_start_token_id=trocr_proc.tokenizer.cls_token_id` to
    `model.generate()`. If the processor saved to `results/trocr/` does
    not match the tokenizer the model was trained with, the IDs disagree
    at inference time even though `generation_config.json` itself is
    valid. There is no load-time assertion for this.
-2. **Silent exception swallowing** in `pipeline_eval.py`
+2. **Silent exception swallowing** in `eval_pipeline.py`
    (`except (OSError, RuntimeError, ValueError): ...`) masks per-receipt
    crashes and produces F1=0.0 with zero log trace.
 3. **Checkpoint-path drift.** A stale `results/trocr/` left over from an
@@ -139,7 +139,7 @@ The script:
    `bos_token_id`, and **nulls** `forced_bos_token_id` and
    `forced_eos_token_id`.
 4. Re-reads the file and raises if the round-trip disagrees — the same
-   contract as `models/_gen_config.py::_persist_generation_config`.
+   contract as `models/gen_config.py::_persist_generation_config`.
 5. Prints a before/after diff so the fix is auditable in logs.
 
 After repair, re-run the eval stage only:
@@ -152,8 +152,8 @@ No retraining required.
 
 ## 7. Related files
 
-* `models/_gen_config.py` — canonical train-time guard (PR #49).
+* `models/gen_config.py` — canonical train-time guard (PR #49).
 * `models/donut_train.py`, `models/trocr_train.py` — call sites.
-* `models/pipeline_eval.py` — where the Bug-9 guardrail fires.
-* `tests/test_bug9_gen_config.py` — regression tests.
+* `models/eval_pipeline.py` — where the Bug-9 guardrail fires.
+* `tests/models/test_donut_eval_diag_artifact.py` — regression tests.
 * `scripts/repin_generation_config.py` — post-hoc repair tool (this PR).
