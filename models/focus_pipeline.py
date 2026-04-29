@@ -15,10 +15,12 @@ as a thin shim so existing callers do not break.
 """
 from __future__ import annotations
 
+import math
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
+from core.types import ZoneConfig
 from models.consensus import (
     _is_addr_boundary as _consensus_is_addr_boundary,
 )
@@ -53,7 +55,8 @@ from models.rule_fields import (
 )
 from models.rule_regex import DATE_RE, MONEY_RE, repair_money_ocr
 from models.total_arithmetic import total_arithmetic_consensus
-from models.total_post import extract_total_value
+from models.total_post import apply_zone_gate, extract_total_value
+from models.zone_prior import decode_zone_posterior
 
 try:
     import torch
@@ -246,6 +249,16 @@ class AssignerPolicy:
     # ``False`` reproduces the legacy regex-router-first dispatch
     # bit-for-bit.
     total_arithmetic_enabled: bool = True
+    # Relational receipt-zone prior — when enabled, a 3-state monotone
+    # HMM (header → items → totals) is decoded by forward–backward over
+    # per-line text features and routed into both the FOCUS-C company
+    # dispatch (additive log-``p_header`` on the company attention row,
+    # abstention gate on ``company_pick``) and the FOCUS-T total
+    # dispatch (filter candidate-money lines by ``p_total >=
+    # totals_zone_floor``; drop ``p_total < regex_total_floor`` from
+    # the regex-argmax fallback).  Defaults preserve legacy bit-for-bit
+    # behaviour when ``zone_cfg.enabled`` is False.
+    zone_cfg: ZoneConfig = field(default_factory=lambda: ZoneConfig(enabled=False))
 
 
 @dataclass(frozen=True)
@@ -572,6 +585,7 @@ def _assign_learned_with_attn(
     focus_company_confidence_threshold: float = 0.0,
     focus_company_confidence_floor: float = 0.0,
     total_arithmetic_enabled: bool = False,
+    zone_cfg: ZoneConfig | None = None,
 ) -> tuple[dict[str, str], torch.Tensor | None]:
     """Field-assign and return (F, N) cross-attention for fig_attn_heatmap.
 
@@ -622,6 +636,28 @@ def _assign_learned_with_attn(
     priors = torch.tensor(
         prior_list, dtype=torch.float32,
     ).unsqueeze(0).to(device)
+    # Zone-prior — relational 3-state (header / items / totals) HMM
+    # decoded once per receipt and routed into both the FOCUS-C company
+    # dispatch and the FOCUS-T total dispatch below.  Empty / disabled
+    # config returns a uniform posterior so legacy callers reproduce
+    # bit-for-bit.  Requires v4 priors for the y_norm + boilerplate
+    # columns; older priors fall back to text-only features (y=0).
+    n_pri = len(prior_list[0]) if prior_list else 0
+    zcfg = zone_cfg if zone_cfg is not None else ZoneConfig(enabled=False)
+    if zcfg.enabled and n_pri > V4_IS_COMPANY_BOILERPLATE_IDX:
+        zone_lines = [
+            (
+                texts[i],
+                float(prior_list[i][V4_Y_NORM_IDX]),
+                float(prior_list[i][V4_IS_COMPANY_BOILERPLATE_IDX]),
+            )
+            for i in range(len(texts))
+        ]
+        zone_post = decode_zone_posterior(zone_lines, zcfg)
+    else:
+        zone_post = []
+    p_header: list[float] = [p[0] for p in zone_post]
+    p_totals: list[float] = [p[2] for p in zone_post]
     # PR #113 / H1 + FOCUS-C — request ``kv`` whenever a head needs
     # the post-encoder tensor (FOCUS-A span head OR FOCUS-C positional
     # head OR FOCUS-C span head); when all heads are disabled
@@ -660,7 +696,11 @@ def _assign_learned_with_attn(
         # under-determined; legacy callers (``total_arithmetic_enabled
         # =False``) bypass this block entirely.
         if total_arithmetic_enabled and name == "total":
-            ar = total_arithmetic_consensus(texts, used)
+            ar = total_arithmetic_consensus(
+                texts, used,
+                p_totals=p_totals if p_totals else None,
+                totals_zone_floor=zcfg.totals_zone_floor,
+            )
             if ar is not None:
                 ar_idx, ar_value = ar
                 if ar_idx >= 0:
@@ -681,6 +721,28 @@ def _assign_learned_with_attn(
         w = attn_w[0, f_idx].clone()
         for u in used:
             w[u] = -1e9
+        # Zone-prior bias for the ``company`` row of cross-attention:
+        # add ``log p_header`` per line so the argmax fallback (and
+        # any consumer of ``w``) is biased toward the header zone.
+        # Bit-exact when ``p_header`` is uniform (zone prior disabled
+        # or abstaining), strict improvement when the prior
+        # concentrates mass on the actual header lines.
+        if name == "company" and p_header:
+            for li in range(min(len(p_header), int(w.shape[0]))):
+                w[li] = w[li] + math.log(max(p_header[li], 1e-6))
+        # FOCUS-T regex-argmax fallback (the deterministic ``total``
+        # path below) consults ``used`` to skip already-consumed lines;
+        # extending ``used`` with lines whose ``p_total`` is below the
+        # configured regex floor reroutes the same dropout semantics
+        # for header-zone numerics (phone / regid digits the money
+        # regex would otherwise accept).
+        if name == "total" and p_totals:
+            used = apply_zone_gate(used, p_totals, zcfg.regex_total_floor)
+            # Re-blank the augmented ``used`` set on ``w`` so the
+            # downstream ``argsort(w, descending=True)`` skips them.
+            for u in used:
+                if u < int(w.shape[0]):
+                    w[u] = -1e9
         if name in _MULTI_LINE_FIELDS:
             # PR #113 / H1 — FOCUS-A span dispatch.  The trained head
             # crops the diffuse threshold band to a contiguous
@@ -765,9 +827,22 @@ def _assign_learned_with_attn(
                 y_col = priors[0, :, V4_Y_NORM_IDX]
                 bp_col = priors[0, :, V4_IS_COMPANY_BOILERPLATE_IDX]
                 cpred = assigner.company_pick(kv[0], texts, y_col, bp_col)
+                # Zone-prior abstention: if the predicted line is not
+                # in the header zone (``p_header`` below the configured
+                # floor), treat as abstention so the legacy fallback
+                # below can fire.  Bit-exact when the zone prior is
+                # disabled (``p_header`` empty) or abstains (uniform).
+                cidx = cpred["i"]
+                in_header_zone = (
+                    not p_header
+                    or cidx < 0
+                    or cidx >= len(p_header)
+                    or p_header[cidx] >= zcfg.header_zone_floor
+                )
                 if (
                     cpred["i"] >= 0
                     and cpred["confidence"] >= focus_company_confidence_threshold
+                    and in_header_zone
                 ):
                     bp_flags = [bool(prior_list[i][V4_IS_COMPANY_BOILERPLATE_IDX])
                                 for i in range(len(texts))]
@@ -879,4 +954,5 @@ def assign_with_policy(
             policy.focus_company_confidence_floor
         ),
         total_arithmetic_enabled=policy.total_arithmetic_enabled,
+        zone_cfg=policy.zone_cfg,
     )

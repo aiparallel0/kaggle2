@@ -27,6 +27,7 @@ from core.types import (
     PipelineResult,
     Prediction,
     Receipt,
+    ZoneConfig,
 )
 from models.consensus import refine_assignments
 from models.detect import _detect_and_read, _fallback_full_image
@@ -168,6 +169,13 @@ def eval_pipeline(config: ExpConfig, test: list[Receipt]) -> PipelineResult:
                     ),
                     total_arithmetic_enabled=getattr(
                         config, "total_arithmetic_enabled", True,
+                    ),
+                    zone_cfg=ZoneConfig(
+                        enabled=getattr(config, "zone_prior_enabled", True),
+                        totals_zone_floor=getattr(config, "zone_totals_floor", 0.5),
+                        header_zone_floor=getattr(config, "zone_header_floor", 0.4),
+                        regex_total_floor=getattr(config, "zone_regex_total_floor", 0.2),
+                        params_path=getattr(config, "zone_params_path", ""),
                     ),
                 )
                 # P3 opt-in: graph-attention assigner override.  Runs in

@@ -33,6 +33,7 @@ ErrorCategory = Literal[
     "ocr_error",
     "assigner_error",
     "postprocess_error",
+    "zone_violation",
     "correct",
 ]
 
@@ -123,6 +124,34 @@ def classify_miss(
     if re.sub(r"\W", "", g) == re.sub(r"\W", "", p):
         return "postprocess_error"
     return "hallucination"
+
+
+def count_zone_violations(
+    field: str,
+    picked_idx: int,
+    p_header: list[float],
+    p_total: list[float],
+    *,
+    header_floor: float = 0.4,
+    total_floor: float = 0.5,
+) -> int:
+    """Return ``1`` when ``field`` was selected outside its expected zone.
+
+    Regression detector for the relational receipt-zone prior shipped
+    with PR-Z (the shared FOCUS-C/FOCUS-T zone HMM): a ``company``
+    pick whose ``p_header[picked_idx] < header_floor`` or a ``total``
+    pick whose ``p_total[picked_idx] < total_floor`` is a structural
+    violation of the H→I→T monotone constraint and should *never*
+    fire after the prior is wired.  Returns ``0`` for fields the prior
+    does not gate (``date`` / ``address``) and for invalid indices.
+    """
+    if picked_idx < 0:
+        return 0
+    if field == "company" and p_header and picked_idx < len(p_header):
+        return 1 if p_header[picked_idx] < header_floor else 0
+    if field == "total" and p_total and picked_idx < len(p_total):
+        return 1 if p_total[picked_idx] < total_floor else 0
+    return 0
 
 
 def error_breakdown(
