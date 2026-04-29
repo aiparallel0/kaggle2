@@ -80,6 +80,55 @@ class CompanySpanPred(TypedDict):
     confidence: float
 
 
+# ZonePosterior — per-line 3-vector ``(p_header, p_items, p_total)``.
+# A list whose length matches the OCR-line count; each row sums to 1.
+# Produced by :func:`models.zone_prior.decode_zone_posterior` and
+# consumed by the FOCUS-C / FOCUS-T dispatch paths in
+# :mod:`models.focus_pipeline` so company and total decisions share a
+# single relational prior over the receipt's vertical structure.
+ZonePosterior = list[tuple[float, float, float]]
+ZONE_HEADER = 0
+ZONE_ITEMS = 1
+ZONE_TOTAL = 2
+
+
+@dataclass(frozen=True)
+class ZoneConfig:
+    """Inference-time knobs for the 3-state receipt-zone HMM.
+
+    The HMM segments each receipt's OCR lines into ``{header, items,
+    totals}`` with monotone forward-only transitions.  Emission features
+    are derived from values already present in ``priors_v4`` plus four
+    boolean keyword indicators built from existing regex tables, so the
+    prior costs ~30 floats and runs on CPU at inference.
+
+    * ``enabled``            — master toggle; ``False`` keeps the legacy
+                               cross-attn / arithmetic dispatch bit-for-bit.
+    * ``totals_zone_floor``  — candidate-money lines with
+                               ``p_total < totals_zone_floor`` are dropped
+                               from :func:`models.total_arithmetic.
+                               total_arithmetic_consensus` enumeration.
+    * ``header_zone_floor``  — :meth:`AttentionAssigner.company_pick`
+                               picks whose ``p_header`` is below this
+                               floor are treated as abstentions so the
+                               legacy fallback can fire.
+    * ``regex_total_floor``  — the regex-argmax fallback for ``total``
+                               drops candidate lines with
+                               ``p_total < regex_total_floor``.
+    * ``params_path``        — optional JSON file under ``results/`` with
+                               EM-fit emission/transition parameters.
+                               Empty falls back to hand-tuned defaults
+                               which are sufficient on SROIE single-
+                               column thermal receipts.
+    """
+
+    enabled: bool = True
+    totals_zone_floor: float = 0.5
+    header_zone_floor: float = 0.4
+    regex_total_floor: float = 0.2
+    params_path: str = ""
+
+
 @dataclass
 class Field:
     """One of the four SROIE KIE fields (company, date, address, total)."""
@@ -482,10 +531,11 @@ class ExpConfig:
     # :func:`models.postprocess_company._company_span` greedy assembler)
     # iff ``softmax(final)[i] >= focus_company_confidence_threshold``;
     # below this the legacy argmax pick wins so confident negatives do
-    # not regress.  Default 0.30 was chosen at the deployment threshold
-    # (FOCUS-C head trained head outputs ~0.05 mass per region on a
-    # 20-region receipt; 0.30 is 6× the uniform prior).
-    focus_company_confidence_threshold: float = 0.30
+    # not regress.  Default 0.40 — bumped from the original 0.30 by the
+    # zone-prior PR, which raises *signal* via the relational
+    # ``ZonePosterior`` so the threshold can move *up* (precision) rather
+    # than down (recall) to address upstream miss modes.
+    focus_company_confidence_threshold: float = 0.40
     # FOCUS-C span head (mirrors FOCUS-A).  When ``focus_company_span_enabled``
     # is True the AttentionAssigner instantiates a 3-projection
     # ``_CompanySpanHead`` and the trainer adds the span-IoU + boundary-CE
@@ -513,4 +563,16 @@ class ExpConfig:
     # consensus is conservative — it abstains on under-determined
     # receipts and the caller falls through to the legacy chain.
     total_arithmetic_enabled: bool = True
+    # Relational receipt-zone prior (PR — shared zone for company/total).
+    # A 3-state monotone HMM (header → items → totals) is decoded by
+    # forward–backward over per-line text features and routed into both
+    # FOCUS-C (company) and FOCUS-T (total) dispatch paths in
+    # :mod:`models.focus_pipeline` so the two fields share a single
+    # structural prior.  Defaults preserve the legacy paths bit-for-bit
+    # when ``zone_prior_enabled=False``.
+    zone_prior_enabled: bool = True
+    zone_totals_floor: float = 0.5
+    zone_header_floor: float = 0.4
+    zone_regex_total_floor: float = 0.2
+    zone_params_path: str = ""
     extra: dict[str, object] = field(default_factory=dict)

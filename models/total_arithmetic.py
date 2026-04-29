@@ -133,6 +133,8 @@ def _line_with_value(
 
 def total_arithmetic_consensus(
     texts: list[str], used: set[int],
+    p_totals: list[float] | None = None,
+    totals_zone_floor: float = 0.0,
 ) -> tuple[int, str] | None:
     """Solve for ``total`` via arithmetic identities over parsed money.
 
@@ -141,8 +143,23 @@ def total_arithmetic_consensus(
     synthesised value (no line on the receipt carries it verbatim;
     recovers OCR-corrupted total lines), and ``None`` is ambiguous
     or underdetermined (caller should fall through).
+
+    When a relational ``ZonePosterior`` is supplied via ``p_totals``
+    (length-aligned to ``texts``), candidate-money lines whose
+    ``p_total`` is below ``totals_zone_floor`` are filtered out before
+    enumerating identities — phone numbers, registration suffixes and
+    other header-zone numerics that the money regex would otherwise
+    accept never reach the arithmetic enumeration.  Defaults preserve
+    the legacy bit-exact behaviour (no zone gate) when ``p_totals`` is
+    ``None``.
     """
-    c = [(i, lab, v) for i, lab, v in _classify(texts) if i not in used]
+    classified = _classify(texts)
+    if p_totals is not None:
+        classified = [
+            (i, lab, v) for i, lab, v in classified
+            if i < len(p_totals) and p_totals[i] >= totals_zone_floor
+        ]
+    c = [(i, lab, v) for i, lab, v in classified if i not in used]
     if not c:
         return None
     cands: list[float] = []

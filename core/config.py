@@ -130,6 +130,8 @@ def load_config(path: str, defaults: dict[str, Any] | None = None) -> ExpConfig:
         "focus_total_aux_w", "focus_company_pos_aux_w",
         "priors_v4",
         "total_arithmetic_enabled",
+        "zone_prior_enabled", "zone_totals_floor", "zone_header_floor",
+        "zone_regex_total_floor", "zone_params_path",
     }
     # Bug-18 composite-loss knobs are read via ``_loss_knob`` from
     # ``config.extra``, so they are intentionally NOT in ``_optional`` —
@@ -348,6 +350,11 @@ def load_config(path: str, defaults: dict[str, Any] | None = None) -> ExpConfig:
         focus_company_pos_aux_w=float(raw.get("focus_company_pos_aux_w", 0.0)),
         priors_v4=bool(raw.get("priors_v4", False)),
         total_arithmetic_enabled=bool(raw.get("total_arithmetic_enabled", True)),
+        zone_prior_enabled=bool(raw.get("zone_prior_enabled", True)),
+        zone_totals_floor=float(raw.get("zone_totals_floor", 0.5)),
+        zone_header_floor=float(raw.get("zone_header_floor", 0.4)),
+        zone_regex_total_floor=float(raw.get("zone_regex_total_floor", 0.2)),
+        zone_params_path=str(raw.get("zone_params_path", "")),
         extra=extra,
     )
 

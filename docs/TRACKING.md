@@ -30,6 +30,9 @@ producers available.
 | `core.manifest.write_manifest` | `MANIFEST.json` | (not a `\VAR{}` producer — the file itself) |
 | `data.sroie_canonical.ensure_canonical_test_set` | `<data_dir>/test/{img,entities}/` (×347 each) | (data producer, not a `\VAR{}` key — but powers `test_set_kind=canonical_347` and the `\VAR{donut_f1}` / `\VAR{pipeline_f1}` measured under the canonical Task-3 split when `canonical_sroie_enabled=true`) |
 | `stages.eval.stage_eval` (canonical-active branch) | `combined_metrics.json` | `test_set_kind`, `test_set_size` |
+| `data.zone_prior_fit.fit_zone_prior` + `score_train_acc` | `results/zone_prior.json`, `metrics/zone_prior_diag.json` | `zone_prior_train_acc` |
+| `core.error_metrics.count_zone_violations` (aggregated in `stages.eval_producers.emit_all`) | `metrics/extended_metrics.json` | `zone_violation_count_company`, `zone_violation_count_total` |
+| `models.eval_pipeline.run_pipeline` (zone-gated branch) | `metrics/extended_metrics.json` | `pipeline_f1_total_zone_gated` |
 
 ## Scoped-out keys (intentionally unwired in this PR)
 

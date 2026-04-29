@@ -74,4 +74,26 @@ def extract_total_value(line: str) -> str:
     return _CURRENCY_PREFIX.sub("", s)
 
 
-__all__ = ["extract_total_value"]
+def apply_zone_gate(
+    used: set[int], p_totals: list[float], floor: float,
+) -> set[int]:
+    """Return ``used`` augmented with line indices whose ``p_total`` is
+    below ``floor``.
+
+    The total-field regex-argmax fallback in
+    :func:`models.focus_pipeline._assign_learned_with_attn` consults
+    ``used`` to skip lines already consumed by another field; passing
+    the zone-prior-derived blocklist through the same set extends that
+    semantics to "lines outside the totals zone are also off-limits".
+    A zero-length ``p_totals`` (zone prior disabled / receipt empty)
+    is a no-op so legacy callers reproduce bit-for-bit.  ``floor``
+    defaults are routed via :class:`core.types.ZoneConfig` —
+    ``ZoneConfig.regex_total_floor`` (typ. 0.20).
+    """
+    if not p_totals:
+        return used
+    blocked = {i for i, p in enumerate(p_totals) if p < floor}
+    return used | blocked
+
+
+__all__ = ["extract_total_value", "apply_zone_gate"]

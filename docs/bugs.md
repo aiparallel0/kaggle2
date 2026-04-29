@@ -126,3 +126,58 @@ Pipeline F1 sits below DONUT (0.818).
 
 The guard is `bug_flags["bug_18"]`; flipping it False is the
 documented escape hatch for replay runs that need the legacy loss.
+
+## Bug 19: Per-field heads optimised in isolation — no relational zone prior
+
+**Mechanism.** Every dispatch path in `models/focus_pipeline.py` treated
+each field independently: `company_pick` argmaxed over *all* OCR lines
+with only a denylist (`_COMPANY_HEADER_RE`) keeping bottom-of-receipt
+boilerplate (`CHANGE`, `CASH`, `THANK YOU`) out of scope, and
+`total_arithmetic.solve` enumerated every parsed money value on the
+receipt — including phone numbers (`03-1234.5678`) and registration
+suffixes (`(559208-M)`) sitting in the *header* zone that the regex
+in `total_post.py` accepted as numeric. The two failures were the
+same failure mirrored: `company` leaked downward into the totals zone;
+`total` leaked upward into the header zone. The signal needed for both
+— a single 3-class posterior `P(zone ∈ {header, items, totals} | line_i)`
+— did not exist anywhere in `priors_v4`, `AttentionAssigner`, or
+`total_arithmetic`. A second, structural reason this stayed undetected:
+no integration test ever exercised `company` and `total` *on the same
+receipt* and asserted they pick lines from disjoint y-bands, so a head
+trained but never invoked at inference (the PR #119 silent-failure
+class) could ship for an entire release cycle.
+
+**F1 impact.** ~6–8 receipts in the 63-image test split land
+`company` on a header-distractor line (`TAX INVOICE`, `WELCOME`, regid);
+3–5 receipts land `total` on a header-zone phone/regid number, plus
+3–5 on `subtotal`. Estimated `pipeline_f1_company` 0.82 → 0.90 and
+`pipeline_f1_total` 0.86 → 0.92 once the prior is wired.
+
+**Guard.** Three guards, all enforced in code:
+1. `models/zone_prior.py::decode_zone_posterior` is a fixed-topology
+   3-state HMM (header → items → totals) decoded by forward–backward;
+   transitions are hard-coded for monotonicity, so back-transitions
+   are *mathematically impossible* and the relational invariant
+   `argmax_y(p_header) < argmax_y(p_total)` holds at the posterior
+   level on every receipt the prior touches.
+2. `models/focus_pipeline.py::_assign_learned_with_attn` adds
+   `log p_header` to the company row of `attn_w` (additive in
+   log-space; bit-exact when the prior is uniform) and abstains on
+   `company_pick` whose `p_header < zone_cfg.header_zone_floor`. The
+   total dispatch filters `total_arithmetic.solve` candidates by
+   `p_total >= zone_cfg.totals_zone_floor` and routes the regex-argmax
+   fallback through `models.total_post.apply_zone_gate`, dropping
+   header-zone numerics from the candidate set.
+3. `tests/stages/test_company_total_zone_disjoint.py` is the
+   integration test that pins the disjoint-zone contract: on every
+   fixture-shaped receipt, `argmax_y(p_header) < argmax_y(p_total)`.
+   This is the test that would have caught PR #119's silent failure
+   if it had existed at the time, and it now fires before any GPU
+   work as part of `make test`.
+
+The guard is implicit (no `bug_19` flag): the zone HMM is fit by
+closed-form EM in `data/zone_prior_fit.py`, ships its parameters as
+`results/zone_prior.json` (fixture-allowed), and never touches
+`assigner.pt`. The escape hatch is `zone_prior_enabled=false` in
+`configs/default.json`, which restores the legacy bit-for-bit
+dispatch.
