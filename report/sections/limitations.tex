@@ -6,7 +6,7 @@ replicators can weigh our conclusions against the evidence base.
 
 \begin{itemize}
   \item \emph{Single training seed.}  The headline numbers in
-        Tables~\ref{tab:headline}--\ref{tab:ablation} are for a
+        Tables~\ref{tab:headline} and \ref{tab:perfield} are for a
         single seed ($n_{\text{trials}}=\VAR{n_trials}$); the
         \VAR{test_set_size}-image test yields a bootstrap 95\% CI
         of roughly $\pm 0.05$ F1, and observed inter-system
@@ -20,9 +20,9 @@ replicators can weigh our conclusions against the evidence base.
         docTR mirror as fallback) so numbers are directly comparable
         to the public SROIE leaderboard; the \texttt{basic} variant
         evaluates on a 500\,/\,63\,/\,63 internal split drawn from
-        the 626-receipt training pool, where the GT-OCR$+$regex
+        the 626-receipt training pool\IfRulebased{, where the GT-OCR$+$regex
         baseline can be measured but leaderboard comparison is not
-        valid.  The advanced variant additionally reports
+        valid}.  The advanced variant additionally reports
         side-by-side numbers with published Task-3 entries
         (DONUT~\cite{kim2022donut}, LayoutLMv3~\cite{huang2022layoutlmv3},
         TILT~\cite{powalski2021tilt}, BROS~\cite{hong2022bros}, etc.)

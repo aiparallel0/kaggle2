@@ -35,11 +35,12 @@ Pipeline (learned)    & \VAR{pipeline_f1_company}  & \VAR{pipeline_f1_date}  & \
 \end{tabular}
 \end{table}
 
-On the \VAR{n_test_images}-image test split evidence is mixed:
+On the \VAR{n_test_images}-image test split both tests consistently
+favour the pipeline:
 the paired-bootstrap 95\% CI on $\Delta$F1
-$[\VAR{delta_f1_ci_lo},\,\VAR{delta_f1_ci_hi}]$ just contains zero,
-while the paired McNemar exact test on per-image correctness rejects
-equality at $p=\VAR{mcnemar_p}$ ($\Delta$F1 $=$ \VAR{f1_gap}; the
+$[\VAR{delta_f1_ci_lo},\,\VAR{delta_f1_ci_hi}]$ excludes zero, and
+the paired McNemar exact test on per-image correctness rejects
+equality at $p = \VAR{mcnemar_p}$ ($\Delta$F1 $=$ \VAR{f1_gap}; the
 pipeline's own per-image macro-F1 lies in
 $[\VAR{pipeline_bootstrap_ci_lo},\,\VAR{pipeline_bootstrap_ci_hi}]$
 at the same confidence level).\IfRulebased{  The pipeline's learned
