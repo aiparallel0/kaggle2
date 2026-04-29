@@ -123,6 +123,10 @@ def load_config(path: str, defaults: dict[str, Any] | None = None) -> ExpConfig:
         "focus_company_enabled", "focus_company_y_weight",
         "focus_company_boilerplate_weight",
         "focus_company_confidence_threshold",
+        # FOCUS-C span head (mirrors FOCUS-A).
+        "focus_company_span_enabled", "focus_company_span_max_span",
+        "focus_company_span_iou_w", "focus_company_span_boundary_w",
+        "focus_company_confidence_floor",
         "priors_v4",
     }
     # Bug-18 composite-loss knobs are read via ``_loss_knob`` from
@@ -322,6 +326,22 @@ def load_config(path: str, defaults: dict[str, Any] | None = None) -> ExpConfig:
         focus_company_confidence_threshold=float(
             raw.get("focus_company_confidence_threshold", 0.30),
         ),
+        # FOCUS-C span head (mirrors FOCUS-A).
+        focus_company_span_enabled=bool(
+            raw.get("focus_company_span_enabled", False),
+        ),
+        focus_company_span_max_span=int(
+            raw.get("focus_company_span_max_span", 4),
+        ),
+        focus_company_span_iou_w=float(
+            raw.get("focus_company_span_iou_w", 1.0),
+        ),
+        focus_company_span_boundary_w=float(
+            raw.get("focus_company_span_boundary_w", 1.0),
+        ),
+        focus_company_confidence_floor=float(
+            raw.get("focus_company_confidence_floor", 0.20),
+        ),
         priors_v4=bool(raw.get("priors_v4", False)),
         extra=extra,
     )
@@ -438,6 +458,13 @@ def _validate_focus_flags(raw: dict[str, Any]) -> None:
             "focus_total_enabled=True requires priors_v4=True; the "
             "FOCUS-T head reads arithmetic_witness_self from the v4 "
             "prior column (Bug 18).",
+        )
+    # FOCUS-C span head requires both parent toggles.
+    fcs = bool(raw.get("focus_company_span_enabled", False))
+    if fcs and (not fa or not fc):
+        raise ConfigError(
+            "focus_company_span_enabled=True requires focus_enabled=True "
+            "AND focus_company_enabled=True; set both parent toggles.",
         )
     if fa:
         # n_priors selector mirrors models/focus_train.py::train_assigner
