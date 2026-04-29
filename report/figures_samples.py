@@ -320,23 +320,28 @@ def _draw_cell_separators(fig: object, axes: object) -> None:
     flat = list(axes.flat)  # type: ignore[attr-defined]
     if not flat:
         return
-    # Figure out unique row/column edges from axes positions.
     boxes = [a.get_position() for a in flat]
+    # Build sorted distinct edge sets — for an N×M grid these contain
+    # 2N (resp. 2M) values: alternating cell-left/right (cell-top/bottom)
+    # edges.  Inter-cell gaps therefore lie between every odd-indexed
+    # right edge and the immediately following even-indexed left edge.
     xs = sorted({round(b.x0, 4) for b in boxes} | {round(b.x1, 4) for b in boxes})
     ys = sorted({round(b.y0, 4) for b in boxes} | {round(b.y1, 4) for b in boxes})
     grey = "#9A9A9A"
-    # Vertical separators at midpoints between adjacent column bands.
-    for i in range(1, len(xs) - 1):
-        x_mid = 0.5 * (xs[i] + xs[i])
+    # Vertical separators at the midpoint of each (right-edge,
+    # next-left-edge) pair.
+    for i in range(1, len(xs) - 1, 2):
+        x_mid = 0.5 * (xs[i] + xs[i + 1])
         line = Line2D(
             [x_mid, x_mid], [ys[0], ys[-1]],
             transform=fig.transFigure,  # type: ignore[attr-defined]
             color=grey, linewidth=0.4,
         )
         fig.add_artist(line)  # type: ignore[attr-defined]
-    # Horizontal separators at midpoints between adjacent row bands.
-    for j in range(1, len(ys) - 1):
-        y_mid = 0.5 * (ys[j] + ys[j])
+    # Horizontal separators at the midpoint of each (top-edge,
+    # next-bottom-edge) pair.
+    for j in range(1, len(ys) - 1, 2):
+        y_mid = 0.5 * (ys[j] + ys[j + 1])
         line = Line2D(
             [xs[0], xs[-1]], [y_mid, y_mid],
             transform=fig.transFigure,  # type: ignore[attr-defined]
