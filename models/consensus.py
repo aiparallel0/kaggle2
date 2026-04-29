@@ -32,6 +32,7 @@ from models.rule_fields import (
     extract_date,
     extract_total,
 )
+from models.total_arithmetic import total_arithmetic_consensus
 from models.rule_regex import (
     _ADDR_ANCHOR,
     _ADDR_COMPANY_HEADER,
@@ -62,6 +63,12 @@ _CURRENCY_CUE_RE = re.compile(r"\b(?:RM|MYR|\$)\b", re.IGNORECASE)
 # line scores ~4 (``_TOTAL_STRONG`` match) — a 2-point margin preserves
 # that correction while leaving weak-evidence cases to the assigner.
 _TOTAL_OVERRIDE_MARGIN = 2.0
+# Plausibility floor for a grand total — predictions parsing to a value
+# below this almost always indicate a wrong-line pick (a quantity, a
+# tax-rate cell, a stray decimal printed on the receipt).  When the
+# learned value is below this floor and a competing candidate parses
+# above it, the override margin collapses so the rule scorer wins.
+_TOTAL_MIN_PLAUSIBLE = 1.0
 
 # --- Strategy (L) — calibrated additive scoring -----------------------------
 # Weight that multiplies ``log(attn+ε)`` when the rule-based money scorer
@@ -153,6 +160,20 @@ def _attn_rank(row: list[float]) -> dict[int, int]:
     return {i: r for r, i in enumerate(order)}
 
 
+def _money_value_at(text: str) -> float | None:
+    """Parse the rightmost money on ``text`` to a float; ``None`` on parse fail."""
+    from models.rule_regex import MONEY_RE
+    matches = list(MONEY_RE.finditer(text or ""))
+    if not matches:
+        return None
+    raw = matches[-1].group(0).strip()
+    raw = re.sub(r"^(RM|USD|SGD|MYR|\$)\s*", "", raw, flags=re.IGNORECASE).strip()
+    try:
+        return float(raw.replace(",", ""))
+    except ValueError:
+        return None
+
+
 def _score_money(
     i: int, texts: list[str], rank: dict[int, int], money_idxs: list[int],
     attn_row: list[float] | None = None,
@@ -189,10 +210,21 @@ def _score_money(
         s += 4.0
     elif _TOTAL_WEAK.search(nbr) and not _SUBTOTAL_KW_RE.search(nbr):
         s += 2.5
-    if _SUBTOTAL_KW_RE.search(nbr):
+    # Same-line distractor keywords (CASH/CHANGE/SUBTOTAL/TAX on the
+    # same line as the money value) are a much stronger negative signal
+    # than the same keyword merely appearing in the ±1 neighbourhood.  A
+    # CASH 100.00 line sandwiched between TOTAL and CHANGE used to
+    # collect a +2.5 from the neighbourhood window which masked the
+    # negative signal; gating the heavy penalties on the same line
+    # disambiguates that layout.
+    if _SUBTOTAL_KW_RE.search(same_line):
+        s -= 5.0
+    elif _SUBTOTAL_KW_RE.search(nbr):
+        s -= 3.0
+    if _TOTAL_NEGATIVE.search(same_line):
         s -= 4.0
-    if _TOTAL_NEGATIVE.search(nbr):
-        s -= 2.0
+    elif _TOTAL_NEGATIVE.search(nbr):
+        s -= 1.5
     if _CURRENCY_CUE_RE.search(same_line):
         s += 0.3
     if money_idxs:
@@ -208,7 +240,51 @@ def _score_money(
     if attn_row is not None and 0 <= i < len(attn_row):
         a = max(float(attn_row[i]), 0.0)
         s += _ATTN_BLEND_ALPHA * math.log(a + _ATTN_LOG_EPS)
+    # Plausibility floor on the value itself: SROIE grand totals are
+    # virtually never 0.00 (those lines are rounding-adjustment / empty
+    # discount fields) and only rarely below RM 1.00 (smallest in GT
+    # ≈ 0.90).  Apply a hard penalty for 0.00 and a softer demotion for
+    # sub-RM-1 values so a stray "0.00" rounding line on the bottom of
+    # the receipt doesn't out-score the real total just because it sits
+    # last in money order.  The penalty is *additive* and bounded so
+    # genuine sub-RM-1 totals (rare but real) can still win when no
+    # competing larger candidate carries a TOTAL keyword.
+    val = _money_value_at(texts[i] if 0 <= i < len(texts) else "")
+    if val is not None:
+        if val == 0.0:
+            s -= 3.5
+        elif val < 1.0:
+            s -= 1.0
     return s
+
+
+def _parse_money_value(s: str) -> float | None:
+    """Best-effort float parse of a stripped money string."""
+    if not s:
+        return None
+    try:
+        return float(s.strip().replace(",", ""))
+    except ValueError:
+        return None
+
+
+def _attach_sign(value: str, source_line: str) -> str:
+    """Re-attach a leading minus when ``value`` was OCR'd as ``-VALUE``.
+
+    The shared ``_MONEY_RE`` doesn't allow a leading ``-``, so refund /
+    credit-note picks like ``"-6.42"`` lose their sign during extraction.
+    Reinstate it when a ``-`` (or its OCR confusables) directly precedes
+    the matched value on the source line.
+    """
+    if not value or "-" in value or not source_line:
+        return value
+    pos = source_line.find(value)
+    if pos <= 0:
+        return value
+    prev = source_line[pos - 1]
+    if prev == "-":
+        return "-" + value
+    return value
 
 
 def _refine_total(
@@ -226,15 +302,24 @@ def _refine_total(
     conservative rule below only overrides the learned pick when:
 
     * the learned value is **not** a well-formed money string, **or**
+    * the learned value is implausibly small (≤ ``_TOTAL_MIN_PLAUSIBLE``)
+      while a candidate parses above the floor — likely a quantity or a
+      stray-decimal pick rather than a true grand total, **or**
     * the best-scoring candidate beats the learned one by at least the
       override margin — which drops from :data:`_TOTAL_OVERRIDE_MARGIN`
       to :data:`_TOTAL_OVERRIDE_MARGIN_DIFFUSE` when the assigner's
       attention is diffuse (strategy H — confidence-gated delegation).
 
-    The margin-based rule naturally keeps the learned pick on receipts
-    where the scorer finds no decisive signal, while still correcting
-    the classic SUBTOTAL-vs-GRAND-TOTAL confusion when ``_TOTAL_STRONG``
-    matches only the right line.
+    Negative-sign preservation: refund/credit-note lines like
+    ``"REFUND -6.42"`` lose their leading minus through the shared
+    ``_MONEY_RE`` (which doesn't permit ``-``); :func:`_attach_sign`
+    re-attaches it from the source line.
+
+    Arithmetic-consensus fallback: when both the learned pick and the
+    best-scoring rule candidate are implausibly small (≤ floor), the
+    arithmetic-consensus solver is consulted directly so receipts whose
+    grand total was buried under cash/change/subtotal+tax still recover
+    a valid value.
     """
     repaired = [repair_money_ocr(t) for t in texts]
     money_idxs = [i for i, t in enumerate(repaired) if _MONEY_RE.search(t)]
@@ -247,24 +332,89 @@ def _refine_total(
          for i in money_idxs),
         reverse=True,
     )
-    best_score, _, best_val = scored[0]
+    best_score, best_idx, best_val = scored[0]
+    best_clean = _strip_currency(best_val)
+    best_signed = _attach_sign(
+        best_clean,
+        repaired[best_idx] if 0 <= best_idx < len(repaired) else "",
+    )
     learned_clean = _strip_currency(learned)
+    learned_num = _parse_money_value(learned_clean.lstrip("-"))
+    best_num = _parse_money_value(best_clean)
+
+    def _arithmetic_fallback() -> str | None:
+        ar = total_arithmetic_consensus(repaired, set())
+        if ar is None:
+            return None
+        _, value = ar
+        v = _parse_money_value(value)
+        if v is None or v <= _TOTAL_MIN_PLAUSIBLE:
+            return None
+        return value
+
     if not _MONEY_RE.fullmatch(learned_clean):
         # Learned value isn't a usable money string; take the scored
         # pick unconditionally (fall back to learned if no positive
         # evidence either).
-        return _strip_currency(best_val) if best_score > 0 else learned_clean
+        if best_score > 0:
+            return best_signed
+        ar = _arithmetic_fallback()
+        return ar if ar is not None else learned_clean
+    # Implausibly-small learned value (0.00 / qty cell / discount %) +
+    # a candidate above the plausibility floor → override even on a
+    # weak score margin.  This recovers the dominant single failure
+    # mode in the live miss table (predicted 0.00 / sub-$1 vs an actual
+    # grand total in the tens-of-RM range) without regressing receipts
+    # whose true total is genuinely tiny.
+    if (learned_num is not None and learned_num <= _TOTAL_MIN_PLAUSIBLE
+            and best_num is not None and best_num > _TOTAL_MIN_PLAUSIBLE
+            and best_score > 0):
+        return best_signed
     # Learned value is a well-formed money string — protect it unless a
     # competing candidate is decisively better.  The required margin is
     # relaxed when the assigner is unsure of itself (flat attention row).
     learned_score = next(
         (sc for sc, _, v in scored if v.strip() == learned_clean), float("-inf"),
     )
+    # When the learned value doesn't appear verbatim on any money-bearing
+    # line (typical for ``total_arithmetic_consensus`` synthesised values
+    # — ``cash − change`` / ``subtotal + tax`` — that recover OCR-corrupted
+    # total lines), the legacy ``-inf`` learned-score forced the override
+    # path.  Treat those values as already arithmetic-validated and pin
+    # their score above the strict-margin threshold so the rule scorer
+    # only displaces them on a *very* decisive lead.
+    synthesised = (
+        learned_score == float("-inf") and learned_num is not None
+        and learned_num > _TOTAL_MIN_PLAUSIBLE
+    )
+    if synthesised:
+        learned_score = best_score
     margin = (_TOTAL_OVERRIDE_MARGIN_DIFFUSE if _is_attn_diffuse(attn_row)
               else _TOTAL_OVERRIDE_MARGIN)
     if best_score - learned_score >= margin and best_score > 0:
-        return _strip_currency(best_val)
-    return learned_clean
+        return best_signed
+    # Last resort: when both the learned pick and the best candidate are
+    # tiny, ask the arithmetic solver for an out-of-band consensus value.
+    if (learned_num is not None and learned_num <= _TOTAL_MIN_PLAUSIBLE
+            and (best_num is None or best_num <= _TOTAL_MIN_PLAUSIBLE)):
+        ar = _arithmetic_fallback()
+        if ar is not None:
+            return ar
+    # Sign re-attachment for the kept learned value (refund OCR loses
+    # the leading minus through ``_MONEY_RE``).
+    learned_signed = _attach_sign(
+        learned_clean,
+        repaired[best_idx] if 0 <= best_idx < len(repaired) else "",
+    )
+    # Only re-attach when the learned value actually appears on the
+    # best-scored line; otherwise fall back to scanning the full
+    # receipt for a ``-VALUE`` token matching the learned pick.
+    if learned_signed == learned_clean:
+        for line in repaired:
+            sgn = _attach_sign(learned_clean, line)
+            if sgn != learned_clean:
+                return sgn
+    return learned_signed
 
 
 def _refine_date(learned: str, texts: list[str]) -> str:
