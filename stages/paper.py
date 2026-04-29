@@ -218,7 +218,8 @@ def stage_paper(config: ExpConfig) -> None:
     # Audit: enumerate every unresolved \VAR{} BEFORE inject_results
     # collapses them to "---", and write the audit side-channel so the
     # "no placeholders after a successful run" contract is verifiable.
-    unresolved = collect_unresolved(template, metrics)
+    paper_variant = str(getattr(config, "paper_variant", "basic"))
+    unresolved = collect_unresolved(template, metrics, variant=paper_variant)
     metrics_dir = Path(config.output_dir) / "metrics"
     metrics_dir.mkdir(parents=True, exist_ok=True)
     with (metrics_dir / "unresolved_vars.json").open("w") as f:
@@ -229,7 +230,7 @@ def stage_paper(config: ExpConfig) -> None:
             "in the PDF. See metrics/unresolved_vars.json for the full list.",
             len(unresolved),
         )
-    filled = inject_results(template, metrics)
+    filled = inject_results(template, metrics, variant=paper_variant)
     tex_out = Path(config.paper_output)
     tex_out.parent.mkdir(parents=True, exist_ok=True)
     with open(tex_out, "w") as f:

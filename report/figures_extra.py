@@ -141,6 +141,13 @@ def render_pipeline_diagnostics(results_dir: str, out_dir: str) -> str | None:
         float(data.get("empty_detection_fraction", 0.0)),
         float(data.get("per_receipt_error_fraction", 0.0)),
     )
+    # Item 8 (paper-corrections): suppress emission when both
+    # diagnostic fractions are zero — the bar chart renders blank
+    # otherwise, and the ``\iffigurefile`` guard in
+    # results_figures.tex naturally drops the figure when the PDF is
+    # absent (no caught errors and no empty detections on this run).
+    if vals[0] == 0.0 and vals[1] == 0.0:
+        return None
     fig, ax = plt.subplots(figsize=(4.8, 3.2))
     ax.bar(labels, vals, color=("tab:orange", "tab:red"), width=0.55)
     ax.set_ylabel("Fraction of test receipts")

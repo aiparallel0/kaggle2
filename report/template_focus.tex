@@ -39,15 +39,14 @@
   % loaded) auto-switches to text mode in both math and text contexts.
   \text{{\color{BrickRed}\textbf{\texttt{?}}\textsubscript{\tiny\texttt{#1}}}}%
 }
-% \IfRulebased{<row contents>} — A1 row-elision guard.
-% Advanced variant evaluates on canonical SROIE Task-3 (347 images),
-% which ships KIE entities only — no GT bounding boxes — so the
-% rulebased / gtocr_rulebased baselines cannot run and their rows
-% should be elided rather than rendering as red \MissingCell{}
-% markers.  The macro consumes its argument and expands to nothing
-% under the advanced template; in template_basic.tex the same macro
-% expands to its argument so the row is emitted as before.
-\newcommand{\IfRulebased}[1]{}
+% \IfRulebased{<row contents>} — advanced-variant tripwire.
+% Every IfRulebased{...} span is stripped from the rendered .tex by
+% report/inject.py when ``paper_variant`` resolves to advanced/focus,
+% so this macro should never actually be invoked at LaTeX time on the
+% advanced build.  If a stray IfRulebased call slips through (e.g. a
+% new shared section adds one without the inject layer being aware),
+% we abort the build rather than silently rendering basic-only prose.
+\newcommand{\IfRulebased}[1]{\PackageError{focus}{rulebased token in advanced variant}{}}
 % \IfAdvanced{<advanced-only content>} — complement of \IfRulebased.
 % Advanced template emits the argument so advanced-only prose
 % (e.g. "plus the 347 official Task-3 test images") renders here.
@@ -104,10 +103,10 @@ parameter efficiency, carbon accounting.
 
 \begin{abstract}
 We compare an end-to-end sequence-to-sequence model
-(DONUT, $\approx$200\,M parameters) against a modular
+(DONUT, $\approx$\VAR{donut_params_m}\,M parameters) against a modular
 detect\,$\to$\,read\,$\to$\,assign pipeline (\textsc{focus}:
 YOLOv8\,$+$\,TrOCR\,$+$\,learned cross-attention assigner,
-$\approx$\VAR{pipeline_params_m}\,M$+$\VAR{assigner_params_m}\,M
+$\approx$\VAR{pipeline_params_m}\,M$+$\VAR{assigner_params_k}\,K
 parameters) on the
 \emph{canonical} ICDAR-2019 SROIE Task-3 evaluation set: 626
 official training receipts (split
@@ -123,7 +122,7 @@ pipeline reaches \VAR{pipeline_f1:mean_std_pct1}
 CI \VAR{delta_f1_ci_lo}--\VAR{delta_f1_ci_hi}, McNemar
 $p=$\VAR{mcnemar_p:p}).  The pipeline ships at
 \VAR{param_ratio_numeric} of the DONUT parameter count and
-\emph{matches and slightly exceeds} our re-implemented DONUT,
+\emph{modestly outperforms} our re-implemented DONUT,
 within the \VAR{n_test_images}-image bootstrap CI, while exposing
 per-field attention maps the monolithic decoder cannot.  We release
 the full reproducibility bundle (sha256-pinned dataset downloader,

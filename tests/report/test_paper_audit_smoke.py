@@ -38,7 +38,7 @@ def test_advanced_template_no_required_unresolved_on_canonical_fixture() -> None
     for k, v in inject_tables(metrics).items():
         metrics[k] = v
     expanded = expand_inputs(_TEMPLATE.read_text(encoding="utf-8"), _TEMPLATE.parent)
-    unresolved = collect_unresolved(expanded, metrics)
+    unresolved = collect_unresolved(expanded, metrics, variant="advanced")
     blockers = [k for k in unresolved if not is_missing_ok(k.split(":", 1)[0])]
     assert blockers == [], (
         f"canonical_347 advanced fixture has {len(blockers)} unresolved blocker keys: "

@@ -73,7 +73,7 @@ def test_mean_std_ensuremath_not_re_escaped() -> None:
 def test_seeds_used_not_double_escaped() -> None:
     """``seeds_used`` branch returns early; seed IDs (ints) are safe, no change."""
     out = _format_value("seeds_used", [42, 43, 44], {})
-    assert out == "3 seeds (42, 43, 44)"
+    assert out == "3 seeds (seeds 42, 43, 44)"
 
 
 def test_inject_results_integration_canonical_347() -> None:

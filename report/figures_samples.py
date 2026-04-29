@@ -147,7 +147,7 @@ def _block(
         marker = cross if bad else ""
         ax.text(  # type: ignore[attr-defined]
             0.04, y0 - (i + 1) * dy,
-            f"{f}: {v!s:.55s}{marker}",
+            f"{f}: {v!s:.60s}{'…' if len(str(v)) > 60 else ''}{marker}",
             transform=ax.transAxes,  # type: ignore[attr-defined]
             fontsize=fontsize, family="monospace",
             color="#B00020" if bad else "black",
@@ -232,10 +232,14 @@ def render_samples(run_dir: Path) -> Path | None:
         img_id = ids[slot]
         _draw_cell(ax, img_id, bucket, run_dir,
                    gt.get(img_id, {}), donut.get(img_id, {}),
-                   pipe.get(img_id, {}), 9)
+                   pipe.get(img_id, {}), 8)
     fig.suptitle(
         "Qualitative sample predictions (curated 2×2: outcome buckets)", y=1.0,
     )
+    # Item 9 (paper-corrections): widen inter-cell padding so the
+    # JSON text blocks no longer bleed into neighbouring cells.
+    fig.subplots_adjust(wspace=0.45, hspace=0.55)
+    fig.tight_layout(pad=2.0)
     headline = save_fig(fig, run_dir / "figures", "fig_samples")
     try:
         _render_full(run_dir, donut, pipe, gt)
@@ -267,4 +271,6 @@ def _render_full(
     fig.suptitle(
         "Qualitative sample predictions — full grid (supplementary)", y=1.0,
     )
+    fig.subplots_adjust(wspace=0.45, hspace=0.55)
+    fig.tight_layout(pad=2.0)
     return save_fig(fig, run_dir / "figures", "fig_samples_full")

@@ -7,23 +7,19 @@ of this paper.  Every number is sourced from
 \texttt{runs/<run\_id>/metrics/} sidecars via the
 \texttt{report.inject} substitution layer --- no literal constants
 appear in this file.  All tables here are scoped to the
-\emph{347-image canonical SROIE Task-3 test set}; the GT-OCR
-$+$\,regex baseline that appears in the basic variant is omitted by
-design, because Task-3 ships KIE entities only (no GT box / OCR
-streams to feed a rule-based extractor).  An empty cell renders as
-a typed \texttt{\textbackslash MissingCell\{key\}} marker --- never
-a silent em-dash --- and every unresolved key is enumerated in
-\texttt{metrics/unresolved\_vars.json} for audit.
+\emph{347-image canonical SROIE Task-3 test set}.  An empty cell
+renders as a typed \texttt{\textbackslash MissingCell\{key\}} marker
+--- never a silent em-dash --- and every unresolved key is
+enumerated in \texttt{metrics/unresolved\_vars.json} for audit.
 
 \begin{table}[t]
 \centering
 \caption{Headline per-field F1 (\%) on the canonical SROIE Task-3
          test set (347 images).  DONUT (end-to-end,
-         $\approx$\,200\,M parameters) vs.\ the
+         $\approx$\,\VAR{donut_params_m}\,M parameters) vs.\ the
          YOLO+TrOCR+Attention-Assigner pipeline
-         ($\approx$\,65\,M$+$\,\VAR{assigner_params_k}\,K
-         parameters).  The GT-OCR baseline column is intentionally
-         absent --- see Section~\ref{sec:limitations}.}
+         ($\approx$\,\VAR{pipeline_params_m}\,M$+$\,\VAR{assigner_params_k}\,K
+         parameters).}
 \label{tab:headline_f1}
 \small
 \VAR{table_headline_f1}
