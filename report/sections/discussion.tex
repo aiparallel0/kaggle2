@@ -16,7 +16,7 @@ The \texttt{address} field spans multiple non-adjacent lines that
 vary in number and spatial arrangement across receipts.  TrOCR reads
 each detected crop in isolation, so it cannot ``see'' the vertical
 context that would let it recognise when two consecutive lines form
-a compound address.  A regex-based assigner aggregating lines by
+a compound address.  A heuristic assigner aggregating lines by
 vertical proximity fails on Malaysian receipts where address blocks
 are interspersed with receipt metadata.  The learned attention
 assigner partially alleviates this by attending jointly to all

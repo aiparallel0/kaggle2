@@ -105,8 +105,9 @@ exactly what the run measured, with no placeholder floats.
          (a) both correct, (b) DONUT correct only, (c) Pipeline
          correct only, (d) both fail.  GT, DONUT, and Pipeline JSON
          are rendered in 8-pt black monospace below each receipt
-         thumbnail (long values clipped to 60\,characters with an
-         ellipsis); each line that fails the GT match is
+         thumbnail (each line wrapped at 32\,characters via
+         \texttt{textwrap.fill} so values do not bleed across cell
+         boundaries); each line that fails the GT match is
          individually recoloured red and tagged with an
          ``$\times$'' glyph so reviewers can see at a glance which
          sub-field was responsible.  IDs come from
@@ -120,10 +121,18 @@ exactly what the run measured, with no placeholder floats.
 \label{fig:samples}
 \end{figure*}}
 
-\par\vspace{1em}
+% Force fig:samples to be placed before fig:samples_full and prevent
+% them from sharing a page (Item 6a/b in the v4 paper-corrections
+% pass).  ``\FloatBarrier`` (placeins) flushes any pending [t]/[b]
+% floats; the explicit ``\clearpage`` then guarantees fig:samples_full
+% lands on a fresh page even when the prose between them is short
+% enough that LaTeX would otherwise greedily pack both [t] floats at
+% the top of the same page.
+\FloatBarrier
+\clearpage
 
 \iffigurefile{figures/fig_samples_full.pdf}{%
-\begin{figure*}[t]
+\begin{figure*}[!b]
 \centering
 \includegraphics[width=\textwidth]{figures/fig_samples_full.pdf}
 \caption{Supplementary qualitative grid — first nine test receipts

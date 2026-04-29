@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import json
 import logging
+import textwrap
 from pathlib import Path
 
 from report.figures_common import (
@@ -132,27 +133,44 @@ def _curate(
 def _block(
     ax: object, label: str, fields: dict[str, str],
     gt: dict[str, str], y0: float, fontsize: int,
-) -> None:
-    """Render one ``label: ...`` block with per-line red-✗ on mismatch."""
+) -> float:
+    """Render one ``label: ...`` block; return the y-coordinate of its bottom.
+
+    Each field value is wrapped at 32 characters with ``textwrap.fill``
+    (Item 6d) so long JSON values do not bleed horizontally across the
+    neighbouring cell.  Lines are drawn with a 3-pt vertical gap so the
+    GT / DONUT / Pipeline blocks visually separate (the v3 single-line
+    60-char clip produced the overlap visible in the supplied PDF
+    screenshot).
+    """
+    # Line height in axes-fraction units calibrated for a 1:1 figure
+    # cell on COL_DOUBLE×1.05·COL_DOUBLE inches.  ``gap`` is the 3-pt
+    # vertical space requested between consecutive wrapped lines.
+    line_h = 0.034 * (fontsize / 9.0)
+    gap = 0.012  # ≈ 3 pt at the calibrated cell scale
+    y = y0
     ax.text(  # type: ignore[attr-defined]
-        0.02, y0, f"{label}:", transform=ax.transAxes,  # type: ignore[attr-defined]
+        0.02, y, f"{label}:", transform=ax.transAxes,  # type: ignore[attr-defined]
         fontsize=fontsize, fontweight="bold", family="monospace",
         verticalalignment="top",
     )
-    dy = 0.045 * (fontsize / 9.0)
+    y -= line_h + gap
     cross = "  \u2717"
-    for i, f in enumerate(_FIELDS):
+    for f in _FIELDS:
         v = fields.get(f, "")
         bad = label != "GT" and v.strip() != gt.get(f, "").strip()
-        marker = cross if bad else ""
+        wrapped = textwrap.fill(f"{f}: {v}", width=32) or f"{f}:"
+        n_lines = wrapped.count("\n") + 1
         ax.text(  # type: ignore[attr-defined]
-            0.04, y0 - (i + 1) * dy,
-            f"{f}: {v!s:.60s}{'…' if len(str(v)) > 60 else ''}{marker}",
+            0.04, y,
+            wrapped + (cross if bad else ""),
             transform=ax.transAxes,  # type: ignore[attr-defined]
             fontsize=fontsize, family="monospace",
             color="#B00020" if bad else "black",
             verticalalignment="top",
         )
+        y -= n_lines * line_h + gap
+    return y
 
 
 def _placeholder(ax: object, image_id: str, bucket: str) -> None:
@@ -192,8 +210,10 @@ def _draw_cell(
 ) -> None:
     """Draw a single curated cell — image overlay or text block."""
     ax.set_axis_off()  # type: ignore[attr-defined]
+    # Item 6c: titlepad of 8\,pt so the cell header does not collide
+    # with the wrapped GT/DONUT/Pipeline JSON below.
     ax.set_title(f"{bucket}  \u2014  {image_id}", fontsize=8,  # type: ignore[attr-defined]
-                 family="monospace", loc="left")
+                 family="monospace", loc="left", pad=8)
     img = _image_path_for(run_dir, image_id) if _HAS_PIL else None
     if img is not None:
         try:
@@ -204,9 +224,13 @@ def _draw_cell(
     if not g and not d and not p:
         _placeholder(ax, image_id, bucket)
         return
-    _block(ax, "GT", g, g, 0.92, fontsize)
-    _block(ax, "DONUT", d, g, 0.62, fontsize)
-    _block(ax, "Pipeline", p, g, 0.32, fontsize)
+    # Stack GT → DONUT → Pipeline blocks vertically using the y-cursor
+    # returned by ``_block`` so wrapped values never overlap a sibling
+    # block (Item 6d).  An additional inter-block gap separates the
+    # three sources visually.
+    y = _block(ax, "GT", g, g, 0.96, fontsize)
+    y = _block(ax, "DONUT", d, g, y - 0.02, fontsize)
+    _block(ax, "Pipeline", p, g, y - 0.02, fontsize)
 
 
 def render_samples(run_dir: Path) -> Path | None:
@@ -236,10 +260,11 @@ def render_samples(run_dir: Path) -> Path | None:
     fig.suptitle(
         "Qualitative sample predictions (curated 2×2: outcome buckets)", y=1.0,
     )
-    # Item 9 (paper-corrections): widen inter-cell padding so the
-    # JSON text blocks no longer bleed into neighbouring cells.
-    fig.subplots_adjust(wspace=0.45, hspace=0.55)
-    fig.tight_layout(pad=2.0)
+    # Item 6c (paper-corrections): widen inter-cell padding further so
+    # the wrapped JSON text blocks do not bleed into neighbouring
+    # cells.  ``hspace`` is bumped to 0.85 for the extra title pad.
+    fig.subplots_adjust(wspace=0.55, hspace=0.85)
+    fig.tight_layout(pad=2.5)
     headline = save_fig(fig, run_dir / "figures", "fig_samples")
     try:
         _render_full(run_dir, donut, pipe, gt)
@@ -271,6 +296,55 @@ def _render_full(
     fig.suptitle(
         "Qualitative sample predictions — full grid (supplementary)", y=1.0,
     )
-    fig.subplots_adjust(wspace=0.45, hspace=0.55)
-    fig.tight_layout(pad=2.0)
+    fig.subplots_adjust(wspace=0.55, hspace=0.85)
+    fig.tight_layout(pad=2.5)
+    # Item 6f: 0.4-pt grey separator rectangles between cells make the
+    # cell boundaries explicit on the supplementary nine-cell grid.
+    _draw_cell_separators(fig, axes)
     return save_fig(fig, run_dir / "figures", "fig_samples_full")
+
+
+def _draw_cell_separators(fig: object, axes: object) -> None:
+    """Overlay 0.4-pt grey lines between adjacent cells on a grid figure.
+
+    Boundaries are computed in figure-fraction coordinates from the
+    rendered axes positions, so they survive ``tight_layout`` and the
+    ``subplots_adjust`` calls above.  Failure is non-fatal: a missing
+    matplotlib API (older vendored mpl) simply leaves the cell grid
+    without explicit dividers.
+    """
+    try:
+        from matplotlib.lines import Line2D
+    except ImportError:  # pragma: no cover
+        return
+    flat = list(axes.flat)  # type: ignore[attr-defined]
+    if not flat:
+        return
+    boxes = [a.get_position() for a in flat]
+    # Build sorted distinct edge sets — for an N×M grid these contain
+    # 2N (resp. 2M) values: alternating cell-left/right (cell-top/bottom)
+    # edges.  Inter-cell gaps therefore lie between every odd-indexed
+    # right edge and the immediately following even-indexed left edge.
+    xs = sorted({round(b.x0, 4) for b in boxes} | {round(b.x1, 4) for b in boxes})
+    ys = sorted({round(b.y0, 4) for b in boxes} | {round(b.y1, 4) for b in boxes})
+    grey = "#9A9A9A"
+    # Vertical separators at the midpoint of each (right-edge,
+    # next-left-edge) pair.
+    for i in range(1, len(xs) - 1, 2):
+        x_mid = 0.5 * (xs[i] + xs[i + 1])
+        line = Line2D(
+            [x_mid, x_mid], [ys[0], ys[-1]],
+            transform=fig.transFigure,  # type: ignore[attr-defined]
+            color=grey, linewidth=0.4,
+        )
+        fig.add_artist(line)  # type: ignore[attr-defined]
+    # Horizontal separators at the midpoint of each (top-edge,
+    # next-bottom-edge) pair.
+    for j in range(1, len(ys) - 1, 2):
+        y_mid = 0.5 * (ys[j] + ys[j + 1])
+        line = Line2D(
+            [xs[0], xs[-1]], [y_mid, y_mid],
+            transform=fig.transFigure,  # type: ignore[attr-defined]
+            color=grey, linewidth=0.4,
+        )
+        fig.add_artist(line)  # type: ignore[attr-defined]

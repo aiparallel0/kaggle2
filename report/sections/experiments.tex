@@ -85,8 +85,8 @@ Precision                              & \VAR{precision} \\
 \label{sec:kd-ablation}
 
 The attention-assigner supports two distillation losses gated by
-\texttt{kd\_logits\_weight} (KL against the regex-based teacher
-softmax, strategy~C) and \texttt{kd\_attn\_weight} (attention-row
+\texttt{kd\_logits\_weight} (KL against a teacher softmax,
+strategy~C) and \texttt{kd\_attn\_weight} (attention-row
 distillation against the same teacher).  Both KD weights are set to
 zero in the shipped headline configuration; the dedicated 2$\times$2
 sweep (KD~$\{$off, on$\}$ $\times$ assigner capacity $\{$full,
