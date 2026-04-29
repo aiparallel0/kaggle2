@@ -136,7 +136,7 @@ def _block(
 ) -> float:
     """Render one ``label: ...`` block; return the y-coordinate of its bottom.
 
-    Each field value is wrapped at 32 characters with ``textwrap.fill``
+    Each field value is wrapped at 24 characters with ``textwrap.fill``
     (Item 6d) so long JSON values do not bleed horizontally across the
     neighbouring cell.  Lines are drawn with a 3-pt vertical gap so the
     GT / DONUT / Pipeline blocks visually separate (the v3 single-line
@@ -159,7 +159,7 @@ def _block(
     for f in _FIELDS:
         v = fields.get(f, "")
         bad = label != "GT" and v.strip() != gt.get(f, "").strip()
-        wrapped = textwrap.fill(f"{f}: {v}", width=32) or f"{f}:"
+        wrapped = textwrap.fill(f"{f}: {v}", width=24) or f"{f}:"
         n_lines = wrapped.count("\n") + 1
         ax.text(  # type: ignore[attr-defined]
             0.04, y,
@@ -214,6 +214,14 @@ def _draw_cell(
     # with the wrapped GT/DONUT/Pipeline JSON below.
     ax.set_title(f"{bucket}  \u2014  {image_id}", fontsize=8,  # type: ignore[attr-defined]
                  family="monospace", loc="left", pad=8)
+    # Item 6 (paper-corrections v5): clamp the text-axis x-range to
+    # [0, 1] so wrapped JSON lines drawn in axes-fraction coordinates
+    # cannot bleed past the cell's geometric width into the
+    # neighbouring column.  Combined with the 24-char wrap in
+    # ``_block`` and ``wspace=0.6`` below, this eliminates the
+    # horizontal overlap observed in the v4 screenshots.
+    ax.set_xlim(0.0, 1.0)  # type: ignore[attr-defined]
+    ax.set_ylim(0.0, 1.0)  # type: ignore[attr-defined]
     img = _image_path_for(run_dir, image_id) if _HAS_PIL else None
     if img is not None:
         try:
@@ -262,8 +270,9 @@ def render_samples(run_dir: Path) -> Path | None:
     )
     # Item 6c (paper-corrections): widen inter-cell padding further so
     # the wrapped JSON text blocks do not bleed into neighbouring
-    # cells.  ``hspace`` is bumped to 0.85 for the extra title pad.
-    fig.subplots_adjust(wspace=0.55, hspace=0.85)
+    # cells.  ``wspace`` is bumped to 0.6 (per Item 6 spec, paired with
+    # the 24-char textwrap and per-cell ax.set_xlim above).
+    fig.subplots_adjust(wspace=0.6, hspace=0.85)
     fig.tight_layout(pad=2.5)
     headline = save_fig(fig, run_dir / "figures", "fig_samples")
     try:
@@ -296,7 +305,7 @@ def _render_full(
     fig.suptitle(
         "Qualitative sample predictions — full grid (supplementary)", y=1.0,
     )
-    fig.subplots_adjust(wspace=0.55, hspace=0.85)
+    fig.subplots_adjust(wspace=0.6, hspace=0.85)
     fig.tight_layout(pad=2.5)
     # Item 6f: 0.4-pt grey separator rectangles between cells make the
     # cell boundaries explicit on the supplementary nine-cell grid.
