@@ -19,6 +19,7 @@ import os
 from pathlib import Path
 
 from core.types import ExpConfig, Metrics, PipelineResult
+from report.inject import TexSource
 
 log = logging.getLogger("kaggle2")
 
@@ -196,11 +197,25 @@ def merge_pipeline_diagnostics(
     pipe_m = metrics.get("pipeline_params_m")
     if isinstance(donut_m, int | float) and isinstance(pipe_m, int | float):
         ratio = float(pipe_m) / float(donut_m) if float(donut_m) > 0 else 0.0
-        # numeric: ``"25.2\\%"`` so ``\VAR{param_ratio_numeric}`` lands as
-        # a typeset percent in body text without a stray ``%`` comment
-        # marker swallowing the rest of the line.
-        metrics.setdefault("param_ratio_numeric", f"{ratio * 100:.1f}\\%")
+        # Item 4 (paper-corrections): ``param_ratio_numeric`` MUST be
+        # a :class:`report.inject.TexSource` so that the ``\\``
+        # in ``"25.2\\%"`` does not get re-escaped to
+        # ``\textbackslash{}`` by ``_latex_escape_text``.  Without the
+        # marker the abstract typeset ``25.2\textbackslash{}\%`` —
+        # see ``report/inject.py::_format_value``.
+        metrics.setdefault(
+            "param_ratio_numeric", TexSource(f"{ratio * 100:.1f}\\%"),
+        )
         metrics.setdefault("param_ratio_phrase", _ratio_phrase(ratio))
+    # Item 15 (paper-corrections): also expose the assigner parameter
+    # count in *millions* so the abstract can say
+    # ``$\approx$65\,M$+$1.16\,M`` without mixing M and K units.
+    # Source-of-truth is ``assigner_params_k`` (an integer count of
+    # thousands written by :mod:`models.focus_train`).
+    apk = metrics.get("assigner_params_k")
+    if isinstance(apk, int | float):
+        # ``setdefault`` so an explicit producer-written value wins.
+        metrics.setdefault("assigner_params_m", round(float(apk) / 1000.0, 2))
 
 
 def _ratio_phrase(ratio: float) -> str:

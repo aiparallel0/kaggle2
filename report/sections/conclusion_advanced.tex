@@ -1,8 +1,8 @@
 \section{Conclusion}
 
-On the canonical ICDAR-2019 SROIE Task-3 test set (347 official
-held-out receipts), the
-YOLO+TrOCR+Attention-Assigner pipeline reaches
+On the canonical ICDAR-2019 SROIE Task-3 test set (\VAR{n_test_images}
+official held-out receipts), our \textsc{focus}
+(YOLO+TrOCR+Attention-Assigner) pipeline reaches
 \VAR{pipeline_f1:mean_std_pct1} global token-F1 against
 DONUT's \VAR{donut_f1:mean_std_pct1} ($\Delta$F1$=$\VAR{f1_gap},
 paired-bootstrap 95\% CI \VAR{delta_f1_ci_lo}--\VAR{delta_f1_ci_hi},
@@ -17,13 +17,16 @@ end-to-end auto-pipeline, sha256-pinned dataset
 downloader, env snapshot, and MANIFEST that ship with this
 release.  The
 $\approx$\VAR{assigner_params_k}\,K-parameter cross-attention
-assigner closes \VAR{assigner_delta} F1 over rule-based assignment
-\emph{and} produces per-field attention maps that the monolithic
-DONUT decoder cannot expose.
+assigner produces per-field attention maps that the monolithic
+DONUT decoder cannot expose.\IfRulebased{\
+On the basic-variant internal split it also closes
+\VAR{assigner_delta} F1 over rule-based assignment; the rule-based
+comparison is unavailable on the canonical Task-3 split because
+Task-3 ships KIE entities only (no GT box / OCR streams).}
 
 \textbf{Future work.}
 Scale the seed-parametric harness to $n{=}5{+}$ for tighter CIs on
-the 347-image set; add a LayoutLMv3 and a zero-shot VLM arm
+the \VAR{n_test_images}-image set; add a LayoutLMv3 and a zero-shot VLM arm
 \emph{measured} (not cited) on the same canonical split;
 evaluate the pipeline on multilingual receipts (WildReceipt, CORD);
 quantify attention faithfulness with deletion/insertion; investigate

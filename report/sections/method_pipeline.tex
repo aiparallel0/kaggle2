@@ -89,8 +89,10 @@ F1\,=\,0.000.
 \Require Line features $X\!\in\!\mathbb{R}^{N\times d}$, field queries
          $Q\!\in\!\mathbb{R}^{|\mathcal{F}|\times d}$, target sets
          $\{T_f\}$, $T_f\!\subseteq\!\{1,\dots,N\}$.
-\State $H \leftarrow \mathrm{SelfAttn}(X)$
+\State $H \leftarrow \mathrm{TransformerEncoder}(X)$
+       \Comment{self-attention over lines}
 \State $A \leftarrow \mathrm{softmax}_j(Q H^\top / \sqrt{d})$
+       \Comment{cross-attention from queries $Q$ to encoded lines $H$}
 \State $\mathcal{L} \leftarrow 0$
 \ForAll{$f \in \mathcal{F}$ with $T_f \neq \emptyset$}
   \State $\mathcal{L} \leftarrow \mathcal{L}
@@ -132,7 +134,7 @@ over the label set, which no fixed positional heuristic can emulate.
 The \texttt{total} field is confused by sub-totals and tax lines that
 share the same numeric surface form --- the self-attention stage
 disambiguates by attending to neighbouring lines' \texttt{has\_money}
-priors and keyword context.  At 500 receipts, the assigner's
+priors and keyword context.  At \VAR{n_train_images} receipts, the assigner's
 $\approx\VAR{assigner_params_k}$\,K trainable parameters are
 tractable precisely because the heavy perceptual work (detecting and
 reading text) has already been done by YOLO and TrOCR, whose
@@ -153,7 +155,7 @@ set mixes neighbour evidence, and a final linear head emits the
 $n$-field logit vector.  The resulting model is $\sim$120\,K
 parameters --- an order of magnitude smaller than the transformer
 assigner --- and the graph prior encodes the spatial-adjacency
-invariance that the transformer otherwise has to learn from 500
-receipts.  The GAT arm is enabled by \texttt{gat\_enabled: true} in
+invariance that the transformer otherwise has to learn from
+\VAR{n_train_images} receipts.  The GAT arm is enabled by \texttt{gat\_enabled: true} in
 \texttt{config.json}; the default (\texttt{false}) path preserves
 bit-for-bit the transformer-assigner numbers reported elsewhere.

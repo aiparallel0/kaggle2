@@ -179,6 +179,13 @@ def render_training_table(metrics: dict[str, Any]) -> str:
     pipeline sub-stage (YOLO, TrOCR, assigner) so every per-stage
     ``cost_<stage>.json`` value emitted by the train-stage telemetry
     has a one-to-one consumer in Table~\\ref{tab:training}.
+
+    Item 6 (paper-corrections): the ``wall`` column reads from
+    ``{system}_train_minutes`` (the same key used by Table II /
+    ``tab:efficiency``) so the two tables agree on wall-clock; the
+    legacy ``wall_clock_s`` key is no longer plumbed into the table
+    because it always rendered as ``\\MissingCell`` for the headline
+    rows while ``train_minutes`` resolved fine in ``tab:efficiency``.
     """
     rows: list[str] = []
     for system in ("donut", "pipeline"):
@@ -195,7 +202,7 @@ def render_training_table(metrics: dict[str, Any]) -> str:
             f"{system} "
             f"& {_fmt(metrics, f'{system}_epochs', 'int')} "
             f"& {best_cell} "
-            f"& {_fmt(metrics, f'{system}_wall_clock_s', 'sig4')} "
+            f"& {_fmt(metrics, f'{system}_train_minutes', 'sig4')} "
             f"& {_fmt(metrics, f'{system}_peak_vram_gb', 'gb1')} "
             f"& {_fmt(metrics, f'{system}_cost_usd', 'usd')} "
             f"& {_fmt(metrics, f'{system}_energy_wh', 'wh')} "
@@ -224,7 +231,7 @@ def render_training_table(metrics: dict[str, Any]) -> str:
         )
     return (
         "\\begin{tabular}{lccccccc}\n\\toprule\n"
-        "system & epochs & best & wall & VRAM & USD & energy & CO\\textsubscript{2} \\\\\n\\midrule\n"
+        "system & epochs & best & wall (min) & VRAM & USD & energy & CO\\textsubscript{2} \\\\\n\\midrule\n"
         + "\n".join(rows) + "\n\\bottomrule\n\\end{tabular}"
     )
 

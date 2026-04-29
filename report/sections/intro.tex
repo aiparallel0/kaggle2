@@ -41,7 +41,7 @@ efficiency argument we make on SROIE.
 The central question this paper asks is: \emph{can a lightweight
 learned assigner close the F1 gap between an end-to-end model and a
 pipeline, and at what interpretability cost?}  We answer on a fixed
-500\,/\,\VAR{n_val_images}\,/\,\VAR{n_test_images} train\,/\,val\,/\,test split of SROIE, with
+\VAR{n_train_images}\,/\,\VAR{n_val_images}\,/\,\VAR{n_test_images} train\,/\,val\,/\,test split of SROIE, with
 validation and test held disjoint, at seed 42 for the reported
 headline numbers.  We report the experimental harness as
 seed-parametric: the reported $n{=}1$ numbers are a single
@@ -52,7 +52,7 @@ without code changes.
 \noindent\textbf{Contributions.}
 \begin{enumerate}
 \item A like-for-like comparison of DONUT and a detect-then-read
-  pipeline at a fixed data budget of 500 training receipts,
+  pipeline at a fixed data budget of \VAR{n_train_images} training receipts,
   reporting paired-bootstrap 95\,\% confidence intervals on the
   $\Delta$F1 statistic and McNemar's exact test on per-image
   correctness.

@@ -121,6 +121,11 @@ def _emit_from_bug_timeline(
         metrics.setdefault(f"bug_{idx}_delta", round(delta_f, 4))
         metrics.setdefault(f"bug_{idx}_ci_low", round(lo, 4))
         metrics.setdefault(f"bug_{idx}_ci_high", round(hi, 4))
+        # Item 16 (paper-corrections): expose the raw pre-fix F1 too,
+        # so prose like ``illusory F1 ≈ \VAR{bug_7_f1_before}`` agrees
+        # with the table's negative ΔF1 row instead of contradicting
+        # it ("≈ 0.10 inflated" vs Δ = -0.0019).
+        metrics.setdefault(f"bug_{idx}_f1_before", round(float(before), 4))
         total += delta_f
     metrics.setdefault("all_off_delta", round(total, 4))
     metrics.setdefault("all_off_ci_low", round(total, 4))

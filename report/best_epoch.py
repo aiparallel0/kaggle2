@@ -197,6 +197,13 @@ def merge_best_epochs(config: ExpConfig, metrics: dict[str, object]) -> None:
     Idempotent: ``setdefault`` is used so an explicit producer-written
     value (e.g. a future ``yolo_metrics.json`` that emits ``best_epoch``
     directly) takes precedence over the on-disk extraction.
+
+    Item 7 (paper-corrections): when the on-disk DONUT ``trainer_state``
+    is unavailable (e.g. paper-only / ``eval_rule_gtocr``-fast-path
+    rebuilds where DONUT did not retrain) we fall back to
+    ``config.epochs_donut`` so ``tab:training`` does not render
+    ``\\MissingCell{donut_epochs}`` / ``\\MissingCell{donut_best_epoch}``
+    on a paper rebuild that re-uses an earlier checkpoint.
     """
     run_dir = Path(config.output_dir)
     donut_best, donut_run = _read_donut_best(run_dir)
@@ -204,6 +211,14 @@ def merge_best_epochs(config: ExpConfig, metrics: dict[str, object]) -> None:
         metrics.setdefault("donut_best_epoch", donut_best)
     if donut_run is not None:
         metrics.setdefault("donut_epochs", donut_run)
+    # Item 7 fallback: trainer_state absent → use config knobs.  We
+    # treat ``epochs_donut`` as both the run length and a best-effort
+    # ``best_epoch`` proxy (the converged model is by definition the
+    # final-epoch state when no in-training validation tracking ran).
+    cfg_epochs = getattr(config, "epochs_donut", None)
+    if isinstance(cfg_epochs, int) and cfg_epochs > 0:
+        metrics.setdefault("donut_epochs", cfg_epochs)
+        metrics.setdefault("donut_best_epoch", cfg_epochs)
     yolo_best, yolo_run = _read_yolo_best(run_dir)
     if yolo_best is not None:
         metrics.setdefault("yolo_best_epoch", yolo_best)

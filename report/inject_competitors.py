@@ -57,6 +57,20 @@ def _resolve_this_work(row: dict[str, Any], metrics: dict[str, Any]) -> float | 
     return None
 
 
+def _fmt_efficiency(f1: object, params_m: object) -> str:
+    """Item 18: F1 per million parameters — surfaces the efficiency win.
+
+    Both inputs must be finite numbers; returns ``\\textit{n/a}`` for
+    ``params_m`` of zero (avoids ``inf``) or any missing operand.
+    """
+    if not (_is_finite_number(f1) and _is_finite_number(params_m)):
+        return "\\textit{n/a}"
+    p = float(params_m)  # type: ignore[arg-type]  # narrowed by guard
+    if p <= 0.0:
+        return "\\textit{n/a}"
+    return f"{float(f1) / p * 1000.0:.1f}"  # type: ignore[arg-type]  # narrowed by guard
+
+
 def render_competitors_table(metrics: dict[str, Any]) -> str:
     """Render the published-Task-3-numbers comparison tabular.
 
@@ -92,14 +106,22 @@ def render_competitors_table(metrics: dict[str, Any]) -> str:
         # Audit C3: distinguish the in-paper DONUT re-implementation
         # from the published DONUT numbers (Kim et al., ECCV 2022) so
         # readers do not conflate the two.  The marker ``$^{\dagger}$``
-        # lands on the ``this work — DONUT`` row only; an explanatory
+        # lands on the ``this work --- DONUT`` row only; an explanatory
         # note row is appended below the tabular body.
         if "this work" in str(entry.get("system", "")) and "DONUT" in sys_lbl:
             sys_lbl = sys_lbl + "$^{\\dagger}$"
             has_reimpl = True
+        # Item 18 (paper-corrections): add a ``F1\,/\,M-params`` column
+        # so the parameter-efficiency story (mid-pack F1, top-of-table
+        # F1-per-megaparam) is legible without flipping back to the
+        # cost section.  Unit: F1 (×1000) per million parameters; e.g.
+        # 0.848 / 65 → 13.05.  Renders ``\textit{n/a}`` when params_m
+        # is missing for a competitor (e.g. PICK).
         rows.append(
             f"{sys_lbl} & {_fmt_params(entry.get('params_m'))} & "
-            f"{_fmt_f1(f1_val)} & {cite} \\\\"
+            f"{_fmt_f1(f1_val)} & "
+            f"{_fmt_efficiency(f1_val, entry.get('params_m'))} & "
+            f"{cite} \\\\"
         )
     if not rows:
         return ""
@@ -107,7 +129,7 @@ def render_competitors_table(metrics: dict[str, Any]) -> str:
     if has_reimpl:
         note = (
             "\\midrule\n"
-            "\\multicolumn{4}{p{0.92\\linewidth}}{\\footnotesize $^{\\dagger}$"
+            "\\multicolumn{5}{p{0.92\\linewidth}}{\\footnotesize $^{\\dagger}$"
             " ``this work --- DONUT'' is our SROIE Task-3 re-implementation"
             " of the architecture from~\\cite{kim2022donut}; the numerical"
             " gap to the originally reported DONUT figure stems from"
@@ -116,7 +138,7 @@ def render_competitors_table(metrics: dict[str, Any]) -> str:
             " definition (Section~\\ref{sec:discussion}).} \\\\\n"
         )
     return (
-        "\\begin{tabular}{lrcl}\n\\toprule\n"
-        "system & params (M) & F1 & source \\\\\n\\midrule\n"
+        "\\begin{tabular}{lrccl}\n\\toprule\n"
+        "system & params (M) & F1 & F1$\\,\\times\\,$1000\\,/\\,M & source \\\\\n\\midrule\n"
         + "\n".join(rows) + "\n" + note + "\\bottomrule\n\\end{tabular}"
     )
