@@ -572,14 +572,17 @@ def _train_epoch(
                     )
         # FOCUS-C positional head aux loss — pos-mass NLL directly on
         # _CompanyHead logits, handles multi-line company targets naturally.
-        if focus_company_pos_aux_w > 0 and getattr(assigner, "focus_company_enabled", False):
-            if company_idx >= 0:
-                gt_company = targets.get(company_idx, [])
-                if gt_company:
-                    loss = loss + _focus_company_pos_loss(
-                        assigner, feats, bboxes, priors_eff,
-                        list(gt_company), device, focus_company_pos_aux_w,
-                    )
+        if (
+            focus_company_pos_aux_w > 0
+            and getattr(assigner, "focus_company_enabled", False)
+            and company_idx >= 0
+        ):
+            gt_company = targets.get(company_idx, [])
+            if gt_company:
+                loss = loss + _focus_company_pos_loss(
+                    assigner, feats, bboxes, priors_eff,
+                    list(gt_company), device, focus_company_pos_aux_w,
+                )
         cast(Any, loss).backward()
         torch.nn.utils.clip_grad_norm_(assigner.parameters(), max_norm=1.0)
         opt.step()
