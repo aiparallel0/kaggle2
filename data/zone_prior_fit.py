@@ -42,14 +42,6 @@ def _label(y_norm: float, y_company: float, y_total: float) -> int:
     return 1
 
 
-def _sigmoid(x: float) -> float:
-    if x >= 0:
-        e = math.exp(-x)
-        return 1.0 / (1.0 + e)
-    e = math.exp(x)
-    return e / (1.0 + e)
-
-
 def _softmax3(zs: list[float]) -> list[float]:
     m = max(zs)
     e = [math.exp(z - m) for z in zs]
@@ -157,8 +149,6 @@ def score_train_acc(
             total += 1
             if pred == _label(float(y), yc, yt):
                 correct += 1
-    # ``_sigmoid`` retained for downstream extensions (e.g. soft labels)
-    _ = _sigmoid
     return correct / max(1, total)
 
 
