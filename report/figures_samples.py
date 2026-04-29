@@ -133,19 +133,19 @@ def _curate(
 def _block(
     ax: object, label: str, fields: dict[str, str],
     gt: dict[str, str], y0: float, fontsize: int,
+    wrap_width: int = 26,
 ) -> float:
     """Render one ``label: ...`` block; return the y-coordinate of its bottom.
 
-    Each field value is wrapped at 24 characters with ``textwrap.fill``
-    (Item 6d) so long JSON values do not bleed horizontally across the
-    neighbouring cell.  Lines are drawn with a 3-pt vertical gap so the
-    GT / DONUT / Pipeline blocks visually separate (the v3 single-line
-    60-char clip produced the overlap visible in the supplied PDF
-    screenshot).
+    Each field value is wrapped at ``wrap_width`` characters
+    (Item F: narrowed from 32→26 so wrapped lines fit comfortably in
+    the per-cell column at IEEE 2-column page widths).  Lines are drawn
+    with ``linespacing=1.45`` (Item F key fix #1) so wrapped lines do
+    not stack on top of one another, and the y-cursor is advanced by
+    the actual number of wrapped lines (Item F key fix #2) instead of
+    assuming "one line per field" — the cause of the
+    ``GMM:BHD8/03/2018`` collision visible in the v4 screenshot.
     """
-    # Line height in axes-fraction units calibrated for a 1:1 figure
-    # cell on COL_DOUBLE×1.05·COL_DOUBLE inches.  ``gap`` is the 3-pt
-    # vertical space requested between consecutive wrapped lines.
     line_h = 0.034 * (fontsize / 9.0)
     gap = 0.012  # ≈ 3 pt at the calibrated cell scale
     y = y0
@@ -159,7 +159,7 @@ def _block(
     for f in _FIELDS:
         v = fields.get(f, "")
         bad = label != "GT" and v.strip() != gt.get(f, "").strip()
-        wrapped = textwrap.fill(f"{f}: {v}", width=24) or f"{f}:"
+        wrapped = textwrap.fill(f"{f}: {v}", width=wrap_width) or f"{f}:"
         n_lines = wrapped.count("\n") + 1
         ax.text(  # type: ignore[attr-defined]
             0.04, y,
@@ -167,9 +167,12 @@ def _block(
             transform=ax.transAxes,  # type: ignore[attr-defined]
             fontsize=fontsize, family="monospace",
             color="#B00020" if bad else "black",
+            linespacing=1.45,
             verticalalignment="top",
         )
-        y -= n_lines * line_h + gap
+        # Advance by the actual rendered line count (×1.05 head-room)
+        # so multi-line address values do not bleed into the next block.
+        y -= n_lines * line_h * 1.05 + gap
     return y
 
 
@@ -217,7 +220,7 @@ def _draw_cell(
     # Item 6 (paper-corrections v5): clamp the text-axis x-range to
     # [0, 1] so wrapped JSON lines drawn in axes-fraction coordinates
     # cannot bleed past the cell's geometric width into the
-    # neighbouring column.  Combined with the 24-char wrap in
+    # neighbouring column.  Combined with the 26-char wrap in
     # ``_block`` and ``wspace=0.6`` below, this eliminates the
     # horizontal overlap observed in the v4 screenshots.
     ax.set_xlim(0.0, 1.0)  # type: ignore[attr-defined]
@@ -254,7 +257,10 @@ def render_samples(run_dir: Path) -> Path | None:
     if guard_empty(sorted(set(donut) | set(pipe) | set(gt)), "samples"):
         return None
     ids = _curate(donut, pipe, gt, _read_curated_ids(run_dir))
-    fig, axes = plt.subplots(2, 2, figsize=(COL_DOUBLE, 1.05 * COL_DOUBLE))
+    # Item F (paper-corrections): bump the headline figure to
+    # (COL_DOUBLE × 1.4·COL_DOUBLE) so each 2×2 cell has enough vertical
+    # room to render long wrapped address blocks without bleed.
+    fig, axes = plt.subplots(2, 2, figsize=(COL_DOUBLE, 1.4 * COL_DOUBLE))
     for slot, ax in enumerate(list(axes.flat)):
         bucket = _BUCKETS[slot]
         if slot >= len(ids):
@@ -271,7 +277,7 @@ def render_samples(run_dir: Path) -> Path | None:
     # Item 6c (paper-corrections): widen inter-cell padding further so
     # the wrapped JSON text blocks do not bleed into neighbouring
     # cells.  ``wspace`` is bumped to 0.6 (per Item 6 spec, paired with
-    # the 24-char textwrap and per-cell ax.set_xlim above).
+    # the 26-char textwrap and per-cell ax.set_xlim above).
     fig.subplots_adjust(wspace=0.6, hspace=0.85)
     fig.tight_layout(pad=2.5)
     headline = save_fig(fig, run_dir / "figures", "fig_samples")
@@ -295,7 +301,7 @@ def _render_full(
     cap = 9 if _HAS_PIL else 4
     rows = cols = 3 if _HAS_PIL else 2
     ids = ids[:cap]
-    fig, axes = plt.subplots(rows, cols, figsize=(COL_DOUBLE, 1.15 * COL_DOUBLE))
+    fig, axes = plt.subplots(rows, cols, figsize=(COL_DOUBLE, 1.6 * COL_DOUBLE))
     for ax, img_id in zip(list(axes.flat), ids, strict=False):
         _draw_cell(ax, img_id, "", run_dir,
                    gt.get(img_id, {}), donut.get(img_id, {}),

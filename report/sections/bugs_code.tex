@@ -8,7 +8,9 @@
   (the magnitude is the negative entry in
   Table~\ref{tab:bug_ablation}, computed as
   ceiling\,$-$\,F1\textsubscript{before}); when the leak was closed
-  the held-out F1 dropped to \VAR{donut_f1}, which reflects true
+  DONUT's held-out F1 dropped from the leaked
+  $\approx$\,\VAR{bug_7_f1_before} to its true post-leakage value
+  $\approx$\,\VAR{donut_f1}, which reflects true
   generalisation.  \textit{Guard.} The split is
   computed once from a single seed and persisted to
   \texttt{results/split.json}; the loader asserts empty overlap at
@@ -45,7 +47,7 @@
   \texttt{model.config} into \texttt{model.generation\_config}
   before the first \texttt{trainer.evaluate()}.
   The guard is now symmetric across both DONUT and TrOCR trainers:
-  \texttt{models/\_gen\_config.py:\_persist\_generation\_config}
+  \texttt{models/\_gen\_config.py}'s \texttt{\_persist\_generation\_config}
   re-pins the IDs, nulls \texttt{forced\_bos/eos\_token\_id}, and
   asserts the round-trip against the written
   \texttt{generation\_config.json}, raising \texttt{TrainError} on
@@ -106,8 +108,9 @@
   nullifies the ratio we intended to apply, and the effective
   learning rate schedule shrinks the warmup period below the point
   where the resized embedding rows can adapt cleanly.
-  \textit{F1 impact.} $\approx$\,0.10 absolute F1 drop versus the
-  intended ratio-based schedule on DONUT, concentrated in the
+  \textit{F1 impact.} $\approx$\,0.24 absolute F1 drop versus the
+  intended ratio-based schedule on DONUT (Table~\ref{tab:bug_ablation},
+  row \texttt{bug\_13}), concentrated in the
   fields that rely on the new SROIE special tokens.
   \textit{Guard.} \texttt{donut\_train.py} forces
   \texttt{warmup\_steps\,=\,0} whenever

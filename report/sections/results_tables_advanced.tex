@@ -59,9 +59,9 @@ enumerated in \texttt{metrics/unresolved\_vars.json} for audit.
          epoch, wall-clock seconds, peak VRAM, total USD, and total
          energy --- the inputs to the parameter-efficiency claim.
          The advanced variant adds the parameter-budget ratio
-         (\VAR{donut_params_m}\,M\,/\,\VAR{pipeline_params_m}\,M
-         $\approx$\,4$\times$, matching the
-         $\sim\VAR{param_ratio_numeric}$ ratio cited in the abstract)
+         (\VAR{donut_params_m}\,M\,/\,(\VAR{pipeline_params_m}\,M$+$\VAR{assigner_params_k}\,K)
+         $\approx$\,3.9$\times$, matching the
+         $\sim$\VAR{param_ratio_numeric} ratio cited in the abstract)
          that the abstract cites.}
 \label{tab:training}
 \small

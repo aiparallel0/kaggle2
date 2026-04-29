@@ -23,7 +23,8 @@
   \item \emph{Headline hyperparameters.}  Base learning rate
         $\eta=\VAR{lr}$ (encoder; decoder uses $\eta_d=\VAR{lr_decoder}$
         --- see Sec.~\ref{sec:donut_lr}); label smoothing
-        $\varepsilon=\VAR{label_smoothing}$; KD weights
+        $\varepsilon=0$ (disabled, matching Sec.~\ref{sec:method});
+        KD weights
         $\lambda_\text{attn}=\VAR{kd_attn_weight}$,
         $\lambda_\text{logits}=\VAR{kd_logits_weight}$ (both currently
         zero in the shipped run, see
@@ -38,7 +39,7 @@
 \section{Raw Metrics (Four-Decimal)}
 \label{app:raw}
 
-Table~\ref{tab:headline} rounds to three decimals.  For reviewers who
+Table~\ref{tab:headline} rounds to four decimals.  For reviewers who
 want the full precision the harness emits, the underlying seed-42
 values are:
 DONUT F1 $=\VAR{donut_f1}$, NED $=\VAR{donut_ned}$, EM $=\VAR{donut_em}$;
@@ -127,7 +128,7 @@ System & Field & Precision & Recall & F1 [95\,\% CI] & NED [95\,\% CI] & EM [95\
 \end{tabular}
 \end{table*}
 
-\section*{Acknowledgements}
+\section*{Acknowledgments}
 
 Code, training harness, and artefacts are available at
 \url{https://github.com/aiparallel0/kaggle2} (to be made public upon

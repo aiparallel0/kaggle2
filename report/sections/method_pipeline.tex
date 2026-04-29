@@ -17,10 +17,11 @@ Detection output: a list of $(x_1,y_1,x_2,y_2)$ boxes in pixel space.
 
 \textbf{Stage 2 --- Crop OCR (TrOCR).}
 Each detected box is cropped and fed to
-TrOCR~\cite{li2023trocr} (\texttt{microsoft/trocr-small-printed}
-fine-tuned for $\geq\VAR{epochs_trocr}$ epochs on SROIE crops;
-Bug~6 requires at least 5 epochs to escape the degenerate empty-output
-regime).  For each crop we retain both the decoded text \emph{and} the
+TrOCR~\cite{li2023trocr} (\texttt{microsoft/trocr-base-printed}
+fine-tuned for $\VAR{epochs_trocr}$ epochs on SROIE crops;
+config-enforced minimum is 5 epochs to escape the degenerate
+empty-output regime --- see Bug~6).  For each crop we retain both
+the decoded text \emph{and} the
 TrOCR \emph{encoder hidden states} (768-d mean-pooled); the assigner
 consumes the hidden states rather than the surface text, so that OCR
 character errors do not cascade into semantic role assignment unless
@@ -86,24 +87,30 @@ F1\,=\,0.000.
 \caption{Multi-instance pos-mass NLL (one receipt).}
 \label{alg:posmass}
 \begin{algorithmic}[1]
-\Require Line features $X\!\in\!\mathbb{R}^{N\times d}$, field queries
+\Require Per-line text features $t\!\in\!\mathbb{R}^{N\times d_t}$,
+         enriched boxes $b\!\in\!\mathbb{R}^{N\times 8}$, handcrafted
+         priors $p\!\in\!\mathbb{R}^{N\times 6}$, field queries
          $Q\!\in\!\mathbb{R}^{|\mathcal{F}|\times d}$, target sets
          $\{T_f\}$, $T_f\!\subseteq\!\{1,\dots,N\}$.
+\State $X \leftarrow \mathrm{LN}(\mathrm{text\_proj}(t)
+                              + \mathrm{bbox\_proj}(b)
+                              + \mathrm{prior\_proj}(p))$
+       \Comment{fused line features, $X\!\in\!\mathbb{R}^{N\times d}$}
 \State $H \leftarrow \mathrm{TransformerEncoder}(X)$
-       \Comment{self-attention over lines}
+       \Comment{$\VAR{assigner_n_layers}$-layer pre-norm, 8 heads,
+                $d{=}\VAR{assigner_d_model}$}
 \State $A \leftarrow \mathrm{softmax}_j(Q H^\top / \sqrt{d})$
        \Comment{cross-attention from queries $Q$ to encoded lines $H$}
-\State $\mathcal{L} \leftarrow 0$
+\State $J \leftarrow 0$
 \ForAll{$f \in \mathcal{F}$ with $T_f \neq \emptyset$}
-  \State $\mathcal{L} \leftarrow \mathcal{L}
-           - \log \sum_{i \in T_f} A_{f,i}$
+  \State $J \leftarrow J - \log \sum_{i \in T_f} A_{f,i}$
 \EndFor
-\State \Return $\mathcal{L}$
+\State \Return $J$
 \end{algorithmic}
 \end{algorithm}
 
 \textbf{Optimiser and early stopping.}
-AdamW at $1\mathrm{e}{-3}$ with weight-decay $1\mathrm{e}{-4}$,
+AdamW at $1\times 10^{-3}$ with weight-decay $1\times 10^{-4}$,
 gradient-norm clipped at 1.0, up to $\VAR{epochs_assigner}$ epochs with
 patience 7 on held-out validation loss.  The saved checkpoint is the
 lowest-val-loss one (not the last), at
@@ -149,13 +156,16 @@ operates on a $k$-nearest-neighbour graph over YOLO box centres
 the TrOCR text embedding, its bounding-box coordinates, and the
 14-dim prior vector (\texttt{priors\_v3} with
 \textsc{subtotal}/\textsc{cash}/\textsc{change}/\textsc{tax}/\textsc{rounding}
-distractor bits).  A single GAT layer with 4 heads projects onto a
+distractor bits).  A single GAT layer with 4 heads projects onto
 a low-dimensional hidden space; scatter-softmax attention on the $k$NN edge
 set mixes neighbour evidence, and a final linear head emits the
 $n$-field logit vector.  The resulting model is $\sim$120\,K
-parameters --- an order of magnitude smaller than the transformer
+parameters --- roughly 10$\times$ smaller than the transformer
 assigner --- and the graph prior encodes the spatial-adjacency
 invariance that the transformer otherwise has to learn from
 \VAR{n_train_images} receipts.  The GAT arm is enabled by \texttt{gat\_enabled: true} in
 \texttt{config.json}; the default (\texttt{false}) path preserves
-bit-for-bit the transformer-assigner numbers reported elsewhere.
+the transformer-assigner numbers reported elsewhere within RNG noise
+(true bit-for-bit reproducibility would require
+\texttt{torch.use\_deterministic\_algorithms(True)} and CuBLAS
+workspace pinning, neither of which is enabled in the shipped run).

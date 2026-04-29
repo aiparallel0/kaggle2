@@ -8,10 +8,13 @@ replicators can weigh our conclusions against the evidence base.
   \item \emph{Single training seed.}  The headline numbers in
         Tables~\ref{tab:headline} and \ref{tab:perfield} are for a
         single seed ($n_{\text{trials}}=\VAR{n_trials}$); the
-        \VAR{test_set_size}-image test yields a bootstrap 95\% CI
-        of roughly $\pm 0.05$ F1, and observed inter-system
-        differences smaller than this are not resolvable.  The
-        released harness is seed-parametric (Appendix~\ref{app:repro}).
+        \VAR{test_set_size}-image test yields a paired-bootstrap 95\%
+        CI half-width of roughly $\pm 0.02$ F1 on $\Delta$F1 (see the
+        explicit interval $[\VAR{delta_f1_ci_lo},\,\VAR{delta_f1_ci_hi}]$
+        in the abstract).  The McNemar exact test
+        and the paired-bootstrap CI agree on whether observed
+        inter-system differences are resolvable at this sample size;
+        the released harness is seed-parametric (Appendix~\ref{app:repro}).
   \item \emph{Evaluation split.}  This run used
         \VAR{test_set_kind} (\VAR{test_set_size} test images).  The
         \texttt{advanced} paper variant evaluates on the canonical
@@ -38,7 +41,7 @@ replicators can weigh our conclusions against the evidence base.
   \item \emph{No inference-latency, calibration, or faithfulness
         measurements.}  Interpretability is argued structurally,
         not quantified by a deletion/insertion metric.
-  \item \emph{One GPU family.}  All runs used RTX\,4090 / A6000;
+  \item \emph{One GPU family.}  All runs used RTX\,4090;
         the cost numbers do not generalise to other silicon.
   \item \emph{Label noise.}  SROIE ground truth contains
         inconsistent spacing in address fields, inflating NED

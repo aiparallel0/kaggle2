@@ -14,14 +14,16 @@ routinely dominate in the public SROIE literature.
 \textbf{Why address is hard.}
 The \texttt{address} field spans multiple non-adjacent lines that
 vary in number and spatial arrangement across receipts.  TrOCR reads
-each detected crop in isolation, so it cannot ``see'' the vertical
-context that would let it recognise when two consecutive lines form
-a compound address.  A heuristic assigner aggregating lines by
-vertical proximity fails on Malaysian receipts where address blocks
-are interspersed with receipt metadata.  The learned attention
-assigner partially alleviates this by attending jointly to all
-lines, but a full solution requires a sequence model that can
-aggregate multi-line evidence.
+each detected crop in isolation, so it lacks crop-level vertical
+context; the assigner's self-attention over all lines does aggregate
+multi-line evidence (\S\ref{sec:pipeline_desc}), but the
+multi-instance pos-mass loss only provides \emph{set}-level
+supervision rather than \emph{sequence} supervision over the
+contiguous span of address tokens.  A heuristic assigner aggregating
+lines by vertical proximity fails on Malaysian receipts where address
+blocks are interspersed with receipt metadata.  A sequence model that
+can emit a contiguous span of address lines (rather than scoring
+each line independently) would address both gaps.
 
 \textbf{The DONUT re-implementation gap.}
 Table~\ref{tab:competitors} reports our DONUT re-implementation
@@ -36,9 +38,14 @@ resolution per dataset; (iii)~the SROIE Task-3 train/val partition
 --- the published number is on the official train$\rightarrow$val
 split with no external validation reservation, while our pipeline
 holds out $\VAR{n_val_images}$ images from the official train set for early-stopping
-to keep DONUT and the assigner under the same data budget.  We
-therefore frame the headline contribution as \emph{matching} our
-re-implemented DONUT at \VAR{param_ratio_phrase} of the parameter
-count (i.e.\ closing the architectural gap on a fair-data, fair-
-preprocessing comparison) rather than as beating the published
-DONUT figure on the leaderboard.
+to keep DONUT and the assigner under the same data budget.  Our
+pipeline's \VAR{pipeline_f1:pct1} therefore exceeds the published
+$0.838$ DONUT figure on Task-3, but we frame the headline
+contribution conservatively as \emph{matching} our re-implemented
+DONUT at \VAR{param_ratio_phrase} of the parameter count
+(i.e.\ closing the architectural gap on a fair-data, fair-
+preprocessing comparison) on the
+$\Delta$F1 (DONUT $-$ Pipeline)$\,=\,$\VAR{f1_gap}
+($[\VAR{delta_f1_ci_lo},\,\VAR{delta_f1_ci_hi}]$, McNemar
+$p=$\VAR{mcnemar_p:p}) statistic, which is the comparison reviewers
+should weight rather than the published-number gap.

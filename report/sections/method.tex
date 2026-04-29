@@ -32,7 +32,7 @@ autoregressively emits structured output wrapped in XML-style task tokens.
 The decoder is conditioned on a task prompt
 \texttt{<s\_sroie>} and emits tokens until it produces
 \texttt{</s\_sroie>}.  A well-trained DONUT generates output of the form:
-\texttt{<s\_company>SUPER MART</s\_company><s\_date>03/01/2019}
+\texttt{<s\_company>SUPER MART</s\_company><s\_date>26/03/2018}
 \texttt{</s\_date><s\_address>NO.~1 JALAN~...</s\_address>}
 \texttt{<s\_total>43.50</s\_total>}.
 The \texttt{token2json} helper then parses the XML to a Python dict
@@ -67,8 +67,9 @@ full retraining with new task tokens and new training data.
 \VAR{epochs_donut} epochs, image resolution
 $\VAR{img_w}\times\VAR{img_h}$, batch size \VAR{batch_size},
 cosine learning-rate schedule with \VAR{warmup_steps}-step warmup,
-\texttt{\VAR{precision}} precision (bf16 on Ampere\,+; fp16 only
-with \texttt{max\_grad\_norm}=1.0 to avoid Bug~4), gradient
+\texttt{\VAR{precision}} precision (bf16 on Ampere+; if fp16 is
+forced, \texttt{max\_grad\_norm}=1.0 is required as a partial
+mitigation --- see Bug~4), gradient
 checkpointing enabled, label smoothing disabled.
 Knowledge-distillation hooks are implemented in source but disabled
 (both weights zero) for every run reported here, so DONUT and the
@@ -100,16 +101,18 @@ teacher signal leaking into the pipeline.
 \node[above=0.15cm of swin,font=\scriptsize\bfseries] {(a) DONUT};
 
 % ---- Pipeline sub-figure (below) ----
-\node[box,below=1.1cm of img]   (img2) {Receipt\\image};
-\node[box,right=0.5cm of img2]  (yolo) {YOLOv8\\detector};
-\node[box,right=0.5cm of yolo]  (trocr){TrOCR\\per crop};
-\node[box,right=0.5cm of trocr] (attn) {Attention\\assigner};
-\node[box,right=0.5cm of attn]  (out2) {Field\\values};
-\draw[arr] (img2) -- (yolo);
+% Item 21 (paper-corrections): three core modules between image and
+% field output, matching the prose "three auditable stages" in
+% \S~IV.C.  Receipt image and field values are plain arrows in/out.
+\node[right=0cm of img,xshift=0.0cm,below=1.1cm of img,inner sep=0pt] (img2_arrow)
+   {\scriptsize Receipt $\to$};
+\node[box,right=0.1cm of img2_arrow] (yolo) {Detect\\(YOLOv8)};
+\node[box,right=0.5cm of yolo]  (trocr){Read\\(TrOCR)};
+\node[box,right=0.5cm of trocr] (attn) {Assign\\(Attention)};
+\node[right=0.1cm of attn,inner sep=0pt] (out2) {\scriptsize $\to$ Fields};
 \draw[arr] (yolo) -- (trocr);
 \draw[arr] (trocr) -- (attn);
-\draw[arr] (attn) -- (out2);
-\node[above=0.15cm of yolo,font=\scriptsize\bfseries] {(b) Pipeline};
+\node[above=0.15cm of trocr,font=\scriptsize\bfseries] {(b) Pipeline};
 \end{tikzpicture}%
 }
 \caption{Architecture overview. (a) DONUT: single forward pass from
@@ -137,7 +140,7 @@ condition on the neighbour span; at inference the same prefix is
 fed to HuggingFace's \texttt{generate()} via
 \texttt{decoder\_input\_ids}.  This mirrors the 4-shot in-context
 learning scheme of LayoutLLM~\cite{luo2024layoutllm} transplanted
-onto a 200M-param DONUT backbone and incurs no additional training
+onto an $\approx$261\,M-parameter DONUT backbone and incurs no additional training
 time beyond the extra decoder tokens.  The RAG arm is opt-in via the
 \texttt{rag\_enabled} / \texttt{rag\_k} config keys and disabled by
 default so the RAG-off reported headline number remains unchanged.
