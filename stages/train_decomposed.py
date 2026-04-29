@@ -113,6 +113,95 @@ def stage_train_backbone(config: ExpConfig) -> None:
     log.info("Backbone manifest → %s", out_dir / "backbone_manifest.json")
 
 
+# --- Per-component stages (true parallel execution) -----------------------
+# The legacy stage_train_backbone runs DONUT -> YOLO -> TrOCR sequentially
+# inside one process, which prevents true multi-GPU parallelism (you can
+# DDP DONUT across 4 GPUs but YOLO and TrOCR sit idle until DONUT finishes).
+# These per-component entry points let an outer orchestrator
+# (scripts/single_instance_swarm.sh) launch each component as its own
+# torchrun / python process pinned to a disjoint GPU subset, so the three
+# heavy backbones train concurrently and wall clock = max() not sum().
+
+
+def _ensure_data(config: ExpConfig) -> object:
+    """Idempotent dataset download + split; safe under concurrent calls
+    because :func:`download_sroie` early-returns when the cache is
+    populated.  Pre-warm with :func:`stage_prepare_data` once before
+    fanning out parallel processes to avoid race-time clones.
+    """
+    data_path = download_sroie(config)
+    return load_or_create_split(config, data_path)
+
+
+def stage_prepare_data(config: ExpConfig) -> None:
+    """Download SROIE + materialise the persistent split BEFORE the
+    parallel-component phase, so concurrent processes don't race on
+    ``git clone`` or ``split.json`` write.
+    """
+    log.info("=== Stage: prepare_data ===")
+    data = _ensure_data(config)
+    log.info(
+        "Split: %d train / %d val / %d test",
+        len(data.train), len(data.val), len(data.test),  # type: ignore[attr-defined]
+    )
+
+
+def stage_train_donut(config: ExpConfig) -> None:
+    """Train DONUT only; honours ``config.skip_donut``."""
+    log.info("=== Stage: train_donut ===")
+    data = _ensure_data(config)
+    _train_donut_stage(config, data)
+
+
+def stage_train_yolo(config: ExpConfig) -> None:
+    """Train YOLOv8 only."""
+    log.info("=== Stage: train_yolo ===")
+    data = _ensure_data(config)
+    th, ev, t0 = start_telem(config, "yolo")
+    try:
+        yolo_path = train_yolo(config, data)
+    finally:
+        stop_telem(th, ev, t0, config, "yolo")
+    log.info("YOLO  → %s", yolo_path)
+
+
+def stage_train_trocr(config: ExpConfig) -> None:
+    """Train TrOCR only.  Independent of YOLO/DONUT — uses GT box crops."""
+    log.info("=== Stage: train_trocr ===")
+    data = _ensure_data(config)
+    crops = extract_crops(data.train, config.fields)  # type: ignore[attr-defined]
+    if not crops:
+        raise TrainError("No labeled SROIE crops — check box/ annotations.")
+    th, ev, t0 = start_telem(config, "trocr")
+    try:
+        trocr_path = train_trocr(config, crops)
+    finally:
+        stop_telem(th, ev, t0, config, "trocr")
+    log.info("TrOCR → %s", trocr_path)
+
+
+def stage_write_backbone_manifest(config: ExpConfig) -> None:
+    """Write ``backbone_manifest.json`` after the per-component fan-out
+    converges.  Called by the orchestrator once train_donut + train_yolo +
+    train_trocr have all finished and joined their output into the same
+    run directory.
+    """
+    out_dir = Path(config.output_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    manifest = {
+        "trocr_path": str(out_dir / "trocr"),
+        "yolo_path": str(out_dir / "yolo" / "run" / "weights" / "best.pt"),
+        "components": _backbone_complete(config.output_dir),
+        "skip_donut": config.skip_donut,
+        "epochs_donut": config.epochs_donut,
+        "epochs_yolo": config.epochs_yolo,
+        "epochs_trocr": config.epochs_trocr,
+    }
+    with open(out_dir / "backbone_manifest.json", "w") as f:
+        json.dump(manifest, f, indent=2)
+    log.info("Backbone manifest → %s", out_dir / "backbone_manifest.json")
+
+
 def _resolve_backbone_source(config: ExpConfig) -> str:
     """Resolve the backbone source dir from env or config.
 
@@ -193,6 +282,11 @@ def stage_train_assigner_only(config: ExpConfig) -> None:
 
 
 __all__ = [
+    "stage_prepare_data",
     "stage_train_assigner_only",
     "stage_train_backbone",
+    "stage_train_donut",
+    "stage_train_trocr",
+    "stage_train_yolo",
+    "stage_write_backbone_manifest",
 ]

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # scripts/single_instance_swarm.sh
-# 20-minute NeurIPS-credibility sweep on ONE multi-GPU vast.ai instance.
+# 20-min NeurIPS-credibility sweep on ONE multi-GPU vast.ai instance.
 #
 # Tested target: 8 × RTX 5090 (32 GB GDDR7) on vast.ai.  Also works on
 # 8 × RTX 4090, 4 × H100 PCIe, or any contiguous block of >= 4 GPUs.
@@ -8,48 +8,65 @@
 #
 # Wall-clock budget on 8 × RTX 5090 (single-dataset, 5-seed sweep):
 #
-#    Phase 1 (parallel, all 8 GPUs busy):
-#      DONUT      (DDP on GPUs 0-3): ~6 min
-#      TrOCR      (DDP on GPUs 4-5): ~5 min
-#      YOLO       (single GPU 6):    ~2 min  -> idle after, joins phase 2
-#      LayoutLMv3 (single GPU 7):    ~3 min  -> idle after, joins phase 2
-#    => phase 1 wall clock = max = ~6 min
+#    Phase 0 — prepare data + split (single process)            : ~30 s
+#    Phase 1 — backbone components run as separate processes
+#              concurrently, each pinned to a disjoint GPU subset:
+#      DONUT      (DDP via torchrun on GPUs 0-3) : ~6 min
+#      TrOCR      (DDP via torchrun on GPUs 4-5) : ~5 min  } all
+#      YOLO       (single process on GPU 6)      : ~2 min  } phase
+#      [LayoutLMv3 zero-shot eval skipped here; runs in eval phase]
+#    => phase 1 wall clock = max = ~6 min  (DONUT bottleneck)
 #
-#    Phase 2 (parallel assigner sweep on all 8 GPUs):
-#      5 seeds, 1 per GPU (slot reuse if seeds > GPUs): ~3 min each
-#    => phase 2 wall clock = ~3 min for 5 seeds
+#    Phase 2 — multi-seed AttentionAssigner sweep
+#      5 seeds, 1 per GPU, all 8 GPUs available  : ~3 min
 #
-#    Phase 3 (eval, parallel across seeds, ~1 min)
-#    Phase 4 (paper render + aggregation, ~1 min)
+#    Phase 3 — eval (parallel across seeds)      : ~1 min
+#    Phase 4 — paper render (sequential, ~30 s)  : ~2 min
 #
-#    Total: ~11-12 min.  Fits a 20-min budget with headroom for cold
-#    HuggingFace downloads and dataset extraction.
+#    Total: ~12 min on 8 × RTX 5090.  Fits a 20-min budget with
+#    headroom for cold HuggingFace downloads and dataset extraction.
 #
-# Usage on a fresh vast.ai 8-GPU instance:
+# Usage on a fresh vast.ai 8-GPU instance (PyTorch 2.4 / CUDA 12.1):
 #
-#     bash scripts/vastai_bootstrap.sh         # one-time deps install
-#     bash scripts/single_instance_swarm.sh    # the actual sweep
+#     # On vast.ai, after the instance is booted:
+#     git clone -b claude/improve-f1-scores-RYvNY \
+#         https://github.com/aiparallel0/kaggle2 && cd kaggle2
+#     bash scripts/vastai_bootstrap.sh
+#     bash scripts/single_instance_swarm.sh
 #
 # Configurable via env vars (sensible defaults shown):
 #
-#     KAGGLE2_SEEDS="42 1 2 3 5"     # space-separated seed list
-#     KAGGLE2_DATASETS="canonical"   # space-separated; canonical|sroie|...
-#     KAGGLE2_DONUT_GPUS="0,1,2,3"   # GPU indices for DONUT DDP
-#     KAGGLE2_TROCR_GPUS="4,5"       # GPU indices for TrOCR DDP
-#     KAGGLE2_YOLO_GPU="6"           # single GPU for YOLO
-#     KAGGLE2_LLM3_GPU="7"           # single GPU for LayoutLMv3 (zero-shot)
-#     KAGGLE2_SKIP_DONUT=0           # set to 1 to skip DONUT (FOCUS-only sweep)
+#     KAGGLE2_SEEDS="42 1 2 3 5"      # space-separated seed list
+#     KAGGLE2_DATASETS="canonical"    # space-separated; canonical|sroie
+#     KAGGLE2_DONUT_GPUS="0,1,2,3"    # GPU indices for DONUT DDP
+#     KAGGLE2_TROCR_GPUS="4,5"        # GPU indices for TrOCR DDP
+#     KAGGLE2_YOLO_GPU="6"            # single GPU for YOLO
+#     KAGGLE2_SKIP_DONUT=0            # 1 = skip DONUT (FOCUS-only sweep)
+#
+# Compatibility: every existing test, config, and CLI flag continues
+# to work.  This script is purely additive on top of `make all`.
 
 set -euo pipefail
 
 log() { printf "\033[1;36m[swarm]\033[0m %s\n" "$*"; }
 
+# Fail loudly when invoked from outside the repo root.
+if [ ! -f "main.py" ] || [ ! -d "stages" ]; then
+    echo "ERROR: run this from the kaggle2 repo root." >&2
+    exit 2
+fi
+
 # Auto-detect GPU count if not pinned.
+if ! command -v nvidia-smi >/dev/null; then
+    echo "ERROR: nvidia-smi not found.  This script needs CUDA + GPUs." >&2
+    exit 2
+fi
 N_GPU=$(nvidia-smi --query-gpu=name --format=csv,noheader | wc -l)
 if [ "${N_GPU}" -lt 4 ]; then
     log "WARNING: only ${N_GPU} GPU(s) detected — sweep will fall back to"
-    log "         sequential per-component training; the 20-min budget"
-    log "         is not realistic on <4 GPUs.  Consider scripts/sweep_seeds_local.sh"
+    log "         sequential per-component training; the 12-min budget is"
+    log "         not realistic on <4 GPUs.  Consider:"
+    log "         bash scripts/sweep_seeds_local.sh"
 fi
 log "Detected ${N_GPU} GPU(s): $(nvidia-smi --query-gpu=name --format=csv,noheader | head -1)"
 
@@ -61,7 +78,6 @@ SKIP_DONUT="${KAGGLE2_SKIP_DONUT:-0}"
 DONUT_GPUS="${KAGGLE2_DONUT_GPUS:-0,1,2,3}"
 TROCR_GPUS="${KAGGLE2_TROCR_GPUS:-4,5}"
 YOLO_GPU="${KAGGLE2_YOLO_GPU:-6}"
-LLM3_GPU="${KAGGLE2_LLM3_GPU:-7}"
 
 SWEEP_ID="${KAGGLE2_SWEEP_ID:-sweep-$(date -u +%Y%m%dT%H%M%SZ)}"
 LOG_DIR="logs/${SWEEP_ID}"
@@ -72,82 +88,131 @@ log "Seeds:    ${SEEDS}"
 log "Datasets: ${DATASETS}"
 log "Logs:     ${LOG_DIR}/"
 
+resolve_config() {
+    case "$1" in
+        canonical) echo "configs/canonical_5seed.json" ;;
+        sroie)     echo "configs/default.json" ;;
+        *)         echo "configs/default.json" ;;
+    esac
+}
+
 # ---------------------------------------------------------------------------
-# Phase 1 — backbone training (per dataset; parallel components within a
-# dataset, sequential across datasets).  Each component pinned to its
-# allotted GPUs via CUDA_VISIBLE_DEVICES.  HF Trainer auto-detects DDP
-# from torchrun's local_rank env vars; YOLOv8's `device=[...]` arg works
-# natively, so no code changes are needed for DDP — just process-level
-# fan-out.
+# Phase 1 — backbone components run AS PARALLEL PROCESSES, each pinned to
+# its allotted GPUs via CUDA_VISIBLE_DEVICES.  HF Trainer (DONUT, TrOCR)
+# auto-detects DDP from torchrun's local_rank env vars; YOLOv8's
+# `device=[...]` arg works natively, so no training-code changes are
+# needed for DDP — just process-level fan-out.
 # ---------------------------------------------------------------------------
 
 phase1_one_dataset() {
     local DATASET="$1"
-    local CONFIG_FILE="configs/default.json"
-    case "${DATASET}" in
-        canonical) CONFIG_FILE="configs/canonical_5seed.json" ;;
-        sroie)     CONFIG_FILE="configs/default.json" ;;
-        *) log "Unknown dataset ${DATASET}; defaulting to ${CONFIG_FILE}" ;;
-    esac
+    local CONFIG_FILE
+    CONFIG_FILE="$(resolve_config "${DATASET}")"
     local BACKBONE_RUN_ID="${SWEEP_ID}-${DATASET}-backbone"
-    log "Phase 1 (${DATASET}): backbone run id ${BACKBONE_RUN_ID}"
+    log "Phase 0 (${DATASET}): preparing data + split (${BACKBONE_RUN_ID})"
+    KAGGLE2_RUN_ID="${BACKBONE_RUN_ID}" \
+        python main.py --stage prepare_data --config "${CONFIG_FILE}" \
+        > "${LOG_DIR}/${DATASET}-prepare.log" 2>&1
 
-    local DONUT_NPROC=$(echo "${DONUT_GPUS}" | tr ',' ' ' | wc -w)
-    local TROCR_NPROC=$(echo "${TROCR_GPUS}" | tr ',' ' ' | wc -w)
+    log "Phase 1 (${DATASET}): launching parallel components"
+    local DONUT_NPROC TROCR_NPROC
+    DONUT_NPROC=$(echo "${DONUT_GPUS}" | tr ',' ' ' | wc -w)
+    TROCR_NPROC=$(echo "${TROCR_GPUS}" | tr ',' ' ' | wc -w)
 
-    # DONUT — DDP via torchrun on its dedicated GPU pool.
+    # ---- DONUT (DDP, GPUs 0-3 by default) --------------------------------
     if [ "${SKIP_DONUT}" != "1" ]; then
-        log "Phase 1 (${DATASET}): launching DONUT on GPUs ${DONUT_GPUS} (DDP, nproc=${DONUT_NPROC})"
-        (
-            CUDA_VISIBLE_DEVICES="${DONUT_GPUS}" \
-            KAGGLE2_RUN_ID="${BACKBONE_RUN_ID}" \
-            torchrun --standalone --nnodes=1 --nproc_per_node="${DONUT_NPROC}" \
-                main.py --stage train_backbone --config "${CONFIG_FILE}"
-        ) > "${LOG_DIR}/${DATASET}-donut.log" 2>&1 &
+        log "  DONUT  (DDP nproc=${DONUT_NPROC}) on GPUs ${DONUT_GPUS}"
+        if [ "${DONUT_NPROC}" -gt 1 ]; then
+            (
+                CUDA_VISIBLE_DEVICES="${DONUT_GPUS}" \
+                KAGGLE2_RUN_ID="${BACKBONE_RUN_ID}" \
+                torchrun --standalone --nnodes=1 --nproc_per_node="${DONUT_NPROC}" \
+                    main.py --stage train_donut --config "${CONFIG_FILE}"
+            ) > "${LOG_DIR}/${DATASET}-donut.log" 2>&1 &
+        else
+            (
+                CUDA_VISIBLE_DEVICES="${DONUT_GPUS}" \
+                KAGGLE2_RUN_ID="${BACKBONE_RUN_ID}" \
+                python main.py --stage train_donut --config "${CONFIG_FILE}"
+            ) > "${LOG_DIR}/${DATASET}-donut.log" 2>&1 &
+        fi
         DONUT_PID=$!
     else
-        log "Phase 1 (${DATASET}): DONUT skipped (KAGGLE2_SKIP_DONUT=1)"
-        # Still need YOLO + TrOCR — run with --skip-donut.
-        (
-            CUDA_VISIBLE_DEVICES="${DONUT_GPUS},${TROCR_GPUS}" \
-            KAGGLE2_RUN_ID="${BACKBONE_RUN_ID}" \
-                python main.py --stage train_backbone --config "${CONFIG_FILE}" --skip-donut
-        ) > "${LOG_DIR}/${DATASET}-backbone.log" 2>&1 &
-        DONUT_PID=$!
+        log "  DONUT skipped (KAGGLE2_SKIP_DONUT=1)"
+        DONUT_PID=""
     fi
 
-    log "Phase 1 (${DATASET}): waiting for DONUT/backbone PID=${DONUT_PID}"
-    wait "${DONUT_PID}"
-    local RC=$?
-    if [ "${RC}" -ne 0 ]; then
-        log "ERROR: backbone (${DATASET}) failed.  See ${LOG_DIR}/${DATASET}-*.log"
-        return "${RC}"
+    # ---- TrOCR (DDP, GPUs 4-5 by default) --------------------------------
+    log "  TrOCR  (DDP nproc=${TROCR_NPROC}) on GPUs ${TROCR_GPUS}"
+    if [ "${TROCR_NPROC}" -gt 1 ]; then
+        (
+            CUDA_VISIBLE_DEVICES="${TROCR_GPUS}" \
+            KAGGLE2_RUN_ID="${BACKBONE_RUN_ID}" \
+            torchrun --standalone --nnodes=1 --nproc_per_node="${TROCR_NPROC}" \
+                --master_port=29501 \
+                main.py --stage train_trocr --config "${CONFIG_FILE}"
+        ) > "${LOG_DIR}/${DATASET}-trocr.log" 2>&1 &
+    else
+        (
+            CUDA_VISIBLE_DEVICES="${TROCR_GPUS}" \
+            KAGGLE2_RUN_ID="${BACKBONE_RUN_ID}" \
+            python main.py --stage train_trocr --config "${CONFIG_FILE}"
+        ) > "${LOG_DIR}/${DATASET}-trocr.log" 2>&1 &
     fi
+    TROCR_PID=$!
+
+    # ---- YOLO (single GPU 6 by default) ----------------------------------
+    log "  YOLO   (single) on GPU ${YOLO_GPU}"
+    (
+        CUDA_VISIBLE_DEVICES="${YOLO_GPU}" \
+        KAGGLE2_RUN_ID="${BACKBONE_RUN_ID}" \
+        python main.py --stage train_yolo --config "${CONFIG_FILE}"
+    ) > "${LOG_DIR}/${DATASET}-yolo.log" 2>&1 &
+    YOLO_PID=$!
+
+    # ---- Wait for all three components -----------------------------------
+    log "  waiting for components: DONUT=${DONUT_PID:-skipped} TrOCR=${TROCR_PID} YOLO=${YOLO_PID}"
+    local FAILED=0
+    if [ -n "${DONUT_PID}" ]; then
+        if ! wait "${DONUT_PID}"; then
+            log "  ERROR: DONUT failed; see ${LOG_DIR}/${DATASET}-donut.log"
+            FAILED=1
+        fi
+    fi
+    if ! wait "${TROCR_PID}"; then
+        log "  ERROR: TrOCR failed; see ${LOG_DIR}/${DATASET}-trocr.log"
+        FAILED=1
+    fi
+    if ! wait "${YOLO_PID}"; then
+        log "  ERROR: YOLO failed; see ${LOG_DIR}/${DATASET}-yolo.log"
+        FAILED=1
+    fi
+    if [ "${FAILED}" -ne 0 ]; then
+        log "Phase 1 (${DATASET}) FAILED; aborting sweep."
+        return 1
+    fi
+
+    # ---- Manifest -------------------------------------------------------
+    log "Phase 1 (${DATASET}): components converged → writing backbone manifest"
+    KAGGLE2_RUN_ID="${BACKBONE_RUN_ID}" \
+        python main.py --stage write_backbone_manifest --config "${CONFIG_FILE}" \
+        > "${LOG_DIR}/${DATASET}-manifest.log" 2>&1
     log "Phase 1 (${DATASET}): backbone complete → runs/${BACKBONE_RUN_ID}/"
 }
 
-# Sequential across datasets so DONUT/TrOCR don't OOM each other on
-# the same GPUs.  Add a second instance for true cross-dataset parallel.
 for DATASET in ${DATASETS}; do
     phase1_one_dataset "${DATASET}"
 done
 
 # ---------------------------------------------------------------------------
 # Phase 2 — multi-seed AttentionAssigner sweep.  Each seed gets one GPU.
-# We bin-pack seeds across the available GPU pool: with 8 GPUs and 5
-# seeds, every seed runs concurrently with 3 GPUs idle.  With 16 seeds
-# and 8 GPUs, the first 8 run immediately and the next 8 queue.
+# Bin-pack: with 8 GPUs and 5 seeds, all run concurrently with 3 idle.
 # ---------------------------------------------------------------------------
-
-GPU_POOL=()
-for ((i=0; i<N_GPU; i++)); do GPU_POOL+=("${i}"); done
 
 queue_assigner_jobs() {
     local DATASET="$1"
-    local CONFIG_FILE="configs/default.json"
-    case "${DATASET}" in
-        canonical) CONFIG_FILE="configs/canonical_5seed.json" ;;
-    esac
+    local CONFIG_FILE
+    CONFIG_FILE="$(resolve_config "${DATASET}")"
     local BACKBONE_DIR="runs/${SWEEP_ID}-${DATASET}-backbone"
 
     local PIDS=()
@@ -174,7 +239,7 @@ queue_assigner_jobs() {
         IDX=$(( IDX + 1 ))
         # Throttle: if we've started N_GPU jobs, wait for one to free a slot.
         if [ "${#PIDS[@]}" -ge "${N_GPU}" ]; then
-            wait "${PIDS[0]}" || log "WARN: seed ${PIDS[0]} returned non-zero"
+            wait "${PIDS[0]}" || log "WARN: PID ${PIDS[0]} returned non-zero"
             PIDS=("${PIDS[@]:1}")
         fi
     done
@@ -183,7 +248,6 @@ queue_assigner_jobs() {
         wait "${PID}" || log "WARN: PID ${PID} returned non-zero"
     done
     log "Phase 2 (${DATASET}): all ${#SEED_RUNS[@]} seeds complete"
-    # Echo the run IDs so the caller (or aggregator) can pick them up.
     for R in "${SEED_RUNS[@]}"; do
         printf "%s\n" "${R}" >> "${LOG_DIR}/seed_runs.txt"
     done
@@ -195,8 +259,8 @@ done
 
 # ---------------------------------------------------------------------------
 # Phase 4 — render the paper for each per-seed run, then aggregate.
-# Paper is fast (≤30 s per run) so do it sequentially to avoid TeX
-# log interleaving.
+# Paper rendering is fast (≤30 s per run) so do it sequentially to avoid
+# TeX log interleaving.
 # ---------------------------------------------------------------------------
 
 if [ -f "${LOG_DIR}/seed_runs.txt" ]; then

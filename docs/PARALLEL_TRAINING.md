@@ -96,8 +96,9 @@ per-seed paper PDF, all on one instance in under twelve minutes.
 #    or 4× H100 PCIe — anything with >= 4 GPUs and >= 24 GB each).
 #    "PyTorch 2.4 / CUDA 12.1" template, >= 80 GB disk.
 #
-# 2. Open the instance terminal and paste:
-git clone https://github.com/aiparallel0/kaggle2 && cd kaggle2
+# 2. Open the instance terminal and paste these four commands:
+git clone -b claude/improve-f1-scores-RYvNY \
+    https://github.com/aiparallel0/kaggle2 && cd kaggle2
 bash scripts/vastai_bootstrap.sh
 bash scripts/single_instance_swarm.sh
 
@@ -108,6 +109,11 @@ tar --use-compress-program=zstd -cf sweep.tar.zst \
     runs/sweep-* logs/sweep-*
 # scp / rclone / browser download the tarball.
 ```
+
+The branch `claude/improve-f1-scores-RYvNY` ships every patch in
+`docs/HONESTY.md` plus the swarm scripts; once the branch lands on
+`main` the recipe collapses to `git clone https://...` without
+the `-b` flag.  Until then the explicit branch flag is required.
 
 How the time is spent on 8× RTX 5090 (typical):
 
