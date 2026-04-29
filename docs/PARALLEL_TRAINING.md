@@ -115,19 +115,29 @@ The branch `claude/improve-f1-scores-RYvNY` ships every patch in
 `main` the recipe collapses to `git clone https://...` without
 the `-b` flag.  Until then the explicit branch flag is required.
 
-How the time is spent on 8× RTX 5090 (typical):
+How the time is spent on 8× RTX 5090 (measured, PR #133):
 
 | Phase | Wall clock | What runs |
 | --- | --- | --- |
-| 1a — DONUT (DDP, GPUs 0-3) | 6 min | seq2seq encoder + decoder fine-tune |
-| 1b — TrOCR (DDP, GPUs 4-5) | 5 min | concurrent with 1a |
-| 1c — YOLO (single, GPU 6) | 2 min | concurrent with 1a; idle after |
-| 1d — LayoutLMv3 zero-shot eval (single, GPU 7) | 3 min | concurrent with 1a; idle after |
-| **1 ⇒ wall = max** | **6 min** | DONUT is the long pole |
-| 2 — 5 assigner trainings (1 per GPU) | 3 min | 5 GPUs busy, 3 idle |
-| 3 — 5 evals (parallel) | 1 min | |
-| 4 — 5 paper renders (sequential, ≤30 s each) | 2 min | TeX log interleave-safe |
-| **Total** | **~12 min** | |
+| 1a — DONUT (DDP, GPUs 0-3) | **~24 min** | seq2seq encoder + decoder fine-tune |
+| 1b — TrOCR (DDP, GPUs 4-5) | ~6-8 min | concurrent with 1a |
+| 1c — YOLO (single, GPU 6) | ~2 min | concurrent with 1a; idle after |
+| **1 ⇒ wall = max** | **~24 min** | DONUT dominates |
+| 2 — 5 assigner trainings (1 per GPU) | ~3 min | 5 GPUs busy, 3 idle |
+| 3 — 5 evals (parallel) | ~1 min | |
+| 4 — 5 paper renders (sequential, ≤30 s each) | ~2 min | TeX log interleave-safe |
+| **Total** | **~30 min** | DONUT-bound |
+
+> **Honest correction.** An earlier draft of this doc claimed
+> ``~12 min total`` on 8× RTX 5090.  The first live run on PR #133
+> measured DONUT at 24.35 min on 4× RTX 5090 (DDP, batch 4, image
+> 1280×960, 35 epochs, gradient checkpointing on).  RTX 5090 is
+> consumer silicon without NVLink, so DDP all-reduce is PCIe-bound
+> and doesn't scale linearly the way NVLinked H100 SXM5 does.  The
+> cited 6-min DONUT wall-clock holds on 8× H100 SXM5 with NVLink and
+> larger global batch; it does not hold on 5090.  Use ``KAGGLE2_SKIP_DONUT=1``
+> for FOCUS-only sweeps (~7 min wall clock) or upgrade GPU class
+> for the full DONUT comparison.
 
 GPU partitioning is overridable; defaults assume 8 GPUs.
 

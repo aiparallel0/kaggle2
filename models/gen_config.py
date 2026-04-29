@@ -13,6 +13,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+from core.dist_util import barrier, is_rank_zero
 from core.errors import TrainError
 
 __all__ = ["_persist_generation_config"]
@@ -33,6 +34,12 @@ def _persist_generation_config(
     second write in case save_model re-serialises an in-memory snapshot.
 
     Raises TrainError if the written generation_config.json has wrong IDs.
+
+    Under torchrun-launched DDP every rank reaches this helper.  We pin
+    the IDs on the in-memory ``model.config`` / ``model.generation_config``
+    on every rank (cheap, idempotent), but only rank 0 performs the disk
+    write and read-back verification.  Non-zero ranks block on a barrier
+    so they don't return before rank 0's bytes are flushed.
     """
     model.config.decoder_start_token_id = start_id
     model.config.eos_token_id = eos_id
@@ -44,6 +51,10 @@ def _persist_generation_config(
     gc.bos_token_id = start_id
     gc.forced_bos_token_id = None  # Bug 9: mBART default leaks otherwise
     gc.forced_eos_token_id = None
+    if not is_rank_zero():
+        # Wait for rank 0 to finish writing and verifying.
+        barrier()
+        return
     gc.save_pretrained(out_dir)
     data: dict[str, object] = json.loads(
         Path(out_dir, "generation_config.json").read_text(),
@@ -60,3 +71,4 @@ def _persist_generation_config(
             f"eos_token_id={data.get('eos_token_id')!r} (want {eos_id!r}), "
             f"pad_token_id={data.get('pad_token_id')!r} (want {pad_id!r})",
         )
+    barrier()

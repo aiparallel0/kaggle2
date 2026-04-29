@@ -59,6 +59,12 @@ def stop_telem(
     log.info("Stage '%s' wall-clock: %.1f s (%.2f min)", stage, elapsed, elapsed / 60)
     if thread is None or event is None:
         return
+    # Under torchrun-launched DDP every rank runs this clean-up.  Gate the
+    # cost JSON write on rank 0 so we don't get N copies of cost_<stage>.json
+    # racing the same path.
+    from core.dist_util import is_rank_zero
+    if not is_rank_zero():
+        return
     try:
         out_path = stop_sampler(thread, event)
         rate = float(os.environ.get("VASTAI_RATE_USD_HR", _VASTAI_RATE_USD_HR))
