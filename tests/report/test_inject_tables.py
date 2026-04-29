@@ -90,13 +90,18 @@ def test_training_table_full_values() -> None:
     out = render_training_table({
         "donut_epochs": 30, "donut_best_epoch": 18,
         "donut_wall_clock_s": 3600.0, "donut_peak_vram_gb": 11.2,
-        "donut_cost_usd": 0.42, "donut_energy_wh": 55.0,
+        "donut_cost_usd": 0.42, "donut_energy_kwh": 0.18,
     })
     assert "30" in out
     assert "18" in out
     assert "11.2\\,GiB" in out
     assert "\\$0.42" in out
-    assert "55\\,Wh" in out
+    # Item 58 (paper-corrections v13): Table X energy column now reads
+    # from ``{system}_energy_kwh`` (the key actually emitted by the
+    # cost producer; ``_energy_wh`` was unset, so the cell rendered
+    # ``\textit{n/a}`` despite the value being known).  ``sig4`` keeps
+    # 4 significant figures of 0.18 → ``0.1800``.
+    assert "0.18" in out
 
 
 def test_inject_tables_returns_all_five_blocks() -> None:

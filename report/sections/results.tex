@@ -35,15 +35,18 @@ Pipeline (learned)    & \VAR{pipeline_f1_company}  & \VAR{pipeline_f1_date}  & \
 \end{tabular}
 \end{table}
 
-On the \VAR{n_test_images}-image test split both tests consistently
-favour the pipeline:
-the paired-bootstrap 95\% CI on $\Delta$F1
-$[\VAR{delta_f1_ci_lo},\,\VAR{delta_f1_ci_hi}]$ excludes zero, and
-the paired McNemar exact test on per-image correctness rejects
-equality at $p = \VAR{mcnemar_p}$ ($\Delta$F1 $=$ \VAR{f1_gap}; the
-pipeline's own per-image macro-F1 lies in
+On the \VAR{n_test_images}-image test split the two tests partly
+disagree: the paired-bootstrap 95\% CI on $\Delta$F1
+$[\VAR{delta_f1_ci_lo},\,\VAR{delta_f1_ci_hi}]$ straddles zero, so
+the bootstrap is consistent with no difference, while the paired
+McNemar exact test on per-image correctness rejects equality at
+$p = \VAR{mcnemar_p}$ ($\Delta$F1 $=$ \VAR{f1_gap}; the pipeline's
+own per-image macro-F1 lies in
 $[\VAR{pipeline_bootstrap_ci_lo},\,\VAR{pipeline_bootstrap_ci_hi}]$
-at the same confidence level).\IfRulebased{  The pipeline's learned
+at the same confidence level).  We adopt the more conservative
+reading of the paired-bootstrap and frame the contribution as
+matching DONUT at \VAR{param_ratio_phrase} the parameter budget;
+see Sec.~\ref{sec:discussion}.\IfRulebased{  The pipeline's learned
 attention assigner improves over rule-based assignment on the same
 YOLO+TrOCR features by \VAR{assigner_delta} F1 absolute, confirming
 that the cross-attention module captures spatial and lexical cues

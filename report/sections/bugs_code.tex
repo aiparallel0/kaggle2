@@ -8,10 +8,10 @@
   (the magnitude is the negative entry in
   Table~\ref{tab:bug_ablation}, computed as
   ceiling\,$-$\,F1\textsubscript{before}); when the leak was closed
-  DONUT's held-out F1 dropped from the leaked
-  $\approx$\,\VAR{bug_7_f1_before} to its true post-leakage value
-  $\approx$\,\VAR{donut_f1}, which reflects true
-  generalisation.  \textit{Guard.} The split is
+  the held-out F1 dropped from the leaked
+  $\approx$\,\VAR{bug_7_f1_before} to the true post-leakage
+  pipeline ceiling of $\approx$\,\VAR{pipeline_f1}, which reflects
+  true generalisation.  \textit{Guard.} The split is
   computed once from a single seed and persisted to
   \texttt{results/split.json}; the loader asserts empty overlap at
   load time and raises \texttt{DataError} on violation.

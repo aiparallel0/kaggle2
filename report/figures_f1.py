@@ -55,10 +55,24 @@ def render_f1_grouped(run_dir: Path) -> Path | None:
         return None
     assert metrics is not None
     fig, ax = plt.subplots(figsize=(COL_SINGLE * 1.3, COL_SINGLE * 0.8))
+    # Item 56 (paper-corrections v13): the advanced (canonical-347)
+    # variant has no rule-based baseline — Task-3 ships KIE entities
+    # only, no GT-OCR stream that the rule-based assigner needs — so
+    # the third bar is dropped on canonical_347 to match the
+    # ``\IfRulebased{}`` macro in ``template_focus.tex`` (which aborts
+    # the build if a rule-based row leaks through).  ``test_set_kind``
+    # is the same advanced-variant marker used by
+    # :func:`report.inject_tables._is_canonical`.
+    canonical = metrics.get("test_set_kind") == "canonical_347"
+    models = tuple(m for m in _MODELS if not (canonical and m[0] == "rulebased"))
     n_fields = len(_FIELDS)
     group_w = 0.26
-    for mi, (prefix, label, color) in enumerate(_MODELS):
-        xs = [i + (mi - 1) * group_w for i in range(n_fields)]
+    # Centre the bars within each x-tick: offsets are symmetric around 0
+    # regardless of how many series survived the canonical-strip.
+    n_models = len(models)
+    base_offset = -(n_models - 1) / 2.0
+    for mi, (prefix, label, color) in enumerate(models):
+        xs = [i + (base_offset + mi) * group_w for i in range(n_fields)]
         ys = [float(metrics.get(f"{prefix}_f1_{f}", 0.0) or 0.0) for f in _FIELDS]
         los = [float(metrics.get(f"f1_{f}_ci_lo", 0.0) or 0.0) for f in _FIELDS]
         his = [float(metrics.get(f"f1_{f}_ci_hi", 0.0) or 0.0) for f in _FIELDS]
@@ -71,13 +85,14 @@ def render_f1_grouped(run_dir: Path) -> Path | None:
             fmt="none", ecolor="black", capsize=1.6, linewidth=0.5,
         )
     # Significance stars above DONUT bars using paired-bootstrap p-values.
+    donut_offset = base_offset * group_w  # DONUT is mi=0
     for fi, field in enumerate(_FIELDS):
         p = metrics.get(f"p_donut_vs_pipeline_{field}")
         if isinstance(p, int | float):
             star = _star(float(p))
             if star:
                 y = float(metrics.get(f"donut_f1_{field}", 0.0) or 0.0)
-                ax.text(fi - group_w, y + 0.02, star, ha="center", fontsize=8)
+                ax.text(fi + donut_offset, y + 0.02, star, ha="center", fontsize=8)
     ax.set_xticks(range(n_fields))
     ax.set_xticklabels(_FIELDS)
     ax.set_ylim(0.0, 1.05)
