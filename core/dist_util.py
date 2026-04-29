@@ -23,24 +23,36 @@ __all__ = ["barrier", "is_rank_zero"]
 def is_rank_zero() -> bool:
     """True on rank 0 (or single-process / non-DDP training).
 
-    Detection prefers ``torch.distributed`` if initialised; falls
-    back to the ``RANK`` / ``LOCAL_RANK`` env vars torchrun sets;
-    finally returns ``True`` when neither signal is present so
-    single-process runs preserve their existing behaviour exactly.
+    Detection prefers the ``RANK`` / ``LOCAL_RANK`` env vars that
+    torchrun sets authoritatively per worker process — these are
+    stable for the entire process lifetime and unaffected by HF
+    Trainer / accelerate teardown.  Only when neither env var is
+    present do we fall back to ``torch.distributed`` (covering
+    bespoke launchers that ``init_process_group`` without setting
+    ``RANK``).  Finally returns ``True`` when no signal is present
+    so single-process runs preserve their existing behaviour.
+
+    The env-var-first ordering matters: empirical 8× RTX 5090 swarm
+    runs (PR #133 followup) showed ``dist.get_rank()`` returning 0
+    on every rank during post-train cleanup even though
+    ``dist.is_initialized()`` was still True — accelerate appears
+    to leave the default process group in a degraded state once
+    ``Trainer.train()`` returns.  The torchrun env vars are the
+    only signal that stays correct end-to-end.
     """
+    for var in ("RANK", "LOCAL_RANK"):
+        v = os.environ.get(var)
+        if v is not None and v != "":
+            try:
+                return int(v) == 0
+            except ValueError:
+                continue
     try:
         import torch.distributed as dist
         if dist.is_available() and dist.is_initialized():
             return bool(dist.get_rank() == 0)
     except Exception:  # noqa: BLE001
         pass
-    for var in ("RANK", "LOCAL_RANK"):
-        v = os.environ.get(var)
-        if v is not None:
-            try:
-                return int(v) == 0
-            except ValueError:
-                continue
     return True
 
 

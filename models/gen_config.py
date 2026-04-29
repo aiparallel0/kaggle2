@@ -10,6 +10,7 @@ Role: shared helper used by donut_train.py and trocr_train.py to ensure the
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from typing import Any
 
@@ -55,10 +56,27 @@ def _persist_generation_config(
         # Wait for rank 0 to finish writing and verifying.
         barrier()
         return
-    gc.save_pretrained(out_dir)
-    data: dict[str, object] = json.loads(
-        Path(out_dir, "generation_config.json").read_text(),
-    )
+    # Atomic write: HuggingFace ``save_pretrained`` truncates the file
+    # in place, so any rank that races this code path (e.g. a buggy
+    # rank gate on a future PyTorch / accelerate release) would observe
+    # an empty ``generation_config.json`` mid-write and crash with
+    # ``json.JSONDecodeError: Expecting value: line 1 column 1``.  Belt-
+    # and-braces: write to a sibling temp dir, then atomically rename
+    # the file into place after HF's writer has flushed and closed it.
+    out_p = Path(out_dir)
+    tmp_p = out_p / ".gen_config_tmp"
+    tmp_p.mkdir(parents=True, exist_ok=True)
+    gc.save_pretrained(str(tmp_p))
+    src = tmp_p / "generation_config.json"
+    dst = out_p / "generation_config.json"
+    os.replace(src, dst)
+    # ``save_pretrained`` may also drop a ``generation_config.json``
+    # marker file or similar siblings; sweep them across so the temp
+    # dir is empty before removal.
+    for leftover in tmp_p.iterdir():
+        os.replace(leftover, out_p / leftover.name)
+    tmp_p.rmdir()
+    data: dict[str, object] = json.loads(dst.read_text())
     if (
         data.get("decoder_start_token_id") != start_id
         or data.get("eos_token_id") != eos_id
