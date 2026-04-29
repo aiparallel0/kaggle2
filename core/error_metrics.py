@@ -100,6 +100,20 @@ def classify_miss(
     # pipeline arm.
     if text_present_in_ocr:
         return "assigner_error"
+    # Schema-shape consistency: when both gold and pred conform to the
+    # field's canonical shape (date, money) but differ in value, the
+    # mismatch is overwhelmingly a wrong-line pick (the model saw
+    # ``CASH 100.00`` and read it cleanly, but the grand total was
+    # ``5.50``).  Without this branch such cases fall through every
+    # downstream check (no token overlap, distinct alnum content)
+    # and land in ``hallucination`` — which is structurally wrong:
+    # the prediction is a real, well-formed value parsed from a
+    # real OCR line, just the wrong one.  Tagging it as
+    # ``assigner_error`` aligns the figure with the causal mechanism.
+    if field == "total" and _TOTAL_RE.search(g) and _TOTAL_RE.search(p):
+        return "assigner_error"
+    if field == "date" and _DATE_RE.search(g) and _DATE_RE.search(p):
+        return "assigner_error"
     g_tokens = set(g.split())
     p_tokens = set(p.split())
     if g_tokens & p_tokens:

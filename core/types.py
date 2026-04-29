@@ -504,4 +504,13 @@ class ExpConfig:
     focus_total_aux_w: float = 0.0
     focus_company_pos_aux_w: float = 0.0
     priors_v4: bool = False
+    # FOCUS-T arithmetic-consensus dispatch.  When True, the ``total``
+    # field tries :func:`models.total_arithmetic.total_arithmetic_consensus`
+    # ahead of the regex router so receipts whose grand total satisfies
+    # ``cash − change`` or ``subtotal + tax + service − discount``
+    # commit the consensus value without trusting the (often OCR-
+    # corrupted) total line itself.  Default ``True`` because the
+    # consensus is conservative — it abstains on under-determined
+    # receipts and the caller falls through to the legacy chain.
+    total_arithmetic_enabled: bool = True
     extra: dict[str, object] = field(default_factory=dict)

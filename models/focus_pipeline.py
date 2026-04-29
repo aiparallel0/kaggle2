@@ -52,6 +52,7 @@ from models.rule_fields import (
     extract_total,
 )
 from models.rule_regex import DATE_RE, MONEY_RE, repair_money_ocr
+from models.total_arithmetic import total_arithmetic_consensus
 from models.total_post import extract_total_value
 
 try:
@@ -81,6 +82,14 @@ _COMPANY_HEADER_RE = re.compile(
     re.IGNORECASE,
 )
 _COMPANY_UPPER_CONT_RE = re.compile(r"^[A-Z][A-Z0-9 \-&.'()/]+$")
+# Wider continuation regex used by the back-extension only: also
+# accepts lines that *start* with ``&``, ``(``, or a digit so trade
+# names like ``"& RUNCIT"`` (continuation of a multi-line registered
+# name) and ``"99 SPEED MART"`` are not stranded above the SDN BHD
+# anchor.  Kept separate from :data:`_COMPANY_UPPER_CONT_RE` so the
+# forward-extension semantics — which require an upper-case anchor —
+# do not change.
+_COMPANY_BACK_CONT_RE = re.compile(r"^[A-Z0-9&(][A-Z0-9 \-&.'()/]*$")
 
 
 def _is_company_boundary(text: str) -> bool:
@@ -146,13 +155,30 @@ def _company_anchor_filter(
         return clean[:1]
     anchor_pick = clean[anchor_idx_in_clean]
     result = [anchor_pick]
-    # Extend backward (parent brand).
-    if anchor_idx_in_clean > 0:
-        prev_pick = clean[anchor_idx_in_clean - 1]
+    # Extend backward (parent brand) — multi-line walk with a relaxed
+    # character set covering trade names that contain ``&``, ``.``,
+    # digits, hyphens, or parentheses (e.g.\ ``"99 SPEED MART"``,
+    # ``"K-DESIGN"``, ``"KEDAI UBAT & RUNCIT HONG NING"``).  The legacy
+    # 1-line, alpha+space-only filter chronically under-extended the
+    # span on Malaysian receipts whose registered name spans 3–5 lines
+    # above the SDN BHD anchor (the dominant ``wrong_span`` mode in
+    # the Fig.~8 error decomposition).  Cap at 4 lines back so a noisy
+    # top-of-receipt header band cannot pollute the company span.
+    for ci in range(anchor_idx_in_clean - 1, -1, -1):
+        if len(result) - 1 >= 4:
+            break
+        prev_pick = clean[ci]
         prev_text = texts[prev_pick].strip()
-        tokens = prev_text.split()
-        if len(tokens) <= 6 and all(c.isalpha() or c.isspace() for c in prev_text):
-            result.insert(0, prev_pick)
+        if not prev_text:
+            break
+        if (
+            _COMPANY_HEADER_RE.search(prev_text)
+            or _COMPANY_REG_ID_RE.search(prev_text)
+        ):
+            break
+        if not _COMPANY_BACK_CONT_RE.match(prev_text):
+            break
+        result.insert(0, prev_pick)
     # Extend forward.
     for ci in range(anchor_idx_in_clean + 1, len(clean)):
         cand = clean[ci]
@@ -211,6 +237,15 @@ class AssignerPolicy:
     # or above this floor, the span path fires; below falls through to
     # the single-line ``company_pick`` argmax path.
     focus_company_confidence_floor: float = 0.0
+    # FOCUS-T arithmetic consensus gate.  When True (default), the
+    # ``total`` dispatch tries :func:`models.total_arithmetic.
+    # total_arithmetic_consensus` *before* the regex router so receipts
+    # whose grand total satisfies ``cash − change`` or
+    # ``subtotal + tax + service − discount`` commit the consensus
+    # value without trusting the (often OCR-corrupted) total line.
+    # ``False`` reproduces the legacy regex-router-first dispatch
+    # bit-for-bit.
+    total_arithmetic_enabled: bool = True
 
 
 @dataclass(frozen=True)
@@ -536,6 +571,7 @@ def _assign_learned_with_attn(
     focus_confidence_floor: float = 0.0,
     focus_company_confidence_threshold: float = 0.0,
     focus_company_confidence_floor: float = 0.0,
+    total_arithmetic_enabled: bool = False,
 ) -> tuple[dict[str, str], torch.Tensor | None]:
     """Field-assign and return (F, N) cross-attention for fig_attn_heatmap.
 
@@ -612,6 +648,25 @@ def _assign_learned_with_attn(
     for f_idx, name in enumerate(fields):
         if len(used) >= len(texts):
             break
+        # FOCUS-T arithmetic consensus — runs ahead of every other
+        # ``total`` path.  When ≥2 of {cash−change, sub+tax+svc−disc}
+        # agree to ±2¢, or exactly one fires unambiguously, the
+        # consensus value is committed without consulting the regex
+        # router or attention.  ``idx == -1`` signals a synthesised
+        # value (no OCR line carries it verbatim — recovers OCR-
+        # corrupted total lines), in which case no line is consumed
+        # in ``used`` so the residual money lines remain available
+        # to other fields' fallbacks.  Falls through silently when
+        # under-determined; legacy callers (``total_arithmetic_enabled
+        # =False``) bypass this block entirely.
+        if total_arithmetic_enabled and name == "total":
+            ar = total_arithmetic_consensus(texts, used)
+            if ar is not None:
+                ar_idx, ar_value = ar
+                if ar_idx >= 0:
+                    used.add(ar_idx)
+                out[name] = postprocess_value(name, ar_value)
+                continue
         # Change A — regex-oracle router for date/total.
         if regex_router and name in _FIELD_REGEX:
             routed = _route_regex_field(name, texts, bboxes, used)
@@ -823,4 +878,5 @@ def assign_with_policy(
         focus_company_confidence_floor=(
             policy.focus_company_confidence_floor
         ),
+        total_arithmetic_enabled=policy.total_arithmetic_enabled,
     )

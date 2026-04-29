@@ -166,6 +166,9 @@ def eval_pipeline(config: ExpConfig, test: list[Receipt]) -> PipelineResult:
                     focus_company_confidence_floor=(
                         config.focus_company_confidence_floor
                     ),
+                    total_arithmetic_enabled=getattr(
+                        config, "total_arithmetic_enabled", True,
+                    ),
                 )
                 # P3 opt-in: graph-attention assigner override.  Runs in
                 # parallel and replaces the learned output when enabled;

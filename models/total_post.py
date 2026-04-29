@@ -24,17 +24,20 @@ from __future__ import annotations
 import re
 
 # Strict money token: optional currency prefix (RM/USD/SGD/MYR/$), then
-# 1–3 digits, optional thousands groups, mandatory two decimal digits,
+# optional leading minus sign (refund / credit-note receipts), 1–3
+# digits, optional thousands groups, mandatory two decimal digits,
 # anchored to the end of the line (``$``).  Rightmost-on-line is the
-# canonical SROIE format for the ``total`` field.
+# canonical SROIE format for the ``total`` field.  The leading ``-``
+# preserves negative totals (refunds) which the previous regex
+# silently stripped, breaking F1 on credit-note receipts.
 _STRICT_MONEY = re.compile(
-    r"(?:RM|USD|SGD|MYR|\$)?\s*(\d{1,3}(?:,\d{3})*\.\d{2})\s*$",
+    r"(?:RM|USD|SGD|MYR|\$)?\s*(-?\d{1,3}(?:,\d{3})*\.\d{2})\s*$",
     re.IGNORECASE,
 )
-# Lenient money token: any ``\d+\.\d{2}`` substring (SROIE receipts
+# Lenient money token: any ``-?\d+\.\d{2}`` substring (SROIE receipts
 # occasionally emit ``15.00`` without thousands separators even when the
 # ground truth has them).  Used only when the strict pattern fails.
-_LENIENT_MONEY = re.compile(r"(\d+\.\d{2})")
+_LENIENT_MONEY = re.compile(r"(-?\d+\.\d{2})")
 # Currency/whitespace cleanup for values that *did* match strict but
 # still carry a trailing/leading currency symbol when the regex is
 # composed with other matches — mirrors the legacy ``postprocess_value``
