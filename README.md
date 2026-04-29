@@ -27,10 +27,10 @@ The repo bifurcates into two **paper variants** that share one codebase:
 | `focus`  | 347 official ICDAR-2019 Task-3 (auto-downloaded)       | DONUT vs YOLO+TrOCR+**Attention assigner**           | **yes**                | `report/template_focus.tex` |
 | `baseline`     | 63-image internal (from 500/63/63 of 626 train)        | DONUT vs YOLO+TrOCR+**regex** vs **GT-OCR+regex**    | no                     | `report/template_baseline.tex`    |
 
-The advanced variant is the **default**.  `data/sroie_canonical.py`
+The `focus` variant is the **default**.  `data/sroie_canonical.py`
 sha256-verifies and extracts the 347 Task-3 images on first run
 (primary: `rrc.cvc.uab.es`; fallback: docTR mirror).  Switch variants
-via CLI: `python main.py --paper-variant basic --stage all`.  See
+via CLI: `python main.py --paper-variant baseline --stage all`.  See
 [`report/overleaf/README.md`](report/overleaf/README.md) for one-shot
 Overleaf upload instructions.
 
@@ -287,9 +287,6 @@ and tagged `artifact_mode: gtocr_rulebased_only`; the paper's results
 table honestly reflects that). This path needs only SROIE (GitHub) —
 no Hugging Face Hub access, no GPU, ~1 second on CPU.
 
-The old `--stage eval_rule_gtocr` name is kept as a backward-compatible
-alias and invokes the same stage.
-
 The split (500 / 63 / 63) is persisted to `results/split.json` on the
 first train run, so a later `--stage eval` in a separate shell sees the
 exact same test set — no silent drift.
@@ -363,7 +360,7 @@ change; see `models/consensus.py`.
 
 ## F1-destroying bugs
 
-See [docs/bugs.md](docs/bugs.md) for the full Bug 1..14 ledger and code guards.
+See [docs/bugs.md](docs/bugs.md) for the full bug ledger (Bugs 1–14, 18, 19) and code guards.
 
 ## Testing
 
