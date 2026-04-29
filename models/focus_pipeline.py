@@ -720,6 +720,30 @@ def _assign_learned_with_attn(
                         continue
             else:
                 best = int(w.argmax().item())
+                # Heuristic span fallback for ``company`` when no FOCUS head
+                # fired (checkpoint lacks trained company/span heads).  Feed
+                # the argmax as the anchor into the greedy ``_company_span``
+                # assembler so multi-line company names (e.g. "UNIHAKKA
+                # INTERNATIONAL" + "SDN BHD" on separate lines) are joined
+                # rather than truncated to the single highest-attention line.
+                # Only activates when ``company`` and both FOCUS-C heads are
+                # absent; bit-exact when either head fires (``continue`` above).
+                if name == "company" and best not in used:
+                    n_pri = len(prior_list[0]) if prior_list else 0
+                    bp_flags = [
+                        bool(prior_list[i][V4_IS_COMPANY_BOILERPLATE_IDX])
+                        if n_pri > V4_IS_COMPANY_BOILERPLATE_IDX else False
+                        for i in range(len(texts))
+                    ]
+                    span_picks, span_val = _company_span(
+                        texts, bboxes, bp_flags, anchor_idx=best,
+                    )
+                    span_picks = [i for i in span_picks if i not in used]
+                    if span_picks and span_val:
+                        for i in span_picks:
+                            used.add(i)
+                        out[name] = postprocess_value(name, span_val)
+                        continue
             used.add(best)
             value = texts[best]
         pv = postprocess_value(name, value)
