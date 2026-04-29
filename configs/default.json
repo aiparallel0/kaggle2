@@ -80,6 +80,7 @@
   "focus_company_confidence_floor": 0.20,
   "focus_total_aux_w": 1.0,
   "focus_company_pos_aux_w": 1.0,
+  "total_arithmetic_enabled": true,
   "focus_max_span": 8,
   "focus_iou_weight": 1.0,
   "focus_boundary_weight": 1.0,

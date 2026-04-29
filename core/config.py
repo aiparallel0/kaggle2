@@ -129,6 +129,7 @@ def load_config(path: str, defaults: dict[str, Any] | None = None) -> ExpConfig:
         "focus_company_confidence_floor",
         "focus_total_aux_w", "focus_company_pos_aux_w",
         "priors_v4",
+        "total_arithmetic_enabled",
     }
     # Bug-18 composite-loss knobs are read via ``_loss_knob`` from
     # ``config.extra``, so they are intentionally NOT in ``_optional`` —
@@ -346,6 +347,7 @@ def load_config(path: str, defaults: dict[str, Any] | None = None) -> ExpConfig:
         focus_total_aux_w=float(raw.get("focus_total_aux_w", 0.0)),
         focus_company_pos_aux_w=float(raw.get("focus_company_pos_aux_w", 0.0)),
         priors_v4=bool(raw.get("priors_v4", False)),
+        total_arithmetic_enabled=bool(raw.get("total_arithmetic_enabled", True)),
         extra=extra,
     )
 
