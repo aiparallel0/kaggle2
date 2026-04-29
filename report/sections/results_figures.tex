@@ -23,16 +23,22 @@
   \label{fig:training}\end{figure}
 }
 
-\iffigurefile{fig_f1_by_system.pdf}{%
-  \begin{figure}[!t]\centering
-  \includegraphics[width=\columnwidth]{fig_f1_by_system.pdf}
-  \caption{Per-field token-F1 by system on the \VAR{n_test_images}-image test split.
-    The structural difficulty of each field (company and total are
-    dominated by lexical cues; address is dominated by spatial extent)
-    is reproduced similarly by DONUT and the pipeline\IfRulebased{; the rule-based
-    baseline collapses on address}.}
-  \label{fig:f1_by_system}\end{figure}
-}
+% Item 20 (paper-corrections): the per-field-F1 figure was duplicated
+% across ``fig_f1_by_system`` (no CI whiskers) and the Section-C
+% gallery's ``fig_f1_grouped`` (with bootstrap-95\% CI whiskers and
+% significance stars).  We keep the CI-whisker variant exclusively;
+% Section~V and Table~\ref{tab:perfield} now reference
+% Fig.~\ref{fig:f1_grouped} from the gallery instead.
+%\iffigurefile{fig_f1_by_system.pdf}{%
+%  \begin{figure}[!t]\centering
+%  \includegraphics[width=\columnwidth]{fig_f1_by_system.pdf}
+%  \caption{Per-field token-F1 by system on the \VAR{n_test_images}-image test split.
+%    The structural difficulty of each field (company and total are
+%    dominated by lexical cues; address is dominated by spatial extent)
+%    is reproduced similarly by DONUT and the pipeline\IfRulebased{; the rule-based
+%    baseline collapses on address}.}
+%  \label{fig:f1_by_system}\end{figure}
+%}
 
 \iffigurefile{fig_attention_heatmap.pdf}{%
   \begin{figure}[!t]\centering

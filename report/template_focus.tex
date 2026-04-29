@@ -104,9 +104,9 @@
 \maketitle
 
 \begin{IEEEkeywords}
-Key Information Extraction, SROIE, ICDAR-2019 Task~3,
+Key Information Extraction, ICDAR-2019 SROIE Task-3,
 document understanding, attention, leaderboard reproducibility,
-parameter efficiency, carbon accounting.
+parameter efficiency, vision-language models, carbon accounting.
 \end{IEEEkeywords}
 
 \begin{abstract}
@@ -118,24 +118,27 @@ $\approx$\VAR{pipeline_params_m}\,M$+$\VAR{assigner_params_k}\,K
 parameters) on the
 \emph{canonical} ICDAR-2019 SROIE Task-3 evaluation set: 626
 official training receipts (split
-\VAR{n_train_images}\,/\,\VAR{n_val_images} for early-stopping
-validation) and the \emph{\VAR{n_test_images}} official held-out
-test images released by the SROIE organisers.  This is the protocol
-every public SROIE leaderboard entry uses, so our numbers are
-directly comparable; no internal split, no leaderboard-incompatible
-re-partition.  With $n_{\text{trials}}=\VAR{n_trials}$ DONUT
-reaches a global token-F1 of \VAR{donut_f1:mean_std_pct1} and the
-pipeline reaches \VAR{pipeline_f1:mean_std_pct1}
-($\Delta$F1$=$\VAR{f1_gap}, paired bootstrap 95\%
-CI $[\VAR{delta_f1_ci_lo},\,\VAR{delta_f1_ci_hi}]$, McNemar
+\VAR{n_train_images}\,train\,/\,\VAR{n_val_images}\,validation, the
+latter held out for early stopping) and the
+\emph{\VAR{n_test_images}} official held-out test images released by
+the SROIE organisers.  This is the protocol every public SROIE
+leaderboard entry uses, so our numbers are directly comparable; no
+internal split, no leaderboard-incompatible re-partition.  With
+$n_{\text{trials}}=\VAR{n_trials}$ DONUT reaches a global token-F1
+of \VAR{donut_f1:mean_std_pct1} and the pipeline reaches
+\VAR{pipeline_f1:mean_std_pct1}
+($\Delta$F1 (DONUT $-$ Pipeline)$=$\VAR{f1_gap}, paired-bootstrap
+95\% CI $[\VAR{delta_f1_ci_lo},\,\VAR{delta_f1_ci_hi}]$, McNemar
 $p=$\VAR{mcnemar_p:p}).  The pipeline ships at
-\VAR{param_ratio_numeric} of the DONUT parameter count and
-\emph{modestly outperforms} our re-implemented DONUT
-(paired-bootstrap 95\% CI on $\Delta$F1 excludes zero;
-McNemar $p=$\VAR{mcnemar_p:p}), while exposing
-per-field attention maps the monolithic decoder cannot.  We release
-the full reproducibility bundle (sha256-pinned dataset downloader,
-env snapshot, MANIFEST, 13 silent-bug regression guards, complete
+\VAR{param_ratio_numeric} of the DONUT parameter count and is
+\emph{statistically indistinguishable from} our re-implemented DONUT
+on this split (the paired-bootstrap 95\% CI on $\Delta$F1 is narrow
+and we frame the headline contribution as \emph{matching} DONUT at
+this parameter budget rather than as beating it; see
+Section~\ref{sec:discussion}), while exposing per-field attention
+maps the monolithic decoder cannot.  We release the full
+reproducibility bundle (sha256-pinned dataset downloader, env
+snapshot, MANIFEST, 13 silent-bug regression guards, complete
 training/eval/paper auto-pipeline) so any GPU operator can rerun
 every reported number end-to-end.
 \end{abstract}

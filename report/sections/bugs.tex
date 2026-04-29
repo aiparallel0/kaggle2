@@ -13,8 +13,8 @@ zero.  For every bug below we report the \emph{mechanism} (why the
 failure is silent rather than loud), the \emph{F1 impact} measured
 or bounded from symptom, and the \emph{guard} now present in source.
 Bugs 1--6 are DONUT decoder and pipeline-detector pathologies that
-strike at model-initialisation time; Bugs 7--13 (see
-\texttt{sections/bugs\_code}) are training-path pathologies that
+strike at model-initialisation time; Bugs 7--13 (continued below)
+are training-path pathologies that
 appear only once a full eval loop has run (Bug~9's guard is now
 symmetric across DONUT and TrOCR trainers, verified by a disk
 assertion in \texttt{models/\_gen\_config.py}).  The before/after F1
@@ -65,7 +65,8 @@ values feed \texttt{fig\_bug\_timeline.pdf}
 
 \item \textbf{fp16 loss overflow} (loss\,=\,NaN).
   \textit{Mechanism.} fp16's dynamic range
-  ($\approx$\,$6.1{\times}10^{-5}$ to $65\,504$) is insufficient for
+  ($\approx$\,$6.1{\times}10^{-5}$ smallest \emph{normal} positive
+  to $65\,504$) is insufficient for
   the DONUT cross-entropy loss on long XML sequences: the per-step
   loss overflows to $+\infty$ on the first update, the gradient
   scaler aborts, and subsequent steps run on stale parameters.

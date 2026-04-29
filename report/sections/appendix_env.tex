@@ -15,7 +15,10 @@ snapshot written by \texttt{core.env\_snapshot}.
 \end{table}
 
 \noindent\textbf{Reproduction recipe.}
-\begin{enumerate}\sloppy
+% Item 42 (paper-corrections): wrap \sloppy in a group so the relaxed
+% badness thresholds do not leak into the bibliography that follows.
+{\sloppy
+\begin{enumerate}
     \item \texttt{git clone}~\url{https://github.com/aiparallel0/kaggle2.git},
           then \texttt{cd kaggle2}
     \item \texttt{bash scripts/vastai\_bootstrap.sh}  (installs tectonic + Python deps)
@@ -23,6 +26,7 @@ snapshot written by \texttt{core.env\_snapshot}.
     \item Open the folder \texttt{runs/<run\_id>/}, select all, download.
           Or run \texttt{make pack} for a single \texttt{<run\_id>.tar.zst}.
 \end{enumerate}
+\par}
 Nothing lands in \texttt{./results/} (fixtures-only) or \texttt{./report/}
 (template-only); \texttt{runs/<run\_id>/} is the sole download target and
 its \texttt{MANIFEST.json} is the authoritative index with per-file

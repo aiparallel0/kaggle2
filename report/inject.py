@@ -32,6 +32,27 @@ _INPUT_RE = re.compile(r"\\input\{([^}]+)\}")
 
 _MEAN_STD_KEYS = {"donut_f1", "pipeline_f1"}
 
+# Item 4 (paper-corrections): physical-quantity numeric keys that should
+# render at 2-decimal precision instead of the legacy 4-decimal default.
+# Parameter counts (M / K), VRAM / disk (GB), wall-clock (min / s),
+# energy (kWh), CO2 (kg), and USD costs do not have 4-decimal physical
+# resolution — emitting ``260.7800 M`` / ``21.1300 GB`` / ``0.1823 kWh``
+# is spurious precision auto-injected from JSON sidecars.  F1 / NED / EM
+# / precision / recall / delta / CI keys remain on the 4-decimal default.
+_TWO_DECIMAL_SUFFIXES: tuple[str, ...] = (
+    "_params_m", "_params_k",
+    "_peak_vram_gb", "_vram_gb", "_disk_gb",
+    "_train_minutes", "_minutes", "_train_seconds", "_seconds",
+    "_energy_kwh", "_kwh",
+    "_co2_kg", "_kg",
+    "_cost_usd", "_usd",
+)
+
+
+def _is_two_decimal_key(key: str) -> bool:
+    """True if ``key`` is a physical-quantity that should render at ``:.2f``."""
+    return any(key.endswith(s) for s in _TWO_DECIMAL_SUFFIXES)
+
 # Variants for which ``\\IfRulebased{...}`` spans must be excised from
 # the rendered .tex (and from the unresolved-VAR audit) before the
 # substitution layer runs.  The advanced/focus variant ships with the
@@ -203,6 +224,11 @@ def _format_value(key: str, value: Any, metrics: dict[str, Any]) -> str:
         std = float(metrics[f"{key}_std"])
         return f"{mean:.4f} \\ensuremath{{\\pm}} {std:.4f}"
     if isinstance(value, float):
+        # Item 4 (paper-corrections): physical-quantity keys (params /
+        # VRAM / minutes / kWh / kg / USD) round to 2 decimals; F1-class
+        # metrics keep the 4-decimal default.
+        if _is_two_decimal_key(key):
+            return f"{value:.2f}"
         return f"{value:.4f}"
     if isinstance(value, TexSource):
         # Pre-escaped LaTeX: emit raw, do NOT double-escape.
