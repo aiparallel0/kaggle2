@@ -32,14 +32,6 @@ from models.rule_fields import (
     extract_date,
     extract_total,
 )
-from models.total_arithmetic import (
-    _classify as _classify_money_lines,
-)
-from models.total_arithmetic import (
-    _identity_cash_change,
-    _identity_sub_tax,
-)
-from models.total_arithmetic import total_arithmetic_consensus
 from models.rule_regex import (
     _ADDR_ANCHOR,
     _ADDR_COMPANY_HEADER,
@@ -56,6 +48,14 @@ from models.rule_regex import (
     _TOTAL_STRONG,
     _TOTAL_WEAK,
     repair_money_ocr,
+)
+from models.total_arithmetic import (
+    _classify as _classify_money_lines,
+)
+from models.total_arithmetic import (
+    _identity_cash_change,
+    _identity_sub_tax,
+    total_arithmetic_consensus,
 )
 
 _CURRENCY_PREFIX_RE = re.compile(r"^(RM|USD|SGD|MYR|\$)\s*", re.IGNORECASE)
@@ -470,12 +470,12 @@ def _refine_total(
         # may need to substitute, since the arithmetic target is
         # exact-by-construction and any OCR drift is what we are
         # trying to correct.
-        def _exact_match(idx: int) -> bool:
+        def _exact_match(idx: int, target: str = tgt_str) -> bool:
             raw = _MONEY_RE.search(repaired[idx]).group(0).strip()  # type: ignore[union-attr]
             raw = re.sub(
                 r"^(RM|USD|SGD|MYR|\$)\s*", "", raw, flags=re.IGNORECASE,
             )
-            return raw == tgt_str
+            return raw == target
         if any(_exact_match(i) for i in money_idxs):
             continue
         # Find an OCR-drift sibling: a line within 1 char of tgt whose
@@ -884,7 +884,7 @@ def _company_extend(
             # address anchor.
             if ends_continuation and not looks_address:
                 letters = [c for c in nxt if c.isalpha()]
-                if (3 <= len(letters)
+                if (len(letters) >= 3
                         and len(nxt.split()) <= 5
                         and sum(1 for c in letters if c.isupper())
                             / max(len(letters), 1) >= 0.7):

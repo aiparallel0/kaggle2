@@ -118,9 +118,7 @@ def _is_company_boundary(text: str) -> bool:
         return True
     # Phone/fax lines are boundaries
     phone_re = re.compile(r"(?:TEL|FAX|PHONE)[:\s]*\d", re.IGNORECASE)
-    if phone_re.search(s):
-        return True
-    return False
+    return bool(phone_re.search(s))
 
 
 def _company_anchor_filter(

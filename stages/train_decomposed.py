@@ -34,7 +34,7 @@ from pathlib import Path
 
 from core.errors import TrainError
 from core.stage_telemetry import start_telem, stop_telem
-from core.types import AssignerData, ExpConfig
+from core.types import AssignerData, DataSplit, ExpConfig
 from data.sroie import (
     download_sroie,
     extract_crops,
@@ -123,7 +123,7 @@ def stage_train_backbone(config: ExpConfig) -> None:
 # heavy backbones train concurrently and wall clock = max() not sum().
 
 
-def _ensure_data(config: ExpConfig) -> object:
+def _ensure_data(config: ExpConfig) -> DataSplit:
     """Idempotent dataset download + split; safe under concurrent calls
     because :func:`download_sroie` early-returns when the cache is
     populated.  Pre-warm with :func:`stage_prepare_data` once before
@@ -142,7 +142,7 @@ def stage_prepare_data(config: ExpConfig) -> None:
     data = _ensure_data(config)
     log.info(
         "Split: %d train / %d val / %d test",
-        len(data.train), len(data.val), len(data.test),  # type: ignore[attr-defined]
+        len(data.train), len(data.val), len(data.test),
     )
 
 
@@ -169,7 +169,7 @@ def stage_train_trocr(config: ExpConfig) -> None:
     """Train TrOCR only.  Independent of YOLO/DONUT — uses GT box crops."""
     log.info("=== Stage: train_trocr ===")
     data = _ensure_data(config)
-    crops = extract_crops(data.train, config.fields)  # type: ignore[attr-defined]
+    crops = extract_crops(data.train, config.fields)
     if not crops:
         raise TrainError("No labeled SROIE crops — check box/ annotations.")
     th, ev, t0 = start_telem(config, "trocr")
