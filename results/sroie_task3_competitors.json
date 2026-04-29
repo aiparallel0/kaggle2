@@ -8,7 +8,7 @@
     "notes": "optional clarification — one short sentence"
   },
   "competitors": [
-    {"system": "this work — DONUT (end-to-end)",          "params_m": 260.78, "f1": null, "source": "this work", "notes": "from combined_metrics.donut_f1"},
+    {"system": "this work — DONUT (end-to-end)",          "params_m": 261,    "f1": null, "source": "this work", "notes": "from combined_metrics.donut_f1"},
     {"system": "this work — YOLO+TrOCR+Assigner",          "params_m": 65,   "f1": null, "source": "this work", "notes": "from combined_metrics.pipeline_f1"},
     {"system": "DONUT (Kim et al., ECCV 2022)",            "params_m": 200,  "f1": 0.838, "source": "kim2022donut",         "notes": "original DONUT paper, fine-tuned on SROIE"},
     {"system": "LayoutLMv2 (Xu et al., 2021)",             "params_m": 200,  "f1": 0.852, "source": "xu2021layoutlmv2",     "notes": "Task-3 reported in the LayoutLMv2 paper"},

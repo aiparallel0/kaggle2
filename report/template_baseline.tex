@@ -109,8 +109,9 @@ baseline reaches \VAR{gtocr_rulebased_f1:mean_std_pct1} —
 isolating how much of pipeline performance is attributable to the
 deterministic regex layer versus the upstream OCR stack.  The
 $\Delta$F1 between DONUT and the regex-only pipeline is
-\VAR{f1_gap} (paired-bootstrap 95\% CI \VAR{delta_f1_ci_lo}--%
-\VAR{delta_f1_ci_hi}; McNemar $p=$\VAR{mcnemar_p:p}).  We catalogue
+\VAR{f1_gap} (paired-bootstrap 95\% CI
+$[\VAR{delta_f1_ci_lo},\,\VAR{delta_f1_ci_hi}]$;
+McNemar $p=$\VAR{mcnemar_p:p}).  We catalogue
 13 silent F1-destroying implementation bugs the project has guarded
 against, and publish full GPU telemetry alongside every reported
 number.  Because the test split is internal it is \emph{not}
