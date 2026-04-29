@@ -15,10 +15,11 @@ in this doc is opt-in.
 
 | Mode | Wall clock | Cost | When |
 | --- | --- | --- | --- |
-| `make all` | ~80 min | ~$0.30 | Local 4090, single seed |
-| `bash scripts/sweep_seeds_local.sh "42 1 2 3 5"` | ~85 min | ~$0.32 | Local 4090, 5 seeds (backbone shared!) |
-| `bash scripts/vastai_swarm.sh "42 1 2 3 5" "canonical"` | **~10 min** | ~$0.65 | Cloud, 5 seeds × 1 dataset |
-| `bash scripts/vastai_swarm.sh "42 1 2 3 5" "canonical sroie"` | **~10 min** | ~$1.30 | Cloud, 5 seeds × 2 datasets |
+| `make all` (single 4090 vast.ai instance) | ~80 min | ~$0.30 | One seed, one dataset |
+| `bash scripts/sweep_seeds_local.sh "42 1 2 3 5"` (single 4090) | ~85 min | ~$0.32 | 5 seeds, backbone shared |
+| **`bash scripts/single_instance_swarm.sh`** (8× RTX 5090) | **~12 min** | **~$0.80** | **NeurIPS-credibility 5-seed × 1-dataset** |
+| `bash scripts/single_instance_swarm.sh` with `KAGGLE2_DATASETS="canonical sroie"` (8× 5090) | ~22 min | ~$1.50 | 5 seeds × 2 datasets |
+| `bash scripts/vastai_swarm.sh "42 1 2 3 5" "canonical sroie"` (multi-instance) | ~10 min | ~$1.30 | 5 seeds × 2 datasets, cross-instance parallel |
 
 The cloud sweeps run **fully in parallel**: backbone training on one
 big-GPU instance overlaps with N small-GPU instances each running a
@@ -84,10 +85,70 @@ That is the entire one-time setup.
 
 ---
 
-## Recipe 1 — Local sweep on one 4090 (no vast.ai)
+## Recipe 1 (RECOMMENDED) — Single 8× RTX 5090 vast.ai instance, ~12 min
 
-If you already have a local RTX 4090 and just want multi-seed
-results:
+This is the **NeurIPS-credibility recipe** — five seeds, one
+dataset, full DONUT + FOCUS comparison, paired-bootstrap CIs,
+per-seed paper PDF, all on one instance in under twelve minutes.
+
+```sh
+# 1. Spin up a vast.ai instance with 8× RTX 5090 (or 8× RTX 4090,
+#    or 4× H100 PCIe — anything with >= 4 GPUs and >= 24 GB each).
+#    "PyTorch 2.4 / CUDA 12.1" template, >= 80 GB disk.
+#
+# 2. Open the instance terminal and paste:
+git clone https://github.com/aiparallel0/kaggle2 && cd kaggle2
+bash scripts/vastai_bootstrap.sh
+bash scripts/single_instance_swarm.sh
+
+# 3. (after ~12 min the script prints the aggregate table to stdout)
+#
+# 4. Pack and download:
+tar --use-compress-program=zstd -cf sweep.tar.zst \
+    runs/sweep-* logs/sweep-*
+# scp / rclone / browser download the tarball.
+```
+
+How the time is spent on 8× RTX 5090 (typical):
+
+| Phase | Wall clock | What runs |
+| --- | --- | --- |
+| 1a — DONUT (DDP, GPUs 0-3) | 6 min | seq2seq encoder + decoder fine-tune |
+| 1b — TrOCR (DDP, GPUs 4-5) | 5 min | concurrent with 1a |
+| 1c — YOLO (single, GPU 6) | 2 min | concurrent with 1a; idle after |
+| 1d — LayoutLMv3 zero-shot eval (single, GPU 7) | 3 min | concurrent with 1a; idle after |
+| **1 ⇒ wall = max** | **6 min** | DONUT is the long pole |
+| 2 — 5 assigner trainings (1 per GPU) | 3 min | 5 GPUs busy, 3 idle |
+| 3 — 5 evals (parallel) | 1 min | |
+| 4 — 5 paper renders (sequential, ≤30 s each) | 2 min | TeX log interleave-safe |
+| **Total** | **~12 min** | |
+
+GPU partitioning is overridable; defaults assume 8 GPUs.
+
+```sh
+# Custom partitioning examples
+KAGGLE2_DONUT_GPUS="0,1" KAGGLE2_TROCR_GPUS="2,3" \
+    KAGGLE2_YOLO_GPU="4" KAGGLE2_LLM3_GPU="5" \
+    bash scripts/single_instance_swarm.sh   # 6-GPU box
+
+KAGGLE2_DONUT_GPUS="0,1,2,3,4,5" KAGGLE2_TROCR_GPUS="6,7" \
+    bash scripts/single_instance_swarm.sh   # all-in on DONUT (4 min)
+
+KAGGLE2_SKIP_DONUT=1 \
+    bash scripts/single_instance_swarm.sh   # FOCUS-only sweep, ~7 min
+```
+
+Reasonable cost references on vast.ai mid-2026 spot (your numbers
+will vary):
+
+- 8× RTX 5090 PCIe: $3-4/hour → $0.80 for a 12-min sweep
+- 8× RTX 4090 PCIe: $2-3/hour → $0.50 for a 15-min sweep
+- 4× H100 PCIe:     $4-5/hour → $0.85 for a 12-min sweep
+- 8× H100 SXM5:     $12-15/hour → $2.00 for an 8-min sweep
+
+## Recipe 2 — Local single-4090 sweep (slower, simpler)
+
+If you have just one GPU (e.g. a single-4090 vast.ai instance):
 
 ```sh
 bash scripts/sweep_seeds_local.sh "42 1 2 3 5"
@@ -103,7 +164,7 @@ on the order of an hour.
 
 ---
 
-## Recipe 2 — Cloud swarm sweep (~10 min wall clock)
+## Recipe 3 — Multi-instance cloud swarm (when you need cross-dataset parallel)
 
 ```sh
 # 1. one-time env (laptop)
@@ -139,7 +200,7 @@ are no-op'd), so a partial sweep doesn't burn cloud time.
 
 ---
 
-## Recipe 3 — Cross-dataset sweep (CORD / WildReceipt added)
+## Recipe 4 — Cross-dataset sweep (CORD / WildReceipt added)
 
 The dataset list is the second positional arg.  Add a config per
 dataset under `configs/` (template: `configs/canonical_5seed.json`)
