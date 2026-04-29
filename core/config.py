@@ -127,6 +127,7 @@ def load_config(path: str, defaults: dict[str, Any] | None = None) -> ExpConfig:
         "focus_company_span_enabled", "focus_company_span_max_span",
         "focus_company_span_iou_w", "focus_company_span_boundary_w",
         "focus_company_confidence_floor",
+        "focus_total_aux_w", "focus_company_pos_aux_w",
         "priors_v4",
     }
     # Bug-18 composite-loss knobs are read via ``_loss_knob`` from
@@ -342,6 +343,8 @@ def load_config(path: str, defaults: dict[str, Any] | None = None) -> ExpConfig:
         focus_company_confidence_floor=float(
             raw.get("focus_company_confidence_floor", 0.20),
         ),
+        focus_total_aux_w=float(raw.get("focus_total_aux_w", 0.0)),
+        focus_company_pos_aux_w=float(raw.get("focus_company_pos_aux_w", 0.0)),
         priors_v4=bool(raw.get("priors_v4", False)),
         extra=extra,
     )

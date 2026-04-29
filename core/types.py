@@ -498,5 +498,10 @@ class ExpConfig:
     focus_company_span_iou_w: float = 1.0
     focus_company_span_boundary_w: float = 1.0
     focus_company_confidence_floor: float = 0.20
+    # Dedicated auxiliary losses for FOCUS-T and FOCUS-C positional heads.
+    # Default 0.0 disables them so existing checkpoints reproduce bit-exact;
+    # set to 1.0 in configs/default.json to activate for new training runs.
+    focus_total_aux_w: float = 0.0
+    focus_company_pos_aux_w: float = 0.0
     priors_v4: bool = False
     extra: dict[str, object] = field(default_factory=dict)

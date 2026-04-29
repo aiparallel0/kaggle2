@@ -40,6 +40,7 @@ from models.focus_inference import (
 from models.focus_priors import _MONEY_RE as _PRIORS_MONEY_RE
 from models.focus_priors import (
     V4_IS_COMPANY_BOILERPLATE_IDX,
+    V4_WITNESS_IDX,
     V4_Y_NORM_IDX,
 )
 from models.focus_priors import _parse_money as _PRIORS_PARSE_MONEY
@@ -486,6 +487,33 @@ def _legacy_address_pick(
     return picks, value
 
 
+def _witness_gate_total(
+    prior_list: list[list[float]], texts: list[str],
+    used: set[int], n_priors: int,
+) -> tuple[int, str] | None:
+    """Hard arithmetic witness gate for the total field.
+
+    When exactly one unambiguous line satisfies subtotal + tax == total
+    (within 2¢, encoded as ``priors_v4[V4_WITNESS_IDX] == 1.0``), return
+    it directly without consulting attention or the keyword-based rule
+    extractor.  Falls through on 0 or >1 witness hits so ambiguous
+    receipts are not mis-assigned.
+
+    Requires priors_v4 (n_priors >= V4_WITNESS_IDX + 1); no-ops silently
+    on v1/v2/v3 priors so old checkpoints stay bit-exact.
+    """
+    if n_priors <= V4_WITNESS_IDX:
+        return None
+    hits = [
+        i for i in range(len(prior_list))
+        if i not in used and prior_list[i][V4_WITNESS_IDX] >= 1.0
+    ]
+    if len(hits) != 1:
+        return None
+    idx = hits[0]
+    return idx, texts[idx]
+
+
 def _assign_learned(
     assigner: AttentionAssigner, texts: list[str],
     feats: list[torch.Tensor], bboxes: list[list[float]],
@@ -696,6 +724,21 @@ def _assign_learned_with_attn(
                             used.add(i)
                         out[name] = postprocess_value(name, span_value)
                         continue
+            # FOCUS-T hard arithmetic witness gate: when exactly one line
+            # satisfies subtotal + tax == total (within 2¢) and is not yet
+            # used, pick it unconditionally.  Fires before attention argmax
+            # so the arithmetic relationship overrides a diffuse head.
+            # Falls through to attention when the witness is ambiguous (0
+            # or >1 hits) so behaviour on non-standard receipts is unchanged.
+            if name == "total":
+                witnessed = _witness_gate_total(
+                    prior_list, texts, used, assigner.n_text_priors,
+                )
+                if witnessed is not None:
+                    best, value = witnessed
+                    used.add(best)
+                    out[name] = postprocess_value(name, value)
+                    continue
             # Regex fields (total/date): argmax with runner-up fallback so
             # a label-only pick (``"TOTAL:"``) doesn't score F1=0.
             if name in _FIELD_REGEX:
