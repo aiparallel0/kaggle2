@@ -39,6 +39,11 @@ from models.focus_inference import (
     AttentionAssigner,
     save_assigner,
 )
+from models.focus_priors import (
+    V4_IS_COMPANY_BOILERPLATE_IDX,
+    V4_WITNESS_IDX,
+    V4_Y_NORM_IDX,
+)
 from models.focus_teacher import (
     KD_TEMPERATURE,
     hard_negatives,
@@ -275,6 +280,63 @@ def _focus_company_loss(
     return iou_w * l_iou + boundary_w * l_bce
 
 
+def _focus_total_loss(
+    assigner: AttentionAssigner, feats: Tensor, bboxes: Tensor, priors: Tensor,
+    gold_idx: int, device: str, weight: float,
+) -> Tensor:
+    """Dedicated FOCUS-T auxiliary loss: cross-entropy on the total line index.
+
+    Calls _TotalHead directly on the post-encoder kv so its parameters
+    receive a clean gradient decoupled from the shared cross-attention.
+    Only fires when assigner._total_head is not None (focus_total_enabled=True)
+    and weight > 0.  Total is always a single line, so CE == pos-mass NLL.
+    """
+    head = assigner._total_head
+    if head is None or weight <= 0:
+        return torch.zeros((), device=device)
+    tf = feats.to(device).unsqueeze(0)
+    bf = bboxes.to(device).unsqueeze(0)
+    pf = priors.to(device).unsqueeze(0)
+    kv = assigner._encode_kv(tf, bf, pf)[0]  # (N, d)
+    witness_col = pf[0, :, V4_WITNESS_IDX]   # (N,)
+    logits = head(kv, witness_col, assigner.focus_total_witness_weight)  # (N,)
+    target = torch.tensor(gold_idx, dtype=torch.long, device=device)
+    return weight * torch.nn.functional.cross_entropy(
+        logits.unsqueeze(0), target.unsqueeze(0),
+    )
+
+
+def _focus_company_pos_loss(
+    assigner: AttentionAssigner, feats: Tensor, bboxes: Tensor, priors: Tensor,
+    gold_idxs: list[int], device: str, weight: float,
+) -> Tensor:
+    """Dedicated FOCUS-C positional head auxiliary loss: pos-mass NLL.
+
+    Calls _CompanyHead directly on the post-encoder kv.  Uses pos-mass NLL
+    (consistent with the main training objective) rather than cross-entropy
+    so multi-line company targets (trade name + SDN BHD suffix) are handled
+    gracefully — the head learns to spread mass across all gold company lines.
+    Only fires when assigner._company_head is not None and weight > 0.
+    """
+    head = assigner._company_head
+    if head is None or weight <= 0 or not gold_idxs:
+        return torch.zeros((), device=device)
+    tf = feats.to(device).unsqueeze(0)
+    bf = bboxes.to(device).unsqueeze(0)
+    pf = priors.to(device).unsqueeze(0)
+    kv = assigner._encode_kv(tf, bf, pf)[0]  # (N, d)
+    y_col = pf[0, :, V4_Y_NORM_IDX]
+    boil_col = pf[0, :, V4_IS_COMPANY_BOILERPLATE_IDX]
+    logits = head(
+        kv, y_col, boil_col,
+        assigner.focus_company_y_weight,
+        assigner.focus_company_boilerplate_weight,
+    )  # (N,)
+    probs = torch.softmax(logits, dim=-1)
+    pos_mass = probs[gold_idxs].sum().clamp(min=1e-8)
+    return weight * (-torch.log(pos_mass))
+
+
 def _evaluate(assigner: AttentionAssigner, groups: list[Group], device: str) -> float:
     """Mean per-receipt pos-mass NLL on validation set (grads disabled)."""
     if not groups:
@@ -444,6 +506,8 @@ def _train_epoch(
     focus_company_span_enabled: bool = False,
     focus_company_span_iou_w: float = 0.0,
     focus_company_span_boundary_w: float = 0.0,
+    focus_total_aux_w: float = 0.0,
+    focus_company_pos_aux_w: float = 0.0,
 ) -> float:
     assigner.train()
     gen = torch.Generator().manual_seed(seed * 1_000 + epoch)
@@ -493,6 +557,29 @@ def _train_epoch(
                     assigner, feats, bboxes, priors_eff, gold_c, device,
                     focus_company_span_iou_w, focus_company_span_boundary_w,
                 )
+        # FOCUS-T aux loss — dedicated CE directly on _TotalHead logits,
+        # decoupled from the shared cross-attention so total doesn't compete
+        # with the stronger address gradient.  Only fires for single-line
+        # total targets (always the case on SROIE).
+        if focus_total_aux_w > 0 and getattr(assigner, "focus_total_enabled", False):
+            total_idx = field_to_idx.get("total", -1)
+            if total_idx >= 0:
+                gt_total = targets.get(total_idx, [])
+                if len(gt_total) == 1:
+                    loss = loss + _focus_total_loss(
+                        assigner, feats, bboxes, priors_eff,
+                        gt_total[0], device, focus_total_aux_w,
+                    )
+        # FOCUS-C positional head aux loss — pos-mass NLL directly on
+        # _CompanyHead logits, handles multi-line company targets naturally.
+        if focus_company_pos_aux_w > 0 and getattr(assigner, "focus_company_enabled", False):
+            if company_idx >= 0:
+                gt_company = targets.get(company_idx, [])
+                if gt_company:
+                    loss = loss + _focus_company_pos_loss(
+                        assigner, feats, bboxes, priors_eff,
+                        list(gt_company), device, focus_company_pos_aux_w,
+                    )
         cast(Any, loss).backward()
         torch.nn.utils.clip_grad_norm_(assigner.parameters(), max_norm=1.0)
         opt.step()
@@ -641,6 +728,8 @@ def train_assigner(config: ExpConfig, data: AssignerData) -> str:
             focus_company_span_enabled=config.focus_company_span_enabled,
             focus_company_span_iou_w=config.focus_company_span_iou_w,
             focus_company_span_boundary_w=config.focus_company_span_boundary_w,
+            focus_total_aux_w=config.focus_total_aux_w,
+            focus_company_pos_aux_w=config.focus_company_pos_aux_w,
         )
         # Bug 18 — collapse per-receipt-per-field traces to per-epoch
         # scalars for ``metrics/focus_diagnostics.json``.  The

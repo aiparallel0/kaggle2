@@ -21,7 +21,7 @@ from models.rule_regex import (
 )
 
 _TOTAL_KW_RE = re.compile(
-    r"\b(total|amount|grand|due|payable)\b", re.IGNORECASE,
+    r"\b(total|amount|grand|due|payable|jumlah)\b", re.IGNORECASE,
 )
 _SUBTOTAL_KW_RE = re.compile(r"\bsub[\s\-]?total\b|\bsubtotal\b", re.IGNORECASE)
 
