@@ -599,18 +599,74 @@ def _refine_company(
     total, and gives the pipeline a free F1 floor on precisely the
     receipts where the learned arm has no conviction.
     """
-    learned_clean = learned.strip()
+    learned_clean = _strip_decor(learned.strip())
+    learned_clean = _strip_company_tail(learned_clean)
     picked = _pick_company(texts, bboxes, used=set())
-    rule_pick = picked[1] if picked is not None else ""
+    rule_pick_raw = picked[1] if picked is not None else ""
+    rule_pick = _strip_company_tail(_strip_decor(rule_pick_raw))
+    # Boilerplate-line guard: when a candidate is dominantly a TAX
+    # INVOICE / CASH BILL / SIMPLIFIED RECEIPT line (the OCR header
+    # fired before the company anchor), discard it before scoring so
+    # the topmost non-boilerplate alternative wins.  Earlier code only
+    # caught full-line ``_HEADER_JUNK`` matches and missed the common
+    # "*** TAX INVOICE ***" / "SIMPLIFIED TAX INVOICE" forms.
+    def _is_boilerplate(v: str) -> bool:
+        s = v.strip()
+        if not s:
+            return True
+        if _COMPANY_BOILERPLATE_LINE_RE.search(s):
+            return True
+        return _HEADER_JUNK.match(s) is not None
+
+    def _maybe_extend(v: str) -> str:
+        """Apply forward/backward extension if the candidate looks partial."""
+        if not v:
+            return v
+        # Already complete (trade-name + SDN BHD) → leave alone.
+        if (_COMPANY_TOKEN.search(v)
+                and not _COMPANY_MULTI_SUFFIX_RE.match(v)):
+            return v
+        ext = _company_extend(v, texts, bboxes)
+        # Only accept extension when it added a trade-name OR a
+        # company-token that wasn't there before.  Otherwise keep the
+        # original to avoid noise concatenation.
+        if ext and ext != v:
+            had_token = bool(_COMPANY_TOKEN.search(v))
+            now_token = bool(_COMPANY_TOKEN.search(ext))
+            if (now_token and not had_token) or len(ext.split()) > len(v.split()):
+                return ext
+        return v
+
     candidates: list[str] = []
     seen: set[str] = set()
     for c in (learned_clean, rule_pick):
+        if not c or _is_boilerplate(c):
+            continue
+        c = _maybe_extend(c)
         k = c.lower()
-        if c and k not in seen:
+        if k not in seen:
             seen.add(k)
             candidates.append(c)
     if not candidates:
-        return learned
+        # Both candidates were boilerplate — fall back to the topmost
+        # non-boilerplate, non-junk line so we never return ``"*** TAX
+        # INVOICE ***"`` as the company answer.
+        order = sorted(
+            range(len(texts)),
+            key=lambda i: bboxes[i][1] if i < len(bboxes) else 0.0,
+        )
+        for i in order:
+            t = _strip_decor(texts[i].strip())
+            if not t or _is_boilerplate(t) or _is_short_junk(t):
+                continue
+            if _DATE_RE.search(t) or _MONEY_RE.search(t):
+                continue
+            if _ADDR_EXCLUDE.search(t):
+                continue
+            candidates.append(_maybe_extend(_strip_company_tail(t)))
+            break
+        if not candidates:
+            return learned
 
     def _y(v: str) -> float:
         return _y_of(v, texts, bboxes)
@@ -622,31 +678,41 @@ def _refine_company(
         upper = sum(1 for c in letters if c.isupper())
         return upper / len(letters) >= 0.70
 
-    def _score(v: str) -> tuple[int, int, int, float]:
+    def _score(v: str) -> tuple[int, int, int, int, float]:
         not_junk = (
             not _is_short_junk(v)
-            and _HEADER_JUNK.match(v) is None
+            and not _is_boilerplate(v)
             and _ADDR_EXCLUDE.search(v) is None
             and _DATE_RE.search(v) is None
             and _MONEY_RE.search(v) is None
         )
         has_token = 1 if _COMPANY_TOKEN.search(v) else 0
+        # New tier: candidates with a trade-name AND a suffix token
+        # rank above candidates that are pure suffix-only or pure
+        # trade-name-only (the partial-pick failure mode).  A
+        # candidate matching ``_COMPANY_MULTI_SUFFIX_RE`` *as a whole*
+        # is suffix-only and gets the lowest tier in this dimension.
+        is_complete = 1 if (
+            has_token
+            and not _COMPANY_MULTI_SUFFIX_RE.match(v)
+            and len([t for t in v.split() if t]) >= 2
+        ) else 0
         upper = 1 if _is_mostly_upper(v) else 0
         # Topmost wins ties (smaller y → higher score via negation).
-        return (int(not_junk), has_token, upper, -_y(v))
+        return (int(not_junk), is_complete, has_token, upper, -_y(v))
 
     scores = [_score(c) for c in candidates]
     if (_is_attn_diffuse(attn_row)
             and candidates[0] == learned_clean
             and not _COMPANY_TOKEN.search(learned_clean)):
-        # Demote learned candidate by zeroing its ``is_mostly_upper`` bit;
-        # rule pick wins ties.  Mirrors :func:`_refine_address` handling.
+        # Demote learned candidate by zeroing its ``upper`` bit; rule
+        # pick wins ties.  Mirrors :func:`_refine_address` handling.
         # A company token on the learned pick (``SDN BHD`` etc.) is such
         # strong positive evidence that we refuse to demote it even when
         # the attention row is flat — the H gate is only a tie-breaker,
         # not an eraser of legitimate signal.
         s = scores[0]
-        scores[0] = (s[0], s[1], 0, s[3])
+        scores[0] = (s[0], s[1], s[2], 0, s[4])
     return max(zip(candidates, scores, strict=True), key=lambda cs: cs[1])[0]
 
 
@@ -658,6 +724,197 @@ def _y_of(value: str, texts: list[str], bboxes: list[list[float]]) -> float:
         if key in t.lower():
             return bboxes[i][1] if i < len(bboxes) else 0.0
     return 0.0
+
+
+# --- Company repair (transformative) ---------------------------------------
+# Stars/hashes that the OCR or thermal-printer leaves around merchant
+# trade names ("***ROYALTEA***" or "*** TAX INVOICE ***").  Symmetric
+# leading/trailing run captured so a single pass strips both ends.
+_COMPANY_DECOR_RE = re.compile(r"^[\*\#\-_=~`\s]+|[\*\#\-_=~`\s]+$")
+# Whole-line boilerplate the company-anchor walk MUST skip.  Wider than
+# ``_HEADER_JUNK`` (which only matches lines whose entire content is the
+# keyword): also catches lines that *contain* TAX INVOICE / CASH BILL /
+# OFFICIAL RECEIPT etc., even when wrapped in ``***`` decorations.
+_COMPANY_BOILERPLATE_LINE_RE = re.compile(
+    r"\b(?:TAX\s+INVOICE|CASH\s+BILL|OFFICIAL\s+RECEIPT|CUSTOMER\s+COPY|"
+    r"MERCHANT\s+COPY|SIMPLIFIED(?:\s+TAX(?:\s+INVOICE)?)?|"
+    r"CREDIT\s+NOTE|DELIVERY\s+ORDER|SALES\s+RECEIPT|RECEIPT\s+COPY|"
+    r"DUPLICATE\s+RECEIPT)\b",
+    re.IGNORECASE,
+)
+# Tail tokens to drop when refining a company candidate: registration
+# numbers (``M076170-K``, ``107769-21``, ``139386 X``), GST IDs, OCR
+# fragments (``stud01/59572``), Wi-Fi tokens, single-orphan letters.
+_COMPANY_TAIL_DROP_RE = re.compile(
+    r"\s+(?:"
+    r"\(?\s*\d{4,}[\-\s]?[A-Z\d]{0,4}\s*\)?"  # 5+digit reg numbers
+    r"|GST\s*[:#]?\s*\d+"
+    r"|GST\s*ID\s*\d+"
+    r"|TEL\s*[:.]?\s*[\d\-]+"
+    r"|WI-?FI\s*\S+"
+    r"|STUD\d+\S*"
+    r"|MA?\d{5,}"
+    r"|[A-Z]{1,3}\d{5,}\S*"
+    r"|password\s*\S+"
+    r")\s*\.?\s*$",
+    re.IGNORECASE,
+)
+# Multi-token forward-extension regex that recognises a line whose
+# content is purely company-suffix material — strict ``_COMPANY_SUFFIX``
+# only matched a single segment.  This lets us pick up ``CO M SDN BHD``,
+# ``(M) SDN BHD``, ``HOLDINGS SDN BHD`` as a *whole* extension target.
+_COMPANY_MULTI_SUFFIX_RE = re.compile(
+    r"^\s*"
+    r"(?:\(?\s*M\s*\)?\s+)?(?:CO\.?\s*)?(?:M\s+)?"
+    r"(?:SDN\.?\s*BHD\.?|BERHAD|BHD|S/B|PTE\.?\s*LTD\.?|LTD\.?"
+    r"|HOLDINGS|ENTERPRISE(?:S)?|TRADING|MARKETING|CORPORATION|CORP\.?)"
+    r"(?:\s+(?:SDN\.?\s*BHD\.?|BERHAD|BHD|S/B|HOLDINGS"
+    r"|ENTERPRISE(?:S)?|TRADING|MARKETING))*"
+    r"\s*\.?\s*$",
+    re.IGNORECASE,
+)
+
+
+def _strip_decor(s: str) -> str:
+    """Remove ``***`` / ``###`` / dashes / equals from both ends."""
+    return _COMPANY_DECOR_RE.sub("", s).strip()
+
+
+def _strip_company_tail(s: str) -> str:
+    """Drop trailing OCR / registration noise from a company string.
+
+    Run twice so a two-suffix tail (``"... 139386 X (M)"``) is fully
+    removed.  Never returns empty — if the tail-drop would consume
+    everything, return the original string so the caller can still
+    score it (the trade-name / SDN-BHD scoring will rank it low).
+    """
+    prev = s
+    for _ in range(2):
+        cur = _COMPANY_TAIL_DROP_RE.sub("", prev).strip()
+        if cur == prev:
+            break
+        prev = cur
+    return prev or s
+
+
+def _line_index_of(value: str, texts: list[str]) -> int:
+    """Index of the first text-line that *contains* ``value`` (case-fold)."""
+    if not value:
+        return -1
+    key = value.strip().lower()
+    for i, t in enumerate(texts):
+        if key and key in t.lower():
+            return i
+    return -1
+
+
+def _company_extend(
+    value: str, texts: list[str], bboxes: list[list[float]],
+) -> str:
+    """Forward/backward-extend a partial company pick.
+
+    Two failure modes the score-only refiner cannot fix:
+
+    1. **Prefix-only pick** (``"POPULAR BOOK"`` vs GT
+       ``"POPULAR BOOK CO M SDN BHD"``): the picked line lacks any
+       ``_COMPANY_TOKEN`` but a neighbouring line below is a pure
+       company-suffix run (``"CO M SDN BHD"``).  Concatenate.
+
+    2. **Suffix-only pick** (``"CO M SDN BHD"`` vs GT
+       ``"POPULAR BOOK CO M SDN BHD"``): the picked line is *all*
+       suffix tokens; the line above carries the trade name.
+       Prepend that.
+
+    Bounded to one line of extension on each side so we never invent
+    a multi-line span out of thin air.  Idempotent on already-complete
+    candidates (anything already containing both a trade-name and a
+    suffix token returns unchanged).
+    """
+    cleaned = _strip_decor(value).strip()
+    if not cleaned:
+        return value
+    cleaned = _strip_company_tail(cleaned)
+    idx = _line_index_of(cleaned, texts)
+    if idx < 0:
+        return cleaned
+    # Forward-extend: cleaned has no _COMPANY_TOKEN, next line is pure
+    # suffix.  Skip only blank/junk lines between.
+    has_token = bool(_COMPANY_TOKEN.search(cleaned))
+    # Continuation marker: a trailing ``&`` / ``,`` / hanging
+    # ``of/the/and`` strongly signals the trade name was line-wrapped.
+    # Extend even when a company-token ending isn't on the next line,
+    # provided the next line is plausibly upper-case alpha-heavy.
+    ends_continuation = bool(re.search(r"[&,]\s*$|\b(?:and|of|the)\s*$",
+                                        cleaned, re.IGNORECASE))
+    if (ends_continuation or not has_token) and idx + 1 < len(texts):
+        for j in range(idx + 1, min(idx + 3, len(texts))):
+            nxt = _strip_decor(texts[j].strip())
+            if not nxt:
+                continue
+            if _COMPANY_BOILERPLATE_LINE_RE.search(nxt):
+                break
+            if _DATE_RE.search(nxt) or _MONEY_RE.search(nxt):
+                break
+            if _ADDR_EXCLUDE.search(nxt):
+                break
+            # Strict multi-suffix line: pure ``CO M SDN BHD`` /
+            # ``HOLDINGS SDN BHD`` etc.
+            if _COMPANY_MULTI_SUFFIX_RE.match(nxt):
+                cleaned = f"{cleaned} {_strip_company_tail(nxt)}"
+                has_token = True
+                break
+            # Permissive extend: line ENDS with a company token
+            # (``ENTERPRISE SETIA ALAM SDN BHD`` — the multi-token tail
+            # the strict regex can't enumerate without exploding).  The
+            # line must not also carry an address anchor (``JALAN`` /
+            # ``LOT`` / 5-digit postcode) so we don't accidentally pull
+            # in the first address line as part of the company name.
+            looks_address = bool(re.search(
+                r"\b(JALAN|JLN|LOT|TAMAN|TMN|BANDAR|NO\.?|\d{5})\b",
+                nxt, re.IGNORECASE,
+            ))
+            if (_COMPANY_TOKEN.search(nxt) and not looks_address):
+                cleaned = f"{cleaned} {_strip_company_tail(nxt)}"
+                has_token = True
+                break
+            # Continuation extend: when the picked line ends with ``&``
+            # / ``,`` etc., accept any short upper-case alpha-heavy
+            # next line as the wrapped tail of the trade name.  Bounded
+            # to one extension and rejected if the line contains an
+            # address anchor.
+            if ends_continuation and not looks_address:
+                letters = [c for c in nxt if c.isalpha()]
+                if (3 <= len(letters)
+                        and len(nxt.split()) <= 5
+                        and sum(1 for c in letters if c.isupper())
+                            / max(len(letters), 1) >= 0.7):
+                    cleaned = f"{cleaned} {_strip_company_tail(nxt)}"
+                    break
+            # Any other line stops the walk.
+            break
+    # Backward-extend: cleaned IS pure suffix (matches multi-suffix
+    # regex on its own), look up one line for the trade name.
+    if (idx > 0
+            and _COMPANY_MULTI_SUFFIX_RE.match(cleaned)
+            and not _is_short_junk(cleaned)):
+        for j in range(idx - 1, max(idx - 3, -1), -1):
+            prev = _strip_decor(texts[j].strip())
+            if not prev:
+                continue
+            if _COMPANY_BOILERPLATE_LINE_RE.search(prev):
+                break
+            if _HEADER_JUNK.match(prev):
+                break
+            if _DATE_RE.search(prev) or _MONEY_RE.search(prev):
+                break
+            if _is_short_junk(prev):
+                break
+            # Plausible trade name: alpha-heavy, not a phone/GST line.
+            if _ADDR_EXCLUDE.search(prev):
+                break
+            cleaned = f"{_strip_company_tail(prev)} {cleaned}"
+            break
+    return cleaned
 
 
 def _is_addr_boundary(t: str) -> bool:

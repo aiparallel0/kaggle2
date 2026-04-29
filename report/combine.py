@@ -236,9 +236,16 @@ def _ratio_phrase(ratio: float) -> str:
     the open-left, closed-right interval (e.g. (0.20, 0.30] →
     ``one-quarter``) so a ratio of exactly 0.30 reads as
     ``one-quarter`` — the strictly-greater-than-third reading.
+
+    When the comparison is degenerate (DONUT didn't run / produced
+    zero F1 / has zero parameters) we return a phrase that does NOT
+    end with the preposition "of" so a downstream template like
+    "Matching DONUT with {phrase} of the Parameters" doesn't produce
+    "of of" duplication.  The honesty doc (``docs/HONESTY.md``)
+    documents that a zero-ratio is a measurement gap, not a result.
     """
     if ratio <= 0.0:
-        return "a fraction of"
+        return "a fraction"
     if ratio <= 0.20:
         return "one-fifth"
     if ratio <= 0.30:
