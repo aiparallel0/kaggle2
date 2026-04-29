@@ -130,6 +130,9 @@ def eval_pipeline(config: ExpConfig, test: list[Receipt]) -> PipelineResult:
                 regex_router=config.regex_router,
                 total_confidence_threshold=config.total_confidence_threshold,
                 focus_confidence_floor=config.focus_confidence_floor,
+                focus_company_confidence_threshold=(
+                    config.focus_company_confidence_threshold
+                ),
             )
         for rec in test:
             rid = rec.image_path.stem
@@ -154,6 +157,9 @@ def eval_pipeline(config: ExpConfig, test: list[Receipt]) -> PipelineResult:
                     regex_router=config.regex_router,
                     total_confidence_threshold=config.total_confidence_threshold,
                     focus_confidence_floor=config.focus_confidence_floor,
+                    focus_company_confidence_threshold=(
+                        config.focus_company_confidence_threshold
+                    ),
                 )
                 # P3 opt-in: graph-attention assigner override.  Runs in
                 # parallel and replaces the learned output when enabled;

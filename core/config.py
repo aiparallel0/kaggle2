@@ -122,6 +122,7 @@ def load_config(path: str, defaults: dict[str, Any] | None = None) -> ExpConfig:
         "focus_total_enabled", "focus_total_witness_weight",
         "focus_company_enabled", "focus_company_y_weight",
         "focus_company_boilerplate_weight",
+        "focus_company_confidence_threshold",
         "priors_v4",
     }
     # Bug-18 composite-loss knobs are read via ``_loss_knob`` from
@@ -317,6 +318,9 @@ def load_config(path: str, defaults: dict[str, Any] | None = None) -> ExpConfig:
         focus_company_y_weight=float(raw.get("focus_company_y_weight", 1.0)),
         focus_company_boilerplate_weight=float(
             raw.get("focus_company_boilerplate_weight", 1.0),
+        ),
+        focus_company_confidence_threshold=float(
+            raw.get("focus_company_confidence_threshold", 0.30),
         ),
         priors_v4=bool(raw.get("priors_v4", False)),
         extra=extra,

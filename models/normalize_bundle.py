@@ -33,6 +33,7 @@ from models.normalize import (
     normalize_date,
 )
 from models.postprocess_address import normalize_address_focus
+from models.postprocess_company import normalize_company_focus
 
 __all__ = [
     "FIELD_NORMALISERS_DONUT",
@@ -47,10 +48,21 @@ def _normalize_address_pipeline(value: str) -> str:
     return normalize_address_focus(normalize_address(value))
 
 
+def _normalize_company_pipeline(value: str) -> str:
+    """Compose legacy ``normalize_company`` with FOCUS-C casefold + punct
+    pass.  Mirrors :func:`_normalize_address_pipeline` so pred and GT
+    reduce to the same casefolded token set on receipts where the OCR /
+    GT differ only in trailing punctuation (``"SDN. BHD."`` vs
+    ``"SDN BHD"``).  Applied symmetrically to both arms of the
+    pipeline-eval bundle by :func:`normalize_bundle`.
+    """
+    return normalize_company_focus(normalize_company(value))
+
+
 FIELD_NORMALISERS_PIPELINE: dict[str, Callable[[str], str]] = {
     "total": normalize_total,
     "date": normalize_date,
-    "company": normalize_company,
+    "company": _normalize_company_pipeline,
     "address": _normalize_address_pipeline,
 }
 

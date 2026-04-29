@@ -461,5 +461,14 @@ class ExpConfig:
     focus_company_enabled: bool = False
     focus_company_y_weight: float = 1.0
     focus_company_boilerplate_weight: float = 1.0
+    # FOCUS-C inference confidence gate.  Replaces the cross-attn argmax
+    # with :meth:`AttentionAssigner.company_pick` (anchor index for the
+    # :func:`models.postprocess_company._company_span` greedy assembler)
+    # iff ``softmax(final)[i] >= focus_company_confidence_threshold``;
+    # below this the legacy argmax pick wins so confident negatives do
+    # not regress.  Default 0.30 was chosen at the deployment threshold
+    # (FOCUS-C head trained head outputs ~0.05 mass per region on a
+    # 20-region receipt; 0.30 is 6× the uniform prior).
+    focus_company_confidence_threshold: float = 0.30
     priors_v4: bool = False
     extra: dict[str, object] = field(default_factory=dict)
