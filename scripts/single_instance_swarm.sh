@@ -88,12 +88,46 @@ log "Seeds:    ${SEEDS}"
 log "Datasets: ${DATASETS}"
 log "Logs:     ${LOG_DIR}/"
 
+# Partial config overlays (configs/canonical_5seed.json etc.) ship only
+# the keys they override and rely on a downstream consumer to fold them
+# onto configs/default.json before load_config is called.  main.py itself
+# does not perform that merge — passing a partial config directly fails
+# load_config with "missing required keys".  Resolve here: when the named
+# dataset has an overlay file, materialise the merged JSON to /tmp and
+# return its path; otherwise return configs/default.json directly.
 resolve_config() {
-    case "$1" in
-        canonical) echo "configs/canonical_5seed.json" ;;
-        sroie)     echo "configs/default.json" ;;
-        *)         echo "configs/default.json" ;;
+    local DATASET="$1"
+    local OVERLAY=""
+    case "${DATASET}" in
+        canonical) OVERLAY="configs/canonical_5seed.json" ;;
+        sroie)     echo "configs/default.json"; return ;;
+        *)         echo "configs/default.json"; return ;;
     esac
+    if [ ! -f "${OVERLAY}" ]; then
+        echo "configs/default.json"
+        return
+    fi
+    local MERGED="/tmp/kaggle2-config-${DATASET}.json"
+    python -c "
+import json, sys
+base = json.load(open('configs/default.json'))
+base.update(json.load(open('${OVERLAY}')))
+json.dump(base, open('${MERGED}', 'w'), indent=2)
+" || { echo "ERROR: failed to merge ${OVERLAY} onto configs/default.json" >&2; return 1; }
+    echo "${MERGED}"
+}
+
+# Stream the relevant log file to stderr on a failed phase so the user
+# does not have to grep through logs/ to find the actual error.
+dump_log_on_fail() {
+    local TAG="$1" PATH_="$2"
+    if [ -f "${PATH_}" ]; then
+        echo "" >&2
+        echo "----- ${TAG} (last 60 lines of $(basename "${PATH_}")) -----" >&2
+        tail -n 60 "${PATH_}" >&2
+        echo "----- end ${TAG} -----" >&2
+        echo "" >&2
+    fi
 }
 
 # ---------------------------------------------------------------------------
@@ -108,11 +142,16 @@ phase1_one_dataset() {
     local DATASET="$1"
     local CONFIG_FILE
     CONFIG_FILE="$(resolve_config "${DATASET}")"
+    log "Phase 0 (${DATASET}): config = ${CONFIG_FILE}"
     local BACKBONE_RUN_ID="${SWEEP_ID}-${DATASET}-backbone"
     log "Phase 0 (${DATASET}): preparing data + split (${BACKBONE_RUN_ID})"
-    KAGGLE2_RUN_ID="${BACKBONE_RUN_ID}" \
+    if ! KAGGLE2_RUN_ID="${BACKBONE_RUN_ID}" \
         python main.py --stage prepare_data --config "${CONFIG_FILE}" \
-        > "${LOG_DIR}/${DATASET}-prepare.log" 2>&1
+        > "${LOG_DIR}/${DATASET}-prepare.log" 2>&1; then
+        log "  prepare_data FAILED"
+        dump_log_on_fail "${DATASET}-prepare" "${LOG_DIR}/${DATASET}-prepare.log"
+        return 1
+    fi
 
     log "Phase 1 (${DATASET}): launching parallel components"
     local DONUT_NPROC TROCR_NPROC
@@ -175,16 +214,19 @@ phase1_one_dataset() {
     local FAILED=0
     if [ -n "${DONUT_PID}" ]; then
         if ! wait "${DONUT_PID}"; then
-            log "  ERROR: DONUT failed; see ${LOG_DIR}/${DATASET}-donut.log"
+            log "  ERROR: DONUT failed"
+            dump_log_on_fail "${DATASET}-donut" "${LOG_DIR}/${DATASET}-donut.log"
             FAILED=1
         fi
     fi
     if ! wait "${TROCR_PID}"; then
-        log "  ERROR: TrOCR failed; see ${LOG_DIR}/${DATASET}-trocr.log"
+        log "  ERROR: TrOCR failed"
+        dump_log_on_fail "${DATASET}-trocr" "${LOG_DIR}/${DATASET}-trocr.log"
         FAILED=1
     fi
     if ! wait "${YOLO_PID}"; then
-        log "  ERROR: YOLO failed; see ${LOG_DIR}/${DATASET}-yolo.log"
+        log "  ERROR: YOLO failed"
+        dump_log_on_fail "${DATASET}-yolo" "${LOG_DIR}/${DATASET}-yolo.log"
         FAILED=1
     fi
     if [ "${FAILED}" -ne 0 ]; then
