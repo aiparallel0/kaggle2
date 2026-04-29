@@ -64,7 +64,7 @@
   "address_accept_fraction": 0.5,
   "regex_router": true,
   "text_pool_learned": false,
-  "total_confidence_threshold": 0.55,
+  "total_confidence_threshold": 0.35,
   "lr_focus": 3e-4,
   "warmup_ratio_focus": 0.1,
   "priors_v3": true,
