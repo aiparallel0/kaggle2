@@ -137,28 +137,40 @@ def _block(
 ) -> float:
     """Render one ``label: ...`` block; return the y-coordinate of its bottom.
 
-    Each field value is wrapped at ``wrap_width`` characters
-    (Item F: narrowed from 32→26 so wrapped lines fit comfortably in
-    the per-cell column at IEEE 2-column page widths).  Lines are drawn
-    with ``linespacing=1.45`` (Item F key fix #1) so wrapped lines do
-    not stack on top of one another, and the y-cursor is advanced by
-    the actual number of wrapped lines (Item F key fix #2) instead of
-    assuming "one line per field" — the cause of the
-    ``GMM:BHD8/03/2018`` collision visible in the v4 screenshot.
+    Each field value is wrapped at ``wrap_width`` characters (Item F:
+    headline narrows from 32→26 so wrapped lines fit at IEEE 2-column
+    page widths; Item 53 of the v13 paper-corrections pass narrows the
+    supplementary 3×3 emitter further to 20 because each cell is half
+    as wide).  Lines are drawn with ``linespacing=1.45`` (Item F key
+    fix #1) so wrapped lines do not stack on top of one another, and
+    the y-cursor is advanced by ``n_lines * line_h * linespacing``
+    (Item 52 v13: was ``× 1.05``, which under-counts the actual line
+    height when ``linespacing=1.45`` and let the address last word
+    collide with the next field's name — visible as
+    ``JOHOR total: 8.20`` in the v12 PDF).  Multi-line values arriving
+    with embedded ``\\n`` (e.g. an address split across rows in the
+    source JSON) are flattened to a single space-separated string
+    before wrapping, so ``textwrap.fill`` cannot rewrap across the
+    pre-existing newlines and split a number like ``8.70`` into
+    ``8 70``.
     """
     line_h = 0.034 * (fontsize / 9.0)
     gap = 0.012  # ≈ 3 pt at the calibrated cell scale
+    linespacing = 1.45
     y = y0
     ax.text(  # type: ignore[attr-defined]
         0.02, y, f"{label}:", transform=ax.transAxes,  # type: ignore[attr-defined]
         fontsize=fontsize, fontweight="bold", family="monospace",
         verticalalignment="top",
     )
-    y -= line_h + gap
+    y -= line_h * linespacing + gap
     cross = "  \u2717"
     for f in _FIELDS:
-        v = fields.get(f, "")
-        bad = label != "GT" and v.strip() != gt.get(f, "").strip()
+        # Item 53 (v13): strip embedded newlines before wrapping so
+        # ``textwrap.fill`` does not preserve them and rewrap mid-token
+        # (the X00000006 ``8 70`` mangling in Fig.~12).
+        v = fields.get(f, "").replace("\n", " ").strip()
+        bad = label != "GT" and v != gt.get(f, "").replace("\n", " ").strip()
         wrapped = textwrap.fill(f"{f}: {v}", width=wrap_width) or f"{f}:"
         n_lines = wrapped.count("\n") + 1
         ax.text(  # type: ignore[attr-defined]
@@ -167,12 +179,12 @@ def _block(
             transform=ax.transAxes,  # type: ignore[attr-defined]
             fontsize=fontsize, family="monospace",
             color="#B00020" if bad else "black",
-            linespacing=1.45,
+            linespacing=linespacing,
             verticalalignment="top",
         )
-        # Advance by the actual rendered line count (×1.05 head-room)
+        # Advance by the actual rendered line count (× ``linespacing``)
         # so multi-line address values do not bleed into the next block.
-        y -= n_lines * line_h * 1.05 + gap
+        y -= n_lines * line_h * linespacing + gap
     return y
 
 
@@ -209,19 +221,21 @@ def _read_curated_ids(run_dir: Path) -> list[str]:
 def _draw_cell(
     ax: object, image_id: str, bucket: str, run_dir: Path,
     g: dict[str, str], d: dict[str, str], p: dict[str, str],
-    fontsize: int,
+    fontsize: int, wrap_width: int = 26,
 ) -> None:
     """Draw a single curated cell — image overlay or text block."""
     ax.set_axis_off()  # type: ignore[attr-defined]
     # Item 6c: titlepad of 8\,pt so the cell header does not collide
-    # with the wrapped GT/DONUT/Pipeline JSON below.
-    ax.set_title(f"{bucket}  \u2014  {image_id}", fontsize=8,  # type: ignore[attr-defined]
+    # with the wrapped GT/DONUT/Pipeline JSON below.  Item 59 (v13):
+    # use an en-dash (U+2013) which renders consistently across the
+    # IEEEtran serif fallback the supplementary grid reaches for.
+    ax.set_title(f"{bucket}  \u2013  {image_id}", fontsize=8,  # type: ignore[attr-defined]
                  family="monospace", loc="left", pad=8)
     # Item 6 (paper-corrections v5): clamp the text-axis x-range to
     # [0, 1] so wrapped JSON lines drawn in axes-fraction coordinates
     # cannot bleed past the cell's geometric width into the
-    # neighbouring column.  Combined with the 26-char wrap in
-    # ``_block`` and ``wspace=0.6`` below, this eliminates the
+    # neighbouring column.  Combined with the per-grid wrap width and
+    # the explicit cell ``wspace`` below, this eliminates the
     # horizontal overlap observed in the v4 screenshots.
     ax.set_xlim(0.0, 1.0)  # type: ignore[attr-defined]
     ax.set_ylim(0.0, 1.0)  # type: ignore[attr-defined]
@@ -235,13 +249,28 @@ def _draw_cell(
     if not g and not d and not p:
         _placeholder(ax, image_id, bucket)
         return
+    # Item 54 (paper-corrections v13): when the receipt thumbnail is
+    # unavailable (no Pillow, no SROIE cache, or imread failure) draw
+    # a light-grey placeholder rectangle behind the JSON text so the
+    # cell still has visual structure rather than rendering as a bare
+    # text block on white.  Honest about the asset gap; never a fake
+    # thumbnail.
+    try:
+        from matplotlib.patches import Rectangle
+        ax.add_patch(Rectangle(  # type: ignore[attr-defined]
+            (0.0, 0.0), 1.0, 1.0, transform=ax.transAxes,  # type: ignore[attr-defined]
+            facecolor="#EFEFEF", edgecolor="#9A9A9A",
+            linewidth=0.4, zorder=0,
+        ))
+    except ImportError:  # pragma: no cover
+        pass
     # Stack GT → DONUT → Pipeline blocks vertically using the y-cursor
     # returned by ``_block`` so wrapped values never overlap a sibling
     # block (Item 6d).  An additional inter-block gap separates the
     # three sources visually.
-    y = _block(ax, "GT", g, g, 0.96, fontsize)
-    y = _block(ax, "DONUT", d, g, y - 0.02, fontsize)
-    _block(ax, "Pipeline", p, g, y - 0.02, fontsize)
+    y = _block(ax, "GT", g, g, 0.96, fontsize, wrap_width=wrap_width)
+    y = _block(ax, "DONUT", d, g, y - 0.02, fontsize, wrap_width=wrap_width)
+    _block(ax, "Pipeline", p, g, y - 0.02, fontsize, wrap_width=wrap_width)
 
 
 def render_samples(run_dir: Path) -> Path | None:
@@ -301,17 +330,29 @@ def _render_full(
     cap = 9 if _HAS_PIL else 4
     rows = cols = 3 if _HAS_PIL else 2
     ids = ids[:cap]
-    fig, axes = plt.subplots(rows, cols, figsize=(COL_DOUBLE, 1.6 * COL_DOUBLE))
+    # Item 53 (paper-corrections v13): the 3×3 supplementary grid was
+    # rendering at the same ``COL_DOUBLE × 1.6·COL_DOUBLE`` figsize as
+    # the headline 2×2, so each cell was barely half as wide and the
+    # 26-char wrap from the headline emitter spilled mid-token in
+    # nearly every cell (X00000005's ``1330 JLN KENANGA`` ran into
+    # ``total: 10.60``; X00000006's ``8.70`` was rewrapped as
+    # ``8 70``).  Bump the canvas to (11, 16) with explicit
+    # ``hspace=0.7 / wspace=0.25`` and tighten the per-cell wrap to
+    # ``WRAP_WIDTH_GRID = 20`` so each line fits the half-width cell.
+    wrap_width_grid = 20
+    fig, axes = plt.subplots(
+        rows, cols, figsize=(11, 16),
+        gridspec_kw=dict(hspace=0.7, wspace=0.25),
+    )
     for ax, img_id in zip(list(axes.flat), ids, strict=False):
         _draw_cell(ax, img_id, "", run_dir,
                    gt.get(img_id, {}), donut.get(img_id, {}),
-                   pipe.get(img_id, {}), 7)
+                   pipe.get(img_id, {}), 7, wrap_width=wrap_width_grid)
     for ax in list(axes.flat)[len(ids):]:
         ax.set_axis_off()
     fig.suptitle(
         "Qualitative sample predictions — full grid (supplementary)", y=1.0,
     )
-    fig.subplots_adjust(wspace=0.6, hspace=0.85)
     fig.tight_layout(pad=2.5)
     # Item 6f: 0.4-pt grey separator rectangles between cells make the
     # cell boundaries explicit on the supplementary nine-cell grid.

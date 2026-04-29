@@ -205,7 +205,7 @@ def render_training_table(metrics: dict[str, Any]) -> str:
             f"& {_fmt(metrics, f'{system}_train_minutes', 'sig4')} "
             f"& {_fmt(metrics, f'{system}_peak_vram_gb', 'gb1')} "
             f"& {_fmt(metrics, f'{system}_cost_usd', 'usd')} "
-            f"& {_fmt(metrics, f'{system}_energy_wh', 'wh')} "
+            f"& {_fmt(metrics, f'{system}_energy_kwh', 'sig4')} "
             f"& {_fmt(metrics, f'{system}_co2_kg', 'sig4')} \\\\",
         )
     rows.append("\\midrule")

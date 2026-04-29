@@ -2,7 +2,7 @@
 \label{sec:results_tables}
 
 This section collects the detailed quantitative tables that
-Section~V cites for the \textbf{advanced} (canonical-test) variant
+Section~\ref{sec:results} cites for the \textbf{advanced} (canonical-test) variant
 of this paper.  Every number is sourced from
 \texttt{runs/<run\_id>/metrics/} sidecars via the
 \texttt{report.inject} substitution layer --- no literal constants
@@ -60,8 +60,9 @@ enumerated in \texttt{metrics/unresolved\_vars.json} for audit.
          energy --- the inputs to the parameter-efficiency claim.
          The advanced variant adds the parameter-budget ratio
          (\VAR{donut_params_m}\,M\,/\,(\VAR{pipeline_params_m}\,M$+$\VAR{assigner_params_k}\,K)
-         $\approx$\,3.9$\times$, matching the
-         $\sim$\VAR{param_ratio_numeric} ratio cited in the abstract)
+         $\approx$\,3.9$\times$, equivalently
+         \VAR{param_ratio_numeric} of the DONUT count when the
+         assigner is included in the numerator)
          that the abstract cites.}
 \label{tab:training}
 \small

@@ -196,7 +196,17 @@ def merge_pipeline_diagnostics(
     donut_m = metrics.get("donut_params_m")
     pipe_m = metrics.get("pipeline_params_m")
     if isinstance(donut_m, int | float) and isinstance(pipe_m, int | float):
-        ratio = float(pipe_m) / float(donut_m) if float(donut_m) > 0 else 0.0
+        # Item 51 (paper-corrections v13): include the assigner in the
+        # numerator so the ratio cited in the abstract matches the
+        # parameter-budget definition used in Table~X
+        # (260.78\,M / (65.77\,M + 1159\,K) $\approx$ 3.9$\times$,
+        # i.e.\ 25.7\,\%).  Without the assigner the value would round
+        # to 25.2\,\%, which contradicts the 3.9$\times$ figure cited
+        # in the same caption.  Single source of truth: bands here.
+        apk = metrics.get("assigner_params_k")
+        apk_m = float(apk) / 1000.0 if isinstance(apk, int | float) else 0.0
+        pipe_total_m = float(pipe_m) + apk_m
+        ratio = pipe_total_m / float(donut_m) if float(donut_m) > 0 else 0.0
         # Item 4 (paper-corrections): ``param_ratio_numeric`` MUST be
         # a :class:`report.inject.TexSource` so that the ``\\``
         # in ``"25.2\\%"`` does not get re-escaped to

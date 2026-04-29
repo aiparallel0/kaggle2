@@ -140,7 +140,7 @@ condition on the neighbour span; at inference the same prefix is
 fed to HuggingFace's \texttt{generate()} via
 \texttt{decoder\_input\_ids}.  This mirrors the 4-shot in-context
 learning scheme of LayoutLLM~\cite{luo2024layoutllm} transplanted
-onto an $\approx$261\,M-parameter DONUT backbone and incurs no additional training
+onto an $\approx$\,\VAR{donut_params_m}\,M-parameter DONUT backbone and incurs no additional training
 time beyond the extra decoder tokens.  The RAG arm is opt-in via the
 \texttt{rag\_enabled} / \texttt{rag\_k} config keys and disabled by
 default so the RAG-off reported headline number remains unchanged.
