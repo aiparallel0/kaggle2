@@ -90,6 +90,12 @@ def _architecture_config(model: AttentionAssigner) -> dict[str, Any]:
         "focus_company_boilerplate_weight": float(
             model.focus_company_boilerplate_weight,
         ),
+        "focus_company_span_enabled": bool(
+            getattr(model, "focus_company_span_enabled", False),
+        ),
+        "focus_company_span_max_span": int(
+            getattr(model, "focus_company_span_max_span", 4),
+        ),
         "field_names": list(model.field_names) if model.field_names else None,
     }
 
@@ -149,6 +155,12 @@ def _load_assigner(
         focus_company_y_weight=float(cfg.get("focus_company_y_weight", 1.0)),
         focus_company_boilerplate_weight=float(
             cfg.get("focus_company_boilerplate_weight", 1.0),
+        ),
+        focus_company_span_enabled=bool(
+            cfg.get("focus_company_span_enabled", False),
+        ),
+        focus_company_span_max_span=int(
+            cfg.get("focus_company_span_max_span", 4),
         ),
         field_names=field_names,
     )

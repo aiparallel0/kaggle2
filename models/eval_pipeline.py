@@ -133,6 +133,9 @@ def eval_pipeline(config: ExpConfig, test: list[Receipt]) -> PipelineResult:
                 focus_company_confidence_threshold=(
                     config.focus_company_confidence_threshold
                 ),
+                focus_company_confidence_floor=(
+                    config.focus_company_confidence_floor
+                ),
             )
         for rec in test:
             rid = rec.image_path.stem
@@ -159,6 +162,9 @@ def eval_pipeline(config: ExpConfig, test: list[Receipt]) -> PipelineResult:
                     focus_confidence_floor=config.focus_confidence_floor,
                     focus_company_confidence_threshold=(
                         config.focus_company_confidence_threshold
+                    ),
+                    focus_company_confidence_floor=(
+                        config.focus_company_confidence_floor
                     ),
                 )
                 # P3 opt-in: graph-attention assigner override.  Runs in

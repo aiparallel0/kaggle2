@@ -73,7 +73,7 @@
   "focus_total_enabled": true,
   "focus_company_enabled": true,
   "focus_company_confidence_threshold": 0.30,
-  "focus_company_span_enabled": false,
+  "focus_company_span_enabled": true,
   "focus_company_span_max_span": 4,
   "focus_company_span_iou_w": 1.0,
   "focus_company_span_boundary_w": 1.0,
