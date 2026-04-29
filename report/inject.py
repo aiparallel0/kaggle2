@@ -32,6 +32,49 @@ _INPUT_RE = re.compile(r"\\input\{([^}]+)\}")
 
 _MEAN_STD_KEYS = {"donut_f1", "pipeline_f1"}
 
+# Variants for which ``\\IfRulebased{...}`` spans must be excised from
+# the rendered .tex (and from the unresolved-VAR audit) before the
+# substitution layer runs.  The advanced/focus variant ships with the
+# tripwire macro definition that errors at LaTeX time on any surviving
+# IfRulebased call, so stripping the spans here is the source-of-truth
+# for "advanced builds carry zero rulebased prose".
+_ADVANCED_VARIANTS = frozenset({"advanced", "focus"})
+
+
+def _strip_ifrulebased(template: str) -> str:
+    """Remove every ``\\IfRulebased{...}`` span (brace-balanced).
+
+    Used on the advanced/focus variant so the rendered .tex contains
+    no rulebased prose, no rulebased ``\\VAR{}`` placeholders, and
+    therefore no entries in ``unresolved_vars.json`` for keys that
+    only ever appear inside an IfRulebased argument.
+    """
+    needle = "\\IfRulebased{"
+    out: list[str] = []
+    i = 0
+    while True:
+        idx = template.find(needle, i)
+        if idx == -1:
+            out.append(template[i:])
+            return "".join(out)
+        out.append(template[i:idx])
+        # Skip past the opening ``{`` and walk forward tracking depth,
+        # treating ``\\{`` / ``\\}`` (and any other backslash-escape)
+        # as a single non-brace token.
+        j = idx + len(needle)
+        depth = 1
+        while j < len(template) and depth > 0:
+            ch = template[j]
+            if ch == "\\" and j + 1 < len(template):
+                j += 2
+                continue
+            if ch == "{":
+                depth += 1
+            elif ch == "}":
+                depth -= 1
+            j += 1
+        i = j
+
 # Map each LaTeX text-mode special character to its safe representation.
 # Applied only to arbitrary string metric values (e.g. ``test_set_kind =
 # "canonical_347"``) — numeric formatters and explicit LaTeX literals such
@@ -147,7 +190,14 @@ def _format_value(key: str, value: Any, metrics: dict[str, Any]) -> str:
         return _format_pvalue(float(value))
     if key == "seeds_used" and isinstance(value, list):
         ids = ", ".join(str(s) for s in value)
-        return f"{len(value)} seeds ({ids})" if value else "0 seeds"
+        if not value:
+            return "0 seeds"
+        # Singular vs plural: ``1 seed (seed 42)`` reads correctly,
+        # ``N seeds (seeds 42, 43, ...)`` for n>=2.  Replaces the
+        # legacy ``N seeds (ids)`` template that produced the garbled
+        # ``uses seeds 1 seeds (42)`` phrase on n=1 runs.
+        s = "" if len(value) == 1 else "s"
+        return f"{len(value)} seed{s} (seed{s} {ids})"
     if key in _MEAN_STD_KEYS and _has_multi_seed(metrics, key):
         mean = float(metrics[f"{key}_mean"])
         std = float(metrics[f"{key}_std"])
@@ -165,7 +215,9 @@ def _format_value(key: str, value: Any, metrics: dict[str, Any]) -> str:
     return _latex_escape_text(str(value))
 
 
-def inject_results(template: str, metrics: dict[str, Any]) -> str:
+def inject_results(
+    template: str, metrics: dict[str, Any], variant: str | None = None,
+) -> str:
     """Replace \\VAR{key} placeholders with formatted metric values.
 
     Two-pass: first apply the typed formatter DSL (``:pct1``, ``:ms``,
@@ -174,7 +226,14 @@ def inject_results(template: str, metrics: dict[str, Any]) -> str:
     could not resolve (unknown directive, or missing key) are left
     intact so the plain substitution step either formats or counts
     them in the unresolved-VAR audit.
+
+    When ``variant`` resolves to the advanced/focus build, every
+    ``\\IfRulebased{...}`` span is stripped before substitution so the
+    rendered .tex carries no rulebased prose and no rulebased
+    ``\\VAR{}`` placeholders.
     """
+    if variant in _ADVANCED_VARIANTS:
+        template = _strip_ifrulebased(template)
     from report.inject_format import apply_formatters
     result = apply_formatters(template, metrics)
     for key, value in metrics.items():
@@ -233,7 +292,9 @@ def inject_results(template: str, metrics: dict[str, Any]) -> str:
     return result
 
 
-def collect_unresolved(template: str, metrics: dict[str, Any]) -> list[str]:
+def collect_unresolved(
+    template: str, metrics: dict[str, Any], variant: str | None = None,
+) -> list[str]:
     """Enumerate every ``\\VAR{key}`` in ``template`` not in ``metrics``.
 
     Called from :mod:`stages.paper` just before writing the filled
@@ -246,7 +307,15 @@ def collect_unresolved(template: str, metrics: dict[str, Any]) -> list[str]:
     they are resolved by :func:`report.inject_format.apply_formatters`
     which runs before the plain-key substitution, so counting them here
     produces false positives in the unresolved-VAR audit.
+
+    When ``variant`` resolves to the advanced/focus build, every
+    ``\\IfRulebased{...}`` span is excised from the template before
+    the scan so keys that only appear inside an IfRulebased argument
+    (the rulebased / gtocr_rulebased baselines) no longer surface in
+    ``unresolved_vars.json`` under advanced.
     """
+    if variant in _ADVANCED_VARIANTS:
+        template = _strip_ifrulebased(template)
     used = set(re.findall(r"\\VAR\{([^}]+)\}", template))
     plain_keys = {k for k in used if ":" not in k}
     return sorted(plain_keys - set(metrics.keys()))

@@ -107,6 +107,11 @@ def _read_yolo_best(run_dir: Path) -> tuple[int | None, int | None]:
         best = int(float(rows[best_idx][epoch_key])) + 1
     except (TypeError, ValueError):
         best = best_idx + 1
+    # Clamp to ``len(rows)`` so the reported best never exceeds the
+    # epochs actually run (Ultralytics is sometimes 0-indexed and
+    # sometimes 1-indexed depending on version; the +1 above can
+    # overshoot by one when the CSV was already 1-indexed).
+    best = min(best, len(rows))
     return best, len(rows)
 
 

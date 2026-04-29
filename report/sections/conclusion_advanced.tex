@@ -18,11 +18,7 @@ downloader, env snapshot, and MANIFEST that ship with this
 release.  The
 $\approx$\VAR{assigner_params_k}\,K-parameter cross-attention
 assigner produces per-field attention maps that the monolithic
-DONUT decoder cannot expose.\IfRulebased{\
-On the basic-variant internal split it also closes
-\VAR{assigner_delta} F1 over rule-based assignment; the rule-based
-comparison is unavailable on the canonical Task-3 split because
-Task-3 ships KIE entities only (no GT box / OCR streams).}
+DONUT decoder cannot expose.
 
 \textbf{Future work.}
 Scale the seed-parametric harness to $n{=}5{+}$ for tighter CIs on

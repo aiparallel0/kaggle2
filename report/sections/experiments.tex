@@ -85,7 +85,7 @@ Precision                              & \VAR{precision} \\
 \label{sec:kd-ablation}
 
 The attention-assigner supports two distillation losses gated by
-\texttt{kd\_logits\_weight} (KL against the rule-based teacher
+\texttt{kd\_logits\_weight} (KL against the regex-based teacher
 softmax, strategy~C) and \texttt{kd\_attn\_weight} (attention-row
 distillation against the same teacher).  Both KD weights are set to
 zero in the shipped headline configuration; the dedicated 2$\times$2
@@ -106,7 +106,7 @@ and reported as a two-tailed $p$-value.
 
 \textbf{Reproducibility.}  Deterministic RNG seeding across Python,
 NumPy, and PyTorch, plus CUDNN determinism.  The reported headline
-uses seeds \VAR{seeds_used} with
+uses \VAR{seeds_used} with
 $n_{\text{trials}}=\VAR{n_trials}$.  The harness is seed-parametric:
 increasing \texttt{n\_trials} in \texttt{config.json} to any
 $k\le|\texttt{seeds}|$ causes the eval stage to run $k$ independent

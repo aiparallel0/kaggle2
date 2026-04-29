@@ -31,9 +31,9 @@ replicators can weigh our conclusions against the evidence base.
         zero-shot VLM baseline} is reimplemented here; the advanced
         variant cites their published Task-3 numbers as references
         in its competitors section but does not retrain them.
-  \item \emph{Assigner ablation is not decomposed.}
+  \IfRulebased{\item \emph{Assigner ablation is not decomposed.}
         Table~\ref{tab:ablation} reports the learned-vs-rule-based
-        $\Delta$ but not the per-component contribution.
+        $\Delta$ but not the per-component contribution.}
   \item \emph{No inference-latency, calibration, or faithfulness
         measurements.}  Interpretability is argued structurally,
         not quantified by a deletion/insertion metric.

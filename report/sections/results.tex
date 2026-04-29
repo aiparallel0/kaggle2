@@ -35,18 +35,18 @@ Pipeline (learned)    & \VAR{pipeline_f1_company}  & \VAR{pipeline_f1_date}  & \
 \end{tabular}
 \end{table}
 
-On the \VAR{n_test_images}-image test split DONUT and the pipeline are statistically
-indistinguishable ($\Delta$F1 $=$ \VAR{f1_gap}; the paired McNemar
-exact test on per-image correctness gives $p=\VAR{mcnemar_p}$ and
-the paired-bootstrap 95\% CI on $\Delta$F1 is
-$[\VAR{delta_f1_ci_lo},\,\VAR{delta_f1_ci_hi}]$, with the pipeline's
-own per-image macro-F1 lying in
+On the \VAR{n_test_images}-image test split evidence is mixed:
+the paired-bootstrap 95\% CI on $\Delta$F1
+$[\VAR{delta_f1_ci_lo},\,\VAR{delta_f1_ci_hi}]$ just contains zero,
+while the paired McNemar exact test on per-image correctness rejects
+equality at $p=\VAR{mcnemar_p}$ ($\Delta$F1 $=$ \VAR{f1_gap}; the
+pipeline's own per-image macro-F1 lies in
 $[\VAR{pipeline_bootstrap_ci_lo},\,\VAR{pipeline_bootstrap_ci_hi}]$
-at the same confidence level).  The pipeline's learned
+at the same confidence level).\IfRulebased{  The pipeline's learned
 attention assigner improves over rule-based assignment on the same
 YOLO+TrOCR features by \VAR{assigner_delta} F1 absolute, confirming
 that the cross-attention module captures spatial and lexical cues
-that the hand-crafted heuristic does not.
+that the hand-crafted heuristic does not.}
 
 For \texttt{total}, a deterministic numeric normaliser is applied
 symmetrically to both prediction and ground-truth (currency prefix
@@ -75,6 +75,7 @@ CO$_2$eq (kg)     & \VAR{donut_co2_kg}                     & \VAR{pipeline_co2_k
 \end{tabular}
 \end{table}
 
+\IfRulebased{%
 \begin{table}[!t]
 \centering
 \caption{Ablation: the learned assigner vs.\ the rule-based heuristic
@@ -88,12 +89,13 @@ CO$_2$eq (kg)     & \VAR{donut_co2_kg}                     & \VAR{pipeline_co2_k
 \begin{tabular}{lc}
 \toprule
 Assignment & F1 \\ \midrule
-\IfRulebased{Rule-based (YOLO+TrOCR)  & \VAR{rulebased_f1} \\}
+Rule-based (YOLO+TrOCR)  & \VAR{rulebased_f1} \\
 Learned attention (ours) & \VAR{pipeline_f1} \\
-\IfRulebased{$\Delta$ (vs.\ rule-based, basic variant) & \VAR{assigner_delta} \\}
+$\Delta$ (vs.\ rule-based, basic variant) & \VAR{assigner_delta} \\
 \bottomrule
 \end{tabular}
-\end{table}
+\end{table}%
+}
 
 
 \input{sections/results_figures}
