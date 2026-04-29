@@ -2,7 +2,7 @@
 
 Project: kaggle2 — End-to-End vs. Pipeline Receipt KIE on SROIE.
 Role: reduce a list of per-request latency timings (milliseconds) —
-    collected by ``app/predict.py`` / ``models/pipeline_eval.py`` /
+    collected by ``app/predict.py`` / ``models/eval_pipeline.py`` /
     ``models/donut_eval.py`` over a burst of synthetic requests — into
     the latency profile surfaced in the paper's Table IV: cold-start
     time, p50/p95/p99, max, mean, and batch-1 / batch-8 throughput.

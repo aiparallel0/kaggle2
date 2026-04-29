@@ -1,6 +1,6 @@
 """test_check_artefacts_figref.py — \\figref macro definition must not cause false-positives.
 
-Regression guard: the ``\\figref`` macro defined in ``report/template{,_basic,_advanced}.tex``
+Regression guard: the ``\\figref`` macro defined in ``report/template{,_baseline,_focus}.tex``
 contains the literal string ``[figure absent]`` as its undefined-label fallback.
 The ``_FIGREF_BODY_RE`` regex in ``report.check_artefacts`` strips this definition
 before scanning.  If the regex is too rigid (whitespace-sensitive), the strip fails

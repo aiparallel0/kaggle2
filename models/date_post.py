@@ -60,7 +60,7 @@ def _in_range(day: int, month: int, year: int) -> bool:
 def is_plausible(value: str) -> bool:
     """True iff ``value`` is a canonical ``DD/MM/YYYY`` in the SROIE window.
 
-    Used by :mod:`models.pipeline_assign` immediately after the date
+    Used by :mod:`models.focus_pipeline` immediately after the date
     field is selected: an implausible value triggers
     :func:`fallback_from_ocr_lines`.  A non-date or partial token
     (``"01/00/2"``, ``"1851/03/3"``, ``"04/12/2012"``) returns False;
@@ -88,7 +88,7 @@ def fallback_from_ocr_lines(lines: list[str]) -> str | None:
     Iterates ``lines`` in reading order and returns the first
     ``DD[-/.]MM[-/.]YY(YY)`` substring whose (day, month, year) triple
     lands in the SROIE window.  Returns ``None`` when no plausible
-    date is present — the caller (pipeline_assign) then keeps the
+    date is present — the caller (focus_pipeline) then keeps the
     original implausible pick so downstream ``normalize_date`` still
     has something to canonicalise (and the per-field-F1 just takes
     the hit, which is strictly no worse than the pre-Fix behaviour).

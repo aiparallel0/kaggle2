@@ -32,17 +32,17 @@ producers available.
 | `stages.eval.stage_eval` (canonical-active branch) | `combined_metrics.json` | `test_set_kind`, `test_set_size` |
 | `data.zone_prior_fit.fit_zone_prior` + `score_train_acc` | `results/zone_prior.json`, `metrics/zone_prior_diag.json` | `zone_prior_train_acc` |
 | `core.error_metrics.count_zone_violations` (aggregated in `stages.eval_producers.emit_all`) | `metrics/extended_metrics.json` | `zone_violation_count_company`, `zone_violation_count_total` |
-| `models.eval_pipeline.run_pipeline` (zone-gated branch) | `metrics/extended_metrics.json` | `pipeline_f1_total_zone_gated` |
+| `models.eval_pipeline.eval_pipeline` (zone-gated branch) | `metrics/extended_metrics.json` | `pipeline_f1_total_zone_gated` |
 
 ## Scoped-out keys (intentionally unwired in this PR)
 
 | key | why | path to "real value" |
 |---|---|---|
 | `yolo_map50`, `yolo_map50_95`, `yolo_ap_<class>` | SROIE has no field-level gold bounding boxes — the dataset is KIE, not detection | would require a second dataset with box annotations (e.g. CORD) |
-| `trocr_cer`, `trocr_wer` | current pipeline does not thread per-crop (gold_text, pred_text) pairs through `pipeline_eval.py` | would require instrumenting `_detect_and_read` to return intermediate OCR outputs alongside final fields |
+| `trocr_cer`, `trocr_wer` | current pipeline does not thread per-crop (gold_text, pred_text) pairs through `eval_pipeline.py` | would require instrumenting `_detect_and_read` to return intermediate OCR outputs alongside final fields |
 | `lat_donut_p50`, `lat_donut_p95`, `lat_donut_p99`, same for `pipeline` | per-inference timing requires a dedicated timing-burst stage (cold-start, batch-1, batch-8) separate from the F1-critical eval loop | add `stages.latency` + `--stage latency` flag |
 | per-epoch `curves/*.csv` (loss, LR, grad-norm, GPU util) | requires threading the `core.tracking.Tracker` into `models/donut_train.py`, `models/yolo_train.py`, `models/trocr_train.py` | mechanical instrumentation pass in a follow-up PR |
-| `gtocr_rulebased_*`, `rulebased_*`, `oracle_patch_*` (canonical run only) | the SROIE Task-3 archive ships KIE entities only — no GT box / OCR streams — so the GT-OCR-rulebased baseline and oracle-patch diagnostic cannot be measured against the canonical 347-image test set | switch to `--paper-variant basic` (500/63/63 internal split) where SROIE training-set GT boxes are available; both runs ship side-by-side via the bifurcated `template_basic.tex` / `template_advanced.tex` |
+| `gtocr_rulebased_*`, `rulebased_*`, `oracle_patch_*` (canonical run only) | the SROIE Task-3 archive ships KIE entities only — no GT box / OCR streams — so the GT-OCR-rulebased baseline and oracle-patch diagnostic cannot be measured against the canonical 347-image test set | switch to `--paper-variant baseline` (500/63/63 internal split) where SROIE training-set GT boxes are available; both runs ship side-by-side via the bifurcated `template_baseline.tex` / `template_focus.tex` |
 
 Scoped-out keys appear in `metrics/unresolved_vars.json` after a
 successful run.  The corresponding LaTeX figures (e.g.

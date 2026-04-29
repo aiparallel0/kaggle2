@@ -126,7 +126,7 @@ def normalize_date(value: str) -> str:
        * Anything unparseable → collapsed-whitespace raw.
 
     The normaliser is applied SYMMETRICALLY to pred and GT in
-    :func:`models.pipeline_eval._nt`, so canonicalising word and
+    :func:`models.eval_pipeline._nt`, so canonicalising word and
     numeric into the same representation eliminates per-format token-F1
     losses that were observed when GT used one convention and OCR
     produced another (e.g. GT ``"1 MAR 2018"`` vs pred ``"01/03/2018"``).
@@ -189,7 +189,7 @@ def normalize_company(value: str) -> str:
     trailing legal-registration suffix (``126926-H``, ``1248446 V``,
     ``(M)``) present on the OCR line but absent from SROIE GT does not
     cost a token-F1 point.  Applied symmetrically via :func:`_nt`
-    in :mod:`models.pipeline_eval`, so a GT that *does* carry a
+    in :mod:`models.eval_pipeline`, so a GT that *does* carry a
     suffix is stripped on both sides rather than one, keeping the
     comparison fair.
     """

@@ -1,7 +1,7 @@
 """Tests for the build-gate ``report.check_artefacts`` regression scanner.
 
 The historical false-positive these tests guard against: the ``\\figref``
-macro definition in ``report/template{,_basic,_advanced}.tex`` contains
+macro definition in ``report/template{,_baseline,_focus}.tex`` contains
 the literal string ``[figure absent]`` as its undefined-label fallback,
 which made the ``figure_absent_markers`` check fire on every successful
 build.  See the regression in the user log

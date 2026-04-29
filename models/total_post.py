@@ -8,7 +8,7 @@ Role: Fix 5 of the post-eval regression plan.  The learned assigner /
     but the SROIE GT for ``total`` is *just* the money token
     (``"115.00"``).  When TrOCR emits minor noise (e.g. drops a leading
     digit from the currency prefix — ``"TOTAL RM I15.00"``), the
-    legacy regex-strip in :func:`models.pipeline_assign.postprocess_value`
+    legacy regex-strip in :func:`models.focus_pipeline.postprocess_value`
     can silently pick the *wrong* sub-token or leak the currency prefix
     back through.  This module defines one function —
     :func:`extract_total_value` — that applies a strict, rightmost-anchored

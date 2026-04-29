@@ -3,10 +3,10 @@
 Project: kaggle2 — End-to-End vs. Pipeline Receipt KIE on SROIE.
 Article: "End-to-End vs. Pipeline Receipt KIE: DONUT Against
     YOLO+TrOCR+Attention on SROIE" (IEEE/ICDAR submission).
-Role: lightweight side-writer invoked from :mod:`models.pipeline_eval`.
+Role: lightweight side-writer invoked from :mod:`models.eval_pipeline`.
     For the first ``K=3`` successfully processed test receipts it
     captures the cross-attention tensor that
-    :class:`~models.attention_model.AttentionAssigner` already produces
+    :class:`~models.focus_attention.AttentionAssigner` already produces
     on the forward pass (no re-run, no extra gradients), together with
     the YOLO bounding boxes and the image path, and persists the triple
     as ``results/attention_samples.npz``.  The
@@ -14,7 +14,7 @@ Role: lightweight side-writer invoked from :mod:`models.pipeline_eval`.
     consumes this file to produce the per-receipt 4-query × N-line
     heatmap used in the paper (Fig.~\\ref{fig:attn_heatmap}).
 
-    Kept separate from :mod:`models.pipeline_eval` so the eval module
+    Kept separate from :mod:`models.eval_pipeline` so the eval module
     stays under the 166-LOC per-file cap: each side channel (metrics
     JSON, attention samples, future telemetry overlays) is added as a
     peer module rather than a growing pile of ``if sample_k_left > 0:``

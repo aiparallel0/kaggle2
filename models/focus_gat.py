@@ -1,7 +1,7 @@
 """P3 — Graph-Attention Network field assigner (opt-in alternative).
 
 Project: kaggle2 — End-to-End vs. Pipeline Receipt KIE on SROIE.
-Role: drop-in alternative to :func:`models.pipeline_assign._assign_learned_with_attn`
+Role: drop-in alternative to :func:`models.focus_pipeline._assign_learned_with_attn`
     that uses a ~120K-parameter pure-PyTorch scatter-softmax GAT over a
     kNN graph of OCR regions (k=6 by default, via ``torch.cdist+topk``
     on bbox centres).  Enabled when ``config.gat_enabled=True``; the

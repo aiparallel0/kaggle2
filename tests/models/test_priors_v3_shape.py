@@ -1,7 +1,7 @@
 """PR-C / S2 — priors_v3 shape (14 columns) pin.
 
 The V3 prior vector is 14-dimensional (V2 was 9-d, V1 was 6-d).
-``models.attention_priors.N_TEXT_PRIORS_V3`` must equal 14 and
+``models.focus_priors.N_TEXT_PRIORS_V3`` must equal 14 and
 :func:`text_priors_v3` must return that many features per region.
 """
 from __future__ import annotations

@@ -379,7 +379,7 @@ class ExpConfig:
     rag_enabled: bool = False
     rag_k: int = 3
     # P3 — Graph-attention field assigner (opt-in alternative to the
-    # MLP+cross-attn learned assigner in :mod:`models.pipeline_assign`).
+    # MLP+cross-attn learned assigner in :mod:`models.focus_pipeline`).
     gat_enabled: bool = False
     # P4 — Foundation-model ceiling arm.  Claude/GPT-4V zero-shot
     # inference; cached to ``foundation_cache_path`` (keyed by content
@@ -409,9 +409,9 @@ class ExpConfig:
     )
     canonical_sroie_hf_repo: str = "Metric-AI/icdar_sroie"
     canonical_sroie_hf_revision: str = "main"
-    # Two-variant paper bifurcation (see report/template.tex vs
-    # report/template_basic.tex).  ``advanced`` (default) is the headline
-    # 626-train + 347-test comparison; ``basic`` is the reduced-scope
+    # Two-variant paper bifurcation (see report/template_focus.tex vs
+    # report/template_baseline.tex).  ``focus`` (default) is the headline
+    # 626-train + 347-test comparison; ``baseline`` is the reduced-scope
     # 500/63/63 + GT-OCR baseline study.  CLI flag: --paper-variant.
     paper_variant: str = "focus"
     # v4 — LayoutLMv3 baseline.  Off by default so the headline run is
@@ -473,7 +473,7 @@ class ExpConfig:
     # ``[text, bbox, prior]`` tensors.
     fusion: Literal["sum", "concat"] = "sum"
     # PR-C / S0 — address-assembly scoring weights.  Promoted onto
-    # ``AssignerPolicy`` (see ``models/pipeline_assign.py``) so PR-E
+    # ``AssignerPolicy`` (see ``models/focus_pipeline.py``) so PR-E
     # sweeps can grid-search without editing source.  Defaults match
     # the values measured on SROIE (median 3 lines, IQR 2-5; postcode
     # tail bonus 0.05; money-token-inside penalty 0.10).

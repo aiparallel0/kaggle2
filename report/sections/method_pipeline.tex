@@ -17,7 +17,7 @@ Detection output: a list of $(x_1,y_1,x_2,y_2)$ boxes in pixel space.
 
 \textbf{Stage 2 --- Crop OCR (TrOCR).}
 Each detected box is cropped and fed to
-TrOCR~\cite{li2023trocr} (\texttt{microsoft/trocr-base-printed}
+TrOCR~\cite{li2023trocr} (\texttt{microsoft/trocr-small-printed}
 fine-tuned for $\VAR{epochs_trocr}$ epochs on SROIE crops;
 config-enforced minimum is 5 epochs to escape the degenerate
 empty-output regime --- see Bug~6).  For each crop we retain both
@@ -39,7 +39,7 @@ streams before any attention:
       appending centre and size to the raw 4-d box) via \texttt{bbox\_proj}.
 \item \emph{Handcrafted text priors} (6-d: log-length, digit ratio,
       upper-case ratio, money/date/colon indicators; see
-      \texttt{models/attention\_priors.py}) via \texttt{prior\_proj}.
+      \texttt{models/focus\_priors.py}) via \texttt{prior\_proj}.
       These hybrid priors are cheap regex/statistical cues that the
       network may choose to ignore or lean on --- an explicit inductive
       bias exposed to gradient descent.
@@ -150,7 +150,7 @@ representations are pretrained on much larger corpora.
 \subsection{Graph-attention assigner (opt-in)}\label{sec:gat}
 
 As an alternative to the full transformer assigner, we ship a pure-
-torch graph-attention variant (\texttt{models/gat\_assigner.py}) that
+torch graph-attention variant (\texttt{models/focus\_gat.py}) that
 operates on a $k$-nearest-neighbour graph over YOLO box centres
 ($k$\,=\,6, undirected).  Each node carries the concatenation of
 the TrOCR text embedding, its bounding-box coordinates, and the

@@ -35,7 +35,7 @@ from models.rule_regex import (
 # PR-C / S2 — Bahasa-aware total / subtotal / distractor patterns
 # co-located with the other regex constants so the consensus refiner
 # can pick up the priors_v3 keyword set without re-importing from
-# attention_priors.
+# focus_priors.
 _TOTAL_KW = re.compile(
     r"\b(grand\s*total|jumlah\s*besar|total)\b", re.IGNORECASE,
 )

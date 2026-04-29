@@ -159,9 +159,9 @@ def load_config(path: str, defaults: dict[str, Any] | None = None) -> ExpConfig:
     #   * ``report/template.tex``           — generic baseline (current
     #     default content); used as the fallback when no variant-
     #     specific sibling exists.
-    #   * ``report/template_basic.tex``     — explicit basic variant
+    #   * ``report/template_baseline.tex``  — explicit baseline variant
     #     (500/63/63 internal split, three arms incl. GT-OCR baseline).
-    #   * ``report/template_advanced.tex``  — explicit advanced variant
+    #   * ``report/template_focus.tex``     — explicit focus variant
     #     (626-train + 347-canonical-test, DONUT vs YOLO+TrOCR+Attention,
     #     no GT-OCR arm; competitors table).
     # Logic: if ``template_<paper_variant>.tex`` sits next to

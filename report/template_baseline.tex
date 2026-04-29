@@ -1,6 +1,6 @@
-% IEEE conference paper template — kaggle2 BASIC variant.
+% IEEE conference paper template — kaggle2 BASELINE variant.
 %
-% Variant: BASIC (opt-in via ``--paper-variant basic``).
+% Variant: BASELINE (opt-in via ``--paper-variant baseline``).
 % Evaluates three arms on the 500/63/63 internal split drawn from the
 % 626 official ICDAR-2019 SROIE training receipts:
 %   1. DONUT (end-to-end seq2seq, $\approx$200\,M params).
@@ -15,7 +15,7 @@
 %
 % For the canonical 626-train + 347-test leaderboard-comparable
 % comparison (DONUT vs YOLO+TrOCR+Assigner; no GT-OCR baseline because
-% Task-3 ships entities only) see ``template_advanced.tex``.
+% Task-3 ships entities only) see ``template_focus.tex``.
 \documentclass[conference]{IEEEtran}
 \usepackage{cite}
 \usepackage{amsmath,amssymb}
@@ -42,9 +42,9 @@
   % loaded) auto-switches to text mode in both math and text contexts.
   \text{{\color{BrickRed}\textbf{\texttt{?}}\textsubscript{\tiny\texttt{#1}}}}%
 }
-% Basic variant evaluates on the 500/63/63 internal split which DOES
+% Baseline variant evaluates on the 500/63/63 internal split which DOES
 % have GT-OCR streams, so the rulebased / gtocr_rulebased rows are
-% emitted unchanged.  See template_advanced.tex for the row-elision
+% emitted unchanged.  See template_focus.tex for the row-elision
 % sibling definition.
 \newcommand{\IfRulebased}[1]{#1}
 % \IfAdvanced{<advanced-only content>} — complement of \IfRulebased.

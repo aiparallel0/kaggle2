@@ -4,7 +4,7 @@ Project: kaggle2 — End-to-End vs. Pipeline Receipt KIE on SROIE.
 Article: "End-to-End vs. Pipeline Receipt KIE: DONUT Against
     YOLO+TrOCR+Attention on SROIE" (IEEE/ICDAR submission).
 Role: re-exports AttentionAssigner and text_priors so callers need not
-    import from attention_model/attention_priors directly.  The private
+    import from focus_attention/focus_priors directly.  The private
     _load_assigner handles legacy checkpoint formats.
 """
 from __future__ import annotations
