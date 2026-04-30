@@ -74,7 +74,28 @@ SEEDS="${KAGGLE2_SEEDS:-42 1 2 3 5}"
 DATASETS="${KAGGLE2_DATASETS:-canonical}"
 SKIP_DONUT="${KAGGLE2_SKIP_DONUT:-0}"
 
-# Default GPU partitioning for an 8-GPU box.  Overridable via env.
+# Phase-1 GPU layout.  Two modes:
+#   sequential (default) — components run ONE AT A TIME but each spans
+#     ALL GPUs, so per-component utilisation is ~100% and the consumer-
+#     5090-without-NVLink penalty is amortised over fewer DDP partners.
+#     Best for non-NVLink consumer GPUs (RTX 4090 / 5090) where PCIe
+#     all-reduce bandwidth is the bottleneck — partitioning into 4+2+1
+#     subsets leaves silicon idle and per-rank bandwidth poor.
+#
+#   parallel — DONUT / TrOCR / YOLO run AS CONCURRENT PROCESSES on
+#     disjoint GPU subsets.  Best for NVLinked H100 SXM5 where
+#     intra-instance bandwidth is plentiful and the 4-rank DDP partition
+#     already saturates a single component's compute.
+#
+# Switch via env: KAGGLE2_PHASE1_MODE=sequential | parallel.  Default
+# is `sequential` because the user-reported live load on 8x 5090 was
+# ~38% in parallel mode (4 GPUs at ~75% during DONUT, 4 idle).
+PHASE1_MODE="${KAGGLE2_PHASE1_MODE:-sequential}"
+
+# Build the all-GPUs string (0,1,2,...,N-1) for sequential mode.
+ALL_GPUS=$(seq -s, 0 $((N_GPU - 1)))
+
+# Default GPU partitioning for parallel mode (8-GPU box).
 DONUT_GPUS="${KAGGLE2_DONUT_GPUS:-0,1,2,3}"
 TROCR_GPUS="${KAGGLE2_TROCR_GPUS:-4,5}"
 YOLO_GPU="${KAGGLE2_YOLO_GPU:-6}"
@@ -83,10 +104,11 @@ SWEEP_ID="${KAGGLE2_SWEEP_ID:-sweep-$(date -u +%Y%m%dT%H%M%SZ)}"
 LOG_DIR="logs/${SWEEP_ID}"
 mkdir -p "${LOG_DIR}"
 
-log "Sweep id: ${SWEEP_ID}"
-log "Seeds:    ${SEEDS}"
-log "Datasets: ${DATASETS}"
-log "Logs:     ${LOG_DIR}/"
+log "Sweep id:   ${SWEEP_ID}"
+log "Seeds:      ${SEEDS}"
+log "Datasets:   ${DATASETS}"
+log "Phase1:     ${PHASE1_MODE} mode (all=${ALL_GPUS})"
+log "Logs:       ${LOG_DIR}/"
 
 # Partial config overlays (configs/canonical_5seed.json etc.) ship only
 # the keys they override and rely on a downstream consumer to fold them
@@ -131,12 +153,81 @@ dump_log_on_fail() {
 }
 
 # ---------------------------------------------------------------------------
-# Phase 1 — backbone components run AS PARALLEL PROCESSES, each pinned to
-# its allotted GPUs via CUDA_VISIBLE_DEVICES.  HF Trainer (DONUT, TrOCR)
-# auto-detects DDP from torchrun's local_rank env vars; YOLOv8's
-# `device=[...]` arg works natively, so no training-code changes are
-# needed for DDP — just process-level fan-out.
+# Phase 1 — backbone training.  Two execution modes:
+#
+#   sequential (default): DONUT, TrOCR, YOLO run ONE AT A TIME, each
+#     spanning ALL detected GPUs.  Per-component utilisation ~100%; total
+#     wall clock is the SUM of components.  Best for consumer GPUs without
+#     NVLink (RTX 4090 / 5090) where partitioning leaves silicon idle.
+#
+#   parallel: DONUT / TrOCR / YOLO run AS CONCURRENT PROCESSES on disjoint
+#     GPU subsets.  Total wall clock is the MAX of components.  Best for
+#     NVLinked H100 SXM5 where intra-instance bandwidth makes a 4-rank
+#     DDP partition already saturate compute on a single component.
+#
+# HF Trainer (DONUT, TrOCR) auto-detects DDP from torchrun's local_rank
+# env vars; YOLOv8's `device=[...]` arg works natively.  No training-code
+# changes are needed for DDP — just process-level fan-out.
 # ---------------------------------------------------------------------------
+
+# Run DONUT pinned to the named GPU set.  Returns non-zero on failure;
+# the caller is expected to dump_log_on_fail and return 1.
+run_donut() {
+    local BACKBONE_RUN_ID="$1" CONFIG_FILE="$2" GPUS="$3" LOGFILE="$4"
+    if [ "${SKIP_DONUT}" = "1" ]; then
+        log "  DONUT skipped (KAGGLE2_SKIP_DONUT=1)"
+        return 0
+    fi
+    local NPROC
+    NPROC=$(echo "${GPUS}" | tr ',' ' ' | wc -w)
+    log "  DONUT  (DDP nproc=${NPROC}) on GPUs ${GPUS}"
+    if [ "${NPROC}" -gt 1 ]; then
+        CUDA_VISIBLE_DEVICES="${GPUS}" \
+        KAGGLE2_RUN_ID="${BACKBONE_RUN_ID}" \
+        torchrun --standalone --nnodes=1 --nproc_per_node="${NPROC}" \
+            main.py --stage train_donut --config "${CONFIG_FILE}" \
+            > "${LOGFILE}" 2>&1
+    else
+        CUDA_VISIBLE_DEVICES="${GPUS}" \
+        KAGGLE2_RUN_ID="${BACKBONE_RUN_ID}" \
+        python main.py --stage train_donut --config "${CONFIG_FILE}" \
+            > "${LOGFILE}" 2>&1
+    fi
+}
+
+# Run TrOCR pinned to the named GPU set.  Distinct master_port from DONUT
+# so the two can co-exist when phase mode is `parallel`.
+run_trocr() {
+    local BACKBONE_RUN_ID="$1" CONFIG_FILE="$2" GPUS="$3" LOGFILE="$4"
+    local NPROC
+    NPROC=$(echo "${GPUS}" | tr ',' ' ' | wc -w)
+    log "  TrOCR  (DDP nproc=${NPROC}) on GPUs ${GPUS}"
+    if [ "${NPROC}" -gt 1 ]; then
+        CUDA_VISIBLE_DEVICES="${GPUS}" \
+        KAGGLE2_RUN_ID="${BACKBONE_RUN_ID}" \
+        torchrun --standalone --nnodes=1 --nproc_per_node="${NPROC}" \
+            --master_port=29501 \
+            main.py --stage train_trocr --config "${CONFIG_FILE}" \
+            > "${LOGFILE}" 2>&1
+    else
+        CUDA_VISIBLE_DEVICES="${GPUS}" \
+        KAGGLE2_RUN_ID="${BACKBONE_RUN_ID}" \
+        python main.py --stage train_trocr --config "${CONFIG_FILE}" \
+            > "${LOGFILE}" 2>&1
+    fi
+}
+
+# YOLO is small (~3 M params) and DDP all-reduce overhead exceeds the
+# compute benefit beyond ~2 GPUs.  Run on a single GPU and let the
+# others (in sequential mode) sit idle for these ~2 minutes.
+run_yolo() {
+    local BACKBONE_RUN_ID="$1" CONFIG_FILE="$2" GPU="$3" LOGFILE="$4"
+    log "  YOLO   (single) on GPU ${GPU}"
+    CUDA_VISIBLE_DEVICES="${GPU}" \
+    KAGGLE2_RUN_ID="${BACKBONE_RUN_ID}" \
+    python main.py --stage train_yolo --config "${CONFIG_FILE}" \
+        > "${LOGFILE}" 2>&1
+}
 
 phase1_one_dataset() {
     local DATASET="$1"
@@ -153,92 +244,80 @@ phase1_one_dataset() {
         return 1
     fi
 
-    log "Phase 1 (${DATASET}): launching parallel components"
-    local DONUT_NPROC TROCR_NPROC
-    DONUT_NPROC=$(echo "${DONUT_GPUS}" | tr ',' ' ' | wc -w)
-    TROCR_NPROC=$(echo "${TROCR_GPUS}" | tr ',' ' ' | wc -w)
-
-    # ---- DONUT (DDP, GPUs 0-3 by default) --------------------------------
-    if [ "${SKIP_DONUT}" != "1" ]; then
-        log "  DONUT  (DDP nproc=${DONUT_NPROC}) on GPUs ${DONUT_GPUS}"
-        if [ "${DONUT_NPROC}" -gt 1 ]; then
-            (
-                CUDA_VISIBLE_DEVICES="${DONUT_GPUS}" \
-                KAGGLE2_RUN_ID="${BACKBONE_RUN_ID}" \
-                torchrun --standalone --nnodes=1 --nproc_per_node="${DONUT_NPROC}" \
-                    main.py --stage train_donut --config "${CONFIG_FILE}"
-            ) > "${LOG_DIR}/${DATASET}-donut.log" 2>&1 &
-        else
-            (
-                CUDA_VISIBLE_DEVICES="${DONUT_GPUS}" \
-                KAGGLE2_RUN_ID="${BACKBONE_RUN_ID}" \
-                python main.py --stage train_donut --config "${CONFIG_FILE}"
-            ) > "${LOG_DIR}/${DATASET}-donut.log" 2>&1 &
-        fi
-        DONUT_PID=$!
-    else
-        log "  DONUT skipped (KAGGLE2_SKIP_DONUT=1)"
-        DONUT_PID=""
-    fi
-
-    # ---- TrOCR (DDP, GPUs 4-5 by default) --------------------------------
-    log "  TrOCR  (DDP nproc=${TROCR_NPROC}) on GPUs ${TROCR_GPUS}"
-    if [ "${TROCR_NPROC}" -gt 1 ]; then
-        (
-            CUDA_VISIBLE_DEVICES="${TROCR_GPUS}" \
-            KAGGLE2_RUN_ID="${BACKBONE_RUN_ID}" \
-            torchrun --standalone --nnodes=1 --nproc_per_node="${TROCR_NPROC}" \
-                --master_port=29501 \
-                main.py --stage train_trocr --config "${CONFIG_FILE}"
-        ) > "${LOG_DIR}/${DATASET}-trocr.log" 2>&1 &
-    else
-        (
-            CUDA_VISIBLE_DEVICES="${TROCR_GPUS}" \
-            KAGGLE2_RUN_ID="${BACKBONE_RUN_ID}" \
-            python main.py --stage train_trocr --config "${CONFIG_FILE}"
-        ) > "${LOG_DIR}/${DATASET}-trocr.log" 2>&1 &
-    fi
-    TROCR_PID=$!
-
-    # ---- YOLO (single GPU 6 by default) ----------------------------------
-    log "  YOLO   (single) on GPU ${YOLO_GPU}"
-    (
-        CUDA_VISIBLE_DEVICES="${YOLO_GPU}" \
-        KAGGLE2_RUN_ID="${BACKBONE_RUN_ID}" \
-        python main.py --stage train_yolo --config "${CONFIG_FILE}"
-    ) > "${LOG_DIR}/${DATASET}-yolo.log" 2>&1 &
-    YOLO_PID=$!
-
-    # ---- Wait for all three components -----------------------------------
-    log "  waiting for components: DONUT=${DONUT_PID:-skipped} TrOCR=${TROCR_PID} YOLO=${YOLO_PID}"
-    local FAILED=0
-    if [ -n "${DONUT_PID}" ]; then
-        if ! wait "${DONUT_PID}"; then
+    if [ "${PHASE1_MODE}" = "sequential" ]; then
+        # ---- Sequential mode: each component spans ALL GPUs ----
+        log "Phase 1 (${DATASET}): SEQUENTIAL mode — each component on all ${N_GPU} GPUs"
+        if ! run_donut "${BACKBONE_RUN_ID}" "${CONFIG_FILE}" "${ALL_GPUS}" \
+                "${LOG_DIR}/${DATASET}-donut.log"; then
             log "  ERROR: DONUT failed"
             dump_log_on_fail "${DATASET}-donut" "${LOG_DIR}/${DATASET}-donut.log"
+            return 1
+        fi
+        if ! run_trocr "${BACKBONE_RUN_ID}" "${CONFIG_FILE}" "${ALL_GPUS}" \
+                "${LOG_DIR}/${DATASET}-trocr.log"; then
+            log "  ERROR: TrOCR failed"
+            dump_log_on_fail "${DATASET}-trocr" "${LOG_DIR}/${DATASET}-trocr.log"
+            return 1
+        fi
+        # YOLO uses just GPU 0; the others would idle anyway.
+        if ! run_yolo "${BACKBONE_RUN_ID}" "${CONFIG_FILE}" "0" \
+                "${LOG_DIR}/${DATASET}-yolo.log"; then
+            log "  ERROR: YOLO failed"
+            dump_log_on_fail "${DATASET}-yolo" "${LOG_DIR}/${DATASET}-yolo.log"
+            return 1
+        fi
+    else
+        # ---- Parallel mode: components run concurrently on disjoint GPUs ----
+        log "Phase 1 (${DATASET}): PARALLEL mode — components fan out on disjoint GPUs"
+        log "  DONUT_GPUS=${DONUT_GPUS}  TROCR_GPUS=${TROCR_GPUS}  YOLO_GPU=${YOLO_GPU}"
+        local DONUT_PID="" TROCR_PID="" YOLO_PID=""
+        if [ "${SKIP_DONUT}" != "1" ]; then
+            run_donut "${BACKBONE_RUN_ID}" "${CONFIG_FILE}" "${DONUT_GPUS}" \
+                "${LOG_DIR}/${DATASET}-donut.log" &
+            DONUT_PID=$!
+        else
+            log "  DONUT skipped (KAGGLE2_SKIP_DONUT=1)"
+        fi
+        run_trocr "${BACKBONE_RUN_ID}" "${CONFIG_FILE}" "${TROCR_GPUS}" \
+            "${LOG_DIR}/${DATASET}-trocr.log" &
+        TROCR_PID=$!
+        run_yolo "${BACKBONE_RUN_ID}" "${CONFIG_FILE}" "${YOLO_GPU}" \
+            "${LOG_DIR}/${DATASET}-yolo.log" &
+        YOLO_PID=$!
+        log "  waiting for: DONUT=${DONUT_PID:-skipped} TrOCR=${TROCR_PID} YOLO=${YOLO_PID}"
+        local FAILED=0
+        if [ -n "${DONUT_PID}" ]; then
+            if ! wait "${DONUT_PID}"; then
+                log "  ERROR: DONUT failed"
+                dump_log_on_fail "${DATASET}-donut" "${LOG_DIR}/${DATASET}-donut.log"
+                FAILED=1
+            fi
+        fi
+        if ! wait "${TROCR_PID}"; then
+            log "  ERROR: TrOCR failed"
+            dump_log_on_fail "${DATASET}-trocr" "${LOG_DIR}/${DATASET}-trocr.log"
             FAILED=1
         fi
-    fi
-    if ! wait "${TROCR_PID}"; then
-        log "  ERROR: TrOCR failed"
-        dump_log_on_fail "${DATASET}-trocr" "${LOG_DIR}/${DATASET}-trocr.log"
-        FAILED=1
-    fi
-    if ! wait "${YOLO_PID}"; then
-        log "  ERROR: YOLO failed"
-        dump_log_on_fail "${DATASET}-yolo" "${LOG_DIR}/${DATASET}-yolo.log"
-        FAILED=1
-    fi
-    if [ "${FAILED}" -ne 0 ]; then
-        log "Phase 1 (${DATASET}) FAILED; aborting sweep."
-        return 1
+        if ! wait "${YOLO_PID}"; then
+            log "  ERROR: YOLO failed"
+            dump_log_on_fail "${DATASET}-yolo" "${LOG_DIR}/${DATASET}-yolo.log"
+            FAILED=1
+        fi
+        if [ "${FAILED}" -ne 0 ]; then
+            log "Phase 1 (${DATASET}) FAILED; aborting sweep."
+            return 1
+        fi
     fi
 
     # ---- Manifest -------------------------------------------------------
     log "Phase 1 (${DATASET}): components converged → writing backbone manifest"
-    KAGGLE2_RUN_ID="${BACKBONE_RUN_ID}" \
-        python main.py --stage write_backbone_manifest --config "${CONFIG_FILE}" \
-        > "${LOG_DIR}/${DATASET}-manifest.log" 2>&1
+    if ! KAGGLE2_RUN_ID="${BACKBONE_RUN_ID}" \
+            python main.py --stage write_backbone_manifest --config "${CONFIG_FILE}" \
+            > "${LOG_DIR}/${DATASET}-manifest.log" 2>&1; then
+        log "  ERROR: manifest write failed"
+        dump_log_on_fail "${DATASET}-manifest" "${LOG_DIR}/${DATASET}-manifest.log"
+        return 1
+    fi
     log "Phase 1 (${DATASET}): backbone complete → runs/${BACKBONE_RUN_ID}/"
 }
 

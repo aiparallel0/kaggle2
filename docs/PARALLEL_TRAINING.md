@@ -115,29 +115,56 @@ The branch `claude/improve-f1-scores-RYvNY` ships every patch in
 `main` the recipe collapses to `git clone https://...` without
 the `-b` flag.  Until then the explicit branch flag is required.
 
-How the time is spent on 8× RTX 5090 (measured, PR #133):
+### Two phase-1 execution modes
 
-| Phase | Wall clock | What runs |
+The swarm picks between **sequential** (default) and **parallel** mode
+via `KAGGLE2_PHASE1_MODE`.  The right choice depends on whether your
+GPU class has NVLink:
+
+| Mode | Description | Best for |
 | --- | --- | --- |
-| 1a — DONUT (DDP, GPUs 0-3) | **~24 min** | seq2seq encoder + decoder fine-tune |
-| 1b — TrOCR (DDP, GPUs 4-5) | ~6-8 min | concurrent with 1a |
-| 1c — YOLO (single, GPU 6) | ~2 min | concurrent with 1a; idle after |
-| **1 ⇒ wall = max** | **~24 min** | DONUT dominates |
-| 2 — 5 assigner trainings (1 per GPU) | ~3 min | 5 GPUs busy, 3 idle |
-| 3 — 5 evals (parallel) | ~1 min | |
-| 4 — 5 paper renders (sequential, ≤30 s each) | ~2 min | TeX log interleave-safe |
-| **Total** | **~30 min** | DONUT-bound |
+| **sequential** (default) | DONUT → TrOCR → YOLO run *one at a time*; each component spans **all** detected GPUs | Consumer silicon (RTX 4090 / 5090) without NVLink |
+| **parallel** | DONUT / TrOCR / YOLO run **concurrently** on disjoint GPU subsets | NVLinked H100 SXM5 / A100 SXM4 with high all-reduce bandwidth |
 
-> **Honest correction.** An earlier draft of this doc claimed
-> ``~12 min total`` on 8× RTX 5090.  The first live run on PR #133
-> measured DONUT at 24.35 min on 4× RTX 5090 (DDP, batch 4, image
-> 1280×960, 35 epochs, gradient checkpointing on).  RTX 5090 is
-> consumer silicon without NVLink, so DDP all-reduce is PCIe-bound
-> and doesn't scale linearly the way NVLinked H100 SXM5 does.  The
-> cited 6-min DONUT wall-clock holds on 8× H100 SXM5 with NVLink and
-> larger global batch; it does not hold on 5090.  Use ``KAGGLE2_SKIP_DONUT=1``
-> for FOCUS-only sweeps (~7 min wall clock) or upgrade GPU class
-> for the full DONUT comparison.
+#### Why sequential is the new default
+
+The first live run on 8× RTX 5090 (PR #133) measured DONUT at
+24.35 min on 4 GPUs in **parallel** mode.  At that time only 4 of 8
+GPUs were running DONUT; the other 4 were running TrOCR (~6 min) or
+YOLO (~2 min) and then sat **idle for ~16 min** until DONUT finished.
+The vast.ai dashboard showed an average GPU load of **~38%** —
+i.e. half the silicon was wasted.
+
+Sequential mode lets DONUT span all 8 GPUs.  Even with consumer-PCIe
+DDP scaling (which is sub-linear above 4 ranks on 5090), DONUT
+should drop to ~14–18 min on 8 GPUs vs 24 min on 4.  Average
+utilisation rises to ~70–80% because every GPU is doing useful
+work during every phase.
+
+#### Wall-clock budgets (estimated)
+
+| Mode | DONUT | TrOCR | YOLO | Phase 1 total | Phase 2 (5 seeds) | **Sweep total** |
+| --- | --- | --- | --- | --- | --- | --- |
+| sequential, 8× RTX 5090 | ~14–18 min on 8 GPUs | ~3–5 min on 8 GPUs | ~2 min on 1 GPU | **~22 min** (sum) | ~3 min | **~28–30 min** |
+| parallel, 8× RTX 5090 | ~24 min on 4 GPUs | ~6–8 min on 2 GPUs | ~2 min on 1 GPU | **~24 min** (max) | ~3 min | **~30 min** |
+| parallel, 8× H100 SXM5 (NVLink) | ~6 min on 4 GPUs | ~5 min on 2 GPUs | ~2 min on 1 GPU | **~6 min** (max) | ~2 min | **~10 min** |
+| sequential, 8× H100 SXM5 (NVLink) | ~3 min on 8 GPUs | ~2 min on 8 GPUs | ~1 min on 1 GPU | **~6 min** (sum) | ~2 min | **~10 min** |
+
+The sequential and parallel rows produce **the same per-seed
+artefacts**.  Pick whichever finishes faster on your GPU class.
+
+#### Switching modes
+
+```sh
+# Default — best for consumer GPUs:
+bash scripts/single_instance_swarm.sh
+
+# Force parallel — best for NVLinked H100/A100 SXM:
+KAGGLE2_PHASE1_MODE=parallel bash scripts/single_instance_swarm.sh
+
+# FOCUS-only sweep (no DONUT) — fastest path on any GPU class:
+KAGGLE2_SKIP_DONUT=1 bash scripts/single_instance_swarm.sh
+```
 
 GPU partitioning is overridable; defaults assume 8 GPUs.
 
