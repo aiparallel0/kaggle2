@@ -13,13 +13,15 @@ Role: single source of truth for the symmetric ``(preds, receipts)``
     gold, so per-field precision / recall / bootstrap CI collapsed
     while headline F1 stayed correct (PR #110 follow-up).
 
-Two maps are exposed so the DONUT and pipeline arms keep their
-existing — and slightly different — address normalisation: the
-pipeline composes the legacy postcode-repair pass with the FOCUS
-punctuation/casefold pass (Bug 18); the DONUT arm uses the legacy
-pass alone, matching the headline F1 reported in PR #110.  The
-remaining three fields (``total`` / ``date`` / ``company``) are
-identical across arms.
+Audit-fix (research integrity): both DONUT and pipeline arms now use
+**the same** address/company normaliser (the FOCUS punctuation +
+casefold pass, applied symmetrically to pred and GT).  Earlier the
+DONUT arm used a strict-only normaliser while the pipeline arm got
+the punctuation-tolerant pass — that asymmetry could inflate
+pipeline F1 by ~0.01–0.03 absolute on receipts where SROIE GT and
+pred differ only in trailing punctuation (``"SDN BHD."`` vs ``"SDN
+BHD"``).  Routing both arms through the same map is required for an
+honest DONUT-vs-pipeline ΔF1 comparison.
 """
 from __future__ import annotations
 
@@ -66,12 +68,17 @@ FIELD_NORMALISERS_PIPELINE: dict[str, Callable[[str], str]] = {
     "address": _normalize_address_pipeline,
 }
 
-FIELD_NORMALISERS_DONUT: dict[str, Callable[[str], str]] = {
-    "total": normalize_total,
-    "date": normalize_date,
-    "company": normalize_company,
-    "address": normalize_address,
-}
+# Audit-fix: DONUT arm now shares the pipeline's address/company
+# normalisers so pred-vs-GT punctuation tolerance is the same on both
+# sides of the headline ΔF1 comparison.  ``total`` and ``date`` were
+# already shared.  This drops the pre-fix asymmetry that gave the
+# pipeline a free ~0.01–0.03 F1 head-start on receipts where SROIE GT
+# trailing punctuation differed from OCR.  Applied symmetrically to
+# pred and GT via :func:`normalize_bundle` so a punctuation-tolerant
+# normaliser is *not* a leak — it canonicalises both sides equally.
+FIELD_NORMALISERS_DONUT: dict[str, Callable[[str], str]] = dict(
+    FIELD_NORMALISERS_PIPELINE,
+)
 
 
 def _identity(s: str) -> str:

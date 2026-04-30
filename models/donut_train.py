@@ -215,10 +215,16 @@ def train_donut(config: ExpConfig, data: DataSplit) -> str:
     _persist_generation_config(
         model, out_dir, start_id, eos_id, proc.tokenizer.pad_token_id,
     )
-    trainer.save_model(out_dir)
-    proc.save_pretrained(out_dir)
-    model.generation_config.save_pretrained(out_dir)  # belt-and-braces
-    Path(config.output_dir).mkdir(parents=True, exist_ok=True)
-    with open(os.path.join(config.output_dir, "donut_path.json"), "w") as f:
-        json.dump({"model_path": out_dir}, f)
+    # Under torchrun, ``trainer.save_model`` is rank-0-only by HF
+    # convention; gate the supplementary writes on rank 0 too so non-rank
+    # processes don't race the same paths.
+    from core.dist_util import barrier, is_rank_zero
+    if is_rank_zero():
+        trainer.save_model(out_dir)
+        proc.save_pretrained(out_dir)
+        model.generation_config.save_pretrained(out_dir)  # belt-and-braces
+        Path(config.output_dir).mkdir(parents=True, exist_ok=True)
+        with open(os.path.join(config.output_dir, "donut_path.json"), "w") as f:
+            json.dump({"model_path": out_dir}, f)
+    barrier()
     return out_dir

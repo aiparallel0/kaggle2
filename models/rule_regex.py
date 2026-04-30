@@ -22,8 +22,9 @@ def repair_money_ocr(s: str) -> str:
 
 _DATE_RE, _MONEY_RE = DATE_RE, MONEY_RE
 _TOTAL_NEGATIVE = re.compile(
-    r"\b(sub\s*-?\s*total|subtotal|sub|round(?:ing|ed)?|change|cash\s+tendered|tendered|"
-    r"balance|credit|debit|card|visa|master(?:card)?|paid|payment|kembalian|discount|"
+    r"\b(sub\s*-?\s*total|subtotal|sub|round(?:ing|ed)?|change|"
+    r"cash(?:\s+tendered)?|tendered|tunai|kembalian|kembali|baki|"
+    r"balance|credit|debit|card|visa|master(?:card)?|paid|payment|discount|"
     r"service|charge|tax\s+(?:only|\d)|gst\s+\d|sst\s+\d|qty|item|no\.)\b", re.IGNORECASE)
 _TOTAL_STRONG = re.compile(
     r"\b(grand\s*total|amount\s*(?:due|payable)|nett?\s*total|total\s*(?:due|amt|amount))\b", re.IGNORECASE)

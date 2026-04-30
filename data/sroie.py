@@ -47,46 +47,52 @@ def download_sroie(config: ExpConfig) -> Path:
         return cache
     cache.mkdir(parents=True, exist_ok=True)
     tmp = cache / "_git"
+    # try/finally: _git/ MUST be removed even if clone or extraction is
+    # interrupted. A stray _git/ causes "Duplicate module named train" in
+    # mypy --strict because the upstream repo ships task1/SSD Method/ and
+    # task1/CTPN Method/ each with their own train.py.
     try:
-        subprocess.run(
-            ["git", "clone", "--depth=1", config.sroie_url, str(tmp)],
-            check=True, capture_output=True,
-        )
-    except subprocess.CalledProcessError as exc:
-        raise DataError(f"SROIE clone failed: {exc.stderr.decode()}") from exc
+        try:
+            subprocess.run(
+                ["git", "clone", "--depth=1", config.sroie_url, str(tmp)],
+                check=True, capture_output=True,
+            )
+        except subprocess.CalledProcessError as exc:
+            raise DataError(f"SROIE clone failed: {exc.stderr.decode()}") from exc
 
-    # Hierarchical layout: data/{train,test}/{img,box,entities}.
-    found_hierarchical = False
-    for split in ("train", "test"):
-        for name in ("img", "box", "entities"):
-            src = tmp / "data" / split / name
-            if not src.exists():
-                continue
-            found_hierarchical = True
-            dst = cache / split / name
-            dst.mkdir(parents=True, exist_ok=True)
-            for f in src.iterdir():
-                shutil.copy(f, dst / f.name)
+        # Hierarchical layout: data/{train,test}/{img,box,entities}.
+        found_hierarchical = False
+        for split in ("train", "test"):
+            for name in ("img", "box", "entities"):
+                src = tmp / "data" / split / name
+                if not src.exists():
+                    continue
+                found_hierarchical = True
+                dst = cache / split / name
+                dst.mkdir(parents=True, exist_ok=True)
+                for f in src.iterdir():
+                    shutil.copy(f, dst / f.name)
 
-    # Flat layout (zzzDavid/ICDAR-2019-SROIE): data/{img,box,key}. All files
-    # go under train/; split_sroie() partitions them below.
-    if not found_hierarchical:
-        _FLAT_MAP: dict[str, str] = {"img": "img", "box": "box", "key": "entities"}
-        for src_name, dst_name in _FLAT_MAP.items():
-            src = tmp / "data" / src_name
-            if not src.exists():
-                continue
-            dst = cache / "train" / dst_name
-            dst.mkdir(parents=True, exist_ok=True)
-            for f in src.iterdir():
-                # _parse_box_file expects .txt; the repo ships .csv
-                out_name = (
-                    f.with_suffix(".txt").name
-                    if dst_name == "box" and f.suffix == ".csv"
-                    else f.name
-                )
-                shutil.copy(f, dst / out_name)
-    shutil.rmtree(tmp, ignore_errors=True)
+        # Flat layout (zzzDavid/ICDAR-2019-SROIE): data/{img,box,key}. All
+        # files go under train/; split_sroie() partitions them below.
+        if not found_hierarchical:
+            _FLAT_MAP: dict[str, str] = {"img": "img", "box": "box", "key": "entities"}
+            for src_name, dst_name in _FLAT_MAP.items():
+                src = tmp / "data" / src_name
+                if not src.exists():
+                    continue
+                dst = cache / "train" / dst_name
+                dst.mkdir(parents=True, exist_ok=True)
+                for f in src.iterdir():
+                    # _parse_box_file expects .txt; the repo ships .csv
+                    out_name = (
+                        f.with_suffix(".txt").name
+                        if dst_name == "box" and f.suffix == ".csv"
+                        else f.name
+                    )
+                    shutil.copy(f, dst / out_name)
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
     return cache
 
 

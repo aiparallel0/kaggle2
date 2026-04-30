@@ -26,7 +26,10 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="kaggle2 KIE pipeline")
     parser.add_argument(
         "--stage",
-        choices=["train", "eval", "eval_rule_gtocr",
+        choices=["train", "train_backbone", "train_assigner",
+                 "train_donut", "train_yolo", "train_trocr",
+                 "prepare_data", "write_backbone_manifest",
+                 "eval", "eval_rule_gtocr",
                  "ablate_bugs", "paper", "all"],
         default="all",
     )
@@ -152,6 +155,27 @@ def main() -> None:
     seed_everything(seeds[0])
     if args.stage in ("train", "all"):
         stage_train(config)
+    if args.stage == "train_backbone":
+        from stages.train_decomposed import stage_train_backbone
+        stage_train_backbone(config)
+    if args.stage == "train_assigner":
+        from stages.train_decomposed import stage_train_assigner_only
+        stage_train_assigner_only(config)
+    if args.stage == "prepare_data":
+        from stages.train_decomposed import stage_prepare_data
+        stage_prepare_data(config)
+    if args.stage == "train_donut":
+        from stages.train_decomposed import stage_train_donut
+        stage_train_donut(config)
+    if args.stage == "train_yolo":
+        from stages.train_decomposed import stage_train_yolo
+        stage_train_yolo(config)
+    if args.stage == "train_trocr":
+        from stages.train_decomposed import stage_train_trocr
+        stage_train_trocr(config)
+    if args.stage == "write_backbone_manifest":
+        from stages.train_decomposed import stage_write_backbone_manifest
+        stage_write_backbone_manifest(config)
     if args.stage in ("eval", "all"):
         stage_eval(config, seeds=seeds, oracle_address=args.oracle_address)
     if args.stage == "eval_rule_gtocr":

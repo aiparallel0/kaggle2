@@ -49,6 +49,14 @@ from models.rule_regex import (
     _TOTAL_WEAK,
     repair_money_ocr,
 )
+from models.total_arithmetic import (
+    _classify as _classify_money_lines,
+)
+from models.total_arithmetic import (
+    _identity_cash_change,
+    _identity_sub_tax,
+    total_arithmetic_consensus,
+)
 
 _CURRENCY_PREFIX_RE = re.compile(r"^(RM|USD|SGD|MYR|\$)\s*", re.IGNORECASE)
 # Currency-prefix cue on the SAME line as the money value — a weak positive
@@ -62,6 +70,12 @@ _CURRENCY_CUE_RE = re.compile(r"\b(?:RM|MYR|\$)\b", re.IGNORECASE)
 # line scores ~4 (``_TOTAL_STRONG`` match) — a 2-point margin preserves
 # that correction while leaving weak-evidence cases to the assigner.
 _TOTAL_OVERRIDE_MARGIN = 2.0
+# Plausibility floor for a grand total — predictions parsing to a value
+# below this almost always indicate a wrong-line pick (a quantity, a
+# tax-rate cell, a stray decimal printed on the receipt).  When the
+# learned value is below this floor and a competing candidate parses
+# above it, the override margin collapses so the rule scorer wins.
+_TOTAL_MIN_PLAUSIBLE = 1.0
 
 # --- Strategy (L) — calibrated additive scoring -----------------------------
 # Weight that multiplies ``log(attn+ε)`` when the rule-based money scorer
@@ -153,9 +167,24 @@ def _attn_rank(row: list[float]) -> dict[int, int]:
     return {i: r for r, i in enumerate(order)}
 
 
+def _money_value_at(text: str) -> float | None:
+    """Parse the rightmost money on ``text`` to a float; ``None`` on parse fail."""
+    from models.rule_regex import MONEY_RE
+    matches = list(MONEY_RE.finditer(text or ""))
+    if not matches:
+        return None
+    raw = matches[-1].group(0).strip()
+    raw = re.sub(r"^(RM|USD|SGD|MYR|\$)\s*", "", raw, flags=re.IGNORECASE).strip()
+    try:
+        return float(raw.replace(",", ""))
+    except ValueError:
+        return None
+
+
 def _score_money(
     i: int, texts: list[str], rank: dict[int, int], money_idxs: list[int],
     attn_row: list[float] | None = None,
+    arithmetic_targets: list[float] | None = None,
 ) -> float:
     """Higher = more likely the real TOTAL line.
 
@@ -189,10 +218,21 @@ def _score_money(
         s += 4.0
     elif _TOTAL_WEAK.search(nbr) and not _SUBTOTAL_KW_RE.search(nbr):
         s += 2.5
-    if _SUBTOTAL_KW_RE.search(nbr):
+    # Same-line distractor keywords (CASH/CHANGE/SUBTOTAL/TAX on the
+    # same line as the money value) are a much stronger negative signal
+    # than the same keyword merely appearing in the ±1 neighbourhood.  A
+    # CASH 100.00 line sandwiched between TOTAL and CHANGE used to
+    # collect a +2.5 from the neighbourhood window which masked the
+    # negative signal; gating the heavy penalties on the same line
+    # disambiguates that layout.
+    if _SUBTOTAL_KW_RE.search(same_line):
+        s -= 5.0
+    elif _SUBTOTAL_KW_RE.search(nbr):
+        s -= 3.0
+    if _TOTAL_NEGATIVE.search(same_line):
         s -= 4.0
-    if _TOTAL_NEGATIVE.search(nbr):
-        s -= 2.0
+    elif _TOTAL_NEGATIVE.search(nbr):
+        s -= 1.5
     if _CURRENCY_CUE_RE.search(same_line):
         s += 0.3
     if money_idxs:
@@ -208,7 +248,134 @@ def _score_money(
     if attn_row is not None and 0 <= i < len(attn_row):
         a = max(float(attn_row[i]), 0.0)
         s += _ATTN_BLEND_ALPHA * math.log(a + _ATTN_LOG_EPS)
+    # Plausibility floor on the value itself: SROIE grand totals are
+    # virtually never 0.00 (those lines are rounding-adjustment / empty
+    # discount fields) and only rarely below RM 1.00 (smallest in GT
+    # ≈ 0.90).  Apply a hard penalty for 0.00 and a softer demotion for
+    # sub-RM-1 values so a stray "0.00" rounding line on the bottom of
+    # the receipt doesn't out-score the real total just because it sits
+    # last in money order.  The penalty is *additive* and bounded so
+    # genuine sub-RM-1 totals (rare but real) can still win when no
+    # competing larger candidate carries a TOTAL keyword.
+    val = _money_value_at(texts[i] if 0 <= i < len(texts) else "")
+    if val is not None:
+        if val == 0.0:
+            s -= 3.5
+        elif val < 1.0:
+            s -= 1.0
+        # Arithmetic-witness boost: a value satisfying one of the
+        # receipt's identities (cash − change, subtotal + tax + svc −
+        # disc) is strong out-of-band evidence that this is the grand
+        # total — independent of any keyword anchor.  Two witnesses
+        # (rare) is essentially proof on SROIE.  This boost is what
+        # turns ``_score_money`` from a keyword-matching heuristic into
+        # an arithmetic-validated scorer.
+        if arithmetic_targets:
+            wit = _arithmetic_witness_count(val, arithmetic_targets)
+            if wit >= 2:
+                s += 6.0
+            elif wit == 1:
+                s += 3.0
     return s
+
+
+def _parse_money_value(s: str) -> float | None:
+    """Best-effort float parse of a stripped money string."""
+    if not s:
+        return None
+    try:
+        return float(s.strip().replace(",", ""))
+    except ValueError:
+        return None
+
+
+def _arithmetic_targets(
+    classified: list[tuple[int, str, float]],
+) -> list[float]:
+    """Candidate grand totals derived from receipt arithmetic identities.
+
+    Returns every value the identity solvers can produce — not just the
+    consensus.  A line whose float matches *any* of these within ±2¢ is
+    treated as arithmetic-validated and gets a strong score boost in
+    :func:`_score_money`.  When the OCR'd total line has a single-digit
+    drift (``70.45`` vs the real ``79.45``) this list lets us identify
+    the true value and substitute it without trusting the corrupted
+    line's raw digits.
+    """
+    out: list[float] = []
+    cash = _identity_cash_change(classified)
+    if cash is not None:
+        out.append(cash)
+    sub = _identity_sub_tax(classified)
+    if sub is not None:
+        out.append(sub)
+    return out
+
+
+def _arithmetic_witness_count(value: float, targets: list[float]) -> int:
+    """How many arithmetic identities ``value`` satisfies to ±2¢."""
+    return sum(1 for t in targets if abs(value - t) <= 0.02)
+
+
+def _value_close(a: str, b: str, eps: float = 0.02) -> bool:
+    """Compare two money strings as floats within ``eps``; safe on parse fail."""
+    fa = _parse_money_value(a.lstrip("-"))
+    fb = _parse_money_value(b.lstrip("-"))
+    if fa is None or fb is None:
+        return False
+    return abs(fa - fb) <= eps
+
+
+def _ocr_drift_distance(a: str, b: str) -> int:
+    """Levenshtein on the digit sequences of two money strings.
+
+    Returns the smaller of (1) absolute difference in digit length plus
+    edit distance on aligned digits, or (2) full Levenshtein over the
+    original strings.  Used to pair an arithmetic-synthesised value
+    with an OCR-corrupted line — ``70.45`` vs ``79.45`` differs by
+    one digit, ``118.55`` vs ``119.55`` differs by one digit, etc.
+    A non-positive return is impossible; callers should treat
+    ``<= 2`` as "OCR-plausibly the same value".
+    """
+    sa, sb = a.lstrip("-"), b.lstrip("-")
+    if sa == sb:
+        return 0
+    # Quick reject: very different lengths almost always means a
+    # genuinely different value (e.g. 75.00 vs 750.00 is a real
+    # missing-digit OCR but pairs only at distance 1).
+    if abs(len(sa) - len(sb)) > 2:
+        return abs(len(sa) - len(sb))
+    # Standard Levenshtein, capped at small values for cheapness.
+    m, n = len(sa), len(sb)
+    if m == 0 or n == 0:
+        return max(m, n)
+    prev = list(range(n + 1))
+    for i in range(1, m + 1):
+        cur = [i] + [0] * n
+        for j in range(1, n + 1):
+            cost = 0 if sa[i - 1] == sb[j - 1] else 1
+            cur[j] = min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + cost)
+        prev = cur
+    return prev[n]
+
+
+def _attach_sign(value: str, source_line: str) -> str:
+    """Re-attach a leading minus when ``value`` was OCR'd as ``-VALUE``.
+
+    The shared ``_MONEY_RE`` doesn't allow a leading ``-``, so refund /
+    credit-note picks like ``"-6.42"`` lose their sign during extraction.
+    Reinstate it when a ``-`` (or its OCR confusables) directly precedes
+    the matched value on the source line.
+    """
+    if not value or "-" in value or not source_line:
+        return value
+    pos = source_line.find(value)
+    if pos <= 0:
+        return value
+    prev = source_line[pos - 1]
+    if prev == "-":
+        return "-" + value
+    return value
 
 
 def _refine_total(
@@ -226,45 +393,173 @@ def _refine_total(
     conservative rule below only overrides the learned pick when:
 
     * the learned value is **not** a well-formed money string, **or**
+    * the learned value is implausibly small (≤ ``_TOTAL_MIN_PLAUSIBLE``)
+      while a candidate parses above the floor — likely a quantity or a
+      stray-decimal pick rather than a true grand total, **or**
     * the best-scoring candidate beats the learned one by at least the
       override margin — which drops from :data:`_TOTAL_OVERRIDE_MARGIN`
       to :data:`_TOTAL_OVERRIDE_MARGIN_DIFFUSE` when the assigner's
       attention is diffuse (strategy H — confidence-gated delegation).
 
-    The margin-based rule naturally keeps the learned pick on receipts
-    where the scorer finds no decisive signal, while still correcting
-    the classic SUBTOTAL-vs-GRAND-TOTAL confusion when ``_TOTAL_STRONG``
-    matches only the right line.
+    Negative-sign preservation: refund/credit-note lines like
+    ``"REFUND -6.42"`` lose their leading minus through the shared
+    ``_MONEY_RE`` (which doesn't permit ``-``); :func:`_attach_sign`
+    re-attaches it from the source line.
+
+    Arithmetic-consensus fallback: when both the learned pick and the
+    best-scoring rule candidate are implausibly small (≤ floor), the
+    arithmetic-consensus solver is consulted directly so receipts whose
+    grand total was buried under cash/change/subtotal+tax still recover
+    a valid value.
     """
     repaired = [repair_money_ocr(t) for t in texts]
     money_idxs = [i for i, t in enumerate(repaired) if _MONEY_RE.search(t)]
     if not money_idxs:
         return learned
+    # Arithmetic identities computed once; passed to the scorer so a
+    # value satisfying ``cash − change`` or ``subtotal + tax`` is
+    # promoted regardless of the keyword anchor on its line.
+    classified = _classify_money_lines(repaired)
+    targets = _arithmetic_targets(classified)
+    # OCR-drift correction: if arithmetic produces a clean target value
+    # but the closest line value is within edit distance 1 (single OCR
+    # digit drift — ``79.45`` vs ``70.45``, ``119.55`` vs ``118.55``,
+    # ``848.00`` vs ``48.00``), prefer the arithmetic target itself.
+    # The keyword-match boundary is already enforced by the identities
+    # — they only fire when SUBTOTAL/CASH lines are present — so this
+    # path never invents a value out of thin air.
     rank = _attn_rank(attn_row) if attn_row else {}
     scored: list[tuple[float, int, str]] = sorted(
-        ((_score_money(i, repaired, rank, money_idxs, attn_row), i,
+        ((_score_money(i, repaired, rank, money_idxs, attn_row, targets), i,
           _MONEY_RE.search(repaired[i]).group(0))  # type: ignore[union-attr]
          for i in money_idxs),
         reverse=True,
     )
-    best_score, _, best_val = scored[0]
+    best_score, best_idx, best_val = scored[0]
+    best_clean = _strip_currency(best_val)
+    best_signed = _attach_sign(
+        best_clean,
+        repaired[best_idx] if 0 <= best_idx < len(repaired) else "",
+    )
     learned_clean = _strip_currency(learned)
+    learned_num = _parse_money_value(learned_clean.lstrip("-"))
+    best_num = _parse_money_value(best_clean)
+
+    def _arithmetic_fallback() -> str | None:
+        ar = total_arithmetic_consensus(repaired, set())
+        if ar is None:
+            return None
+        _, value = ar
+        v = _parse_money_value(value)
+        if v is None or v <= _TOTAL_MIN_PLAUSIBLE:
+            return None
+        return value
+
+    # ARITHMETIC-FIRST PATH (transformative): when an identity gives a
+    # clean target and a TOTAL-keyword'd line carries a value within
+    # 1-edit OCR drift of that target, the arithmetic value wins.  This
+    # catches the dominant single-digit-drift failure mode (``70.45`` ↔
+    # ``79.45``, ``118.55`` ↔ ``119.55``, ``30.68`` ↔ ``30.70``,
+    # ``25.10`` ↔ ``24.10``) where the score-based path has no signal
+    # that the printed digits are wrong.
+    for tgt in targets:
+        tgt_str = f"{tgt:.2f}"
+        # Already exact on some line — let the witness boost in the
+        # scorer carry it; no substitution needed here.  Use strict
+        # equality (no eps): if the line value differs by even 1¢ we
+        # may need to substitute, since the arithmetic target is
+        # exact-by-construction and any OCR drift is what we are
+        # trying to correct.
+        def _exact_match(idx: int, target: str = tgt_str) -> bool:
+            raw = _MONEY_RE.search(repaired[idx]).group(0).strip()  # type: ignore[union-attr]
+            raw = re.sub(
+                r"^(RM|USD|SGD|MYR|\$)\s*", "", raw, flags=re.IGNORECASE,
+            )
+            return raw == target
+        if any(_exact_match(i) for i in money_idxs):
+            continue
+        # Find an OCR-drift sibling: a line within 1 char of tgt whose
+        # neighbourhood carries a TOTAL keyword (so we don't substitute
+        # against a cash/subtotal line that happens to be 1 digit off).
+        for i in money_idxs:
+            line_val = _MONEY_RE.search(repaired[i]).group(0).strip()  # type: ignore[union-attr]
+            line_val = re.sub(
+                r"^(RM|USD|SGD|MYR|\$)\s*", "", line_val, flags=re.IGNORECASE,
+            )
+            if _ocr_drift_distance(line_val, tgt_str) > 1:
+                continue
+            nbr = " ".join(repaired[max(0, i - 1): i + 2])
+            if _SUBTOTAL_KW_RE.search(nbr):
+                continue
+            if _TOTAL_NEGATIVE.search(repaired[i]):
+                continue
+            # Match: the corrupted line's value is within 1 OCR edit of
+            # the arithmetic target AND its context is TOTAL-positive.
+            if _TOTAL_STRONG.search(nbr) or _TOTAL_WEAK.search(nbr):
+                return tgt_str
     if not _MONEY_RE.fullmatch(learned_clean):
         # Learned value isn't a usable money string; take the scored
         # pick unconditionally (fall back to learned if no positive
         # evidence either).
-        return _strip_currency(best_val) if best_score > 0 else learned_clean
+        if best_score > 0:
+            return best_signed
+        ar = _arithmetic_fallback()
+        return ar if ar is not None else learned_clean
+    # Implausibly-small learned value (0.00 / qty cell / discount %) +
+    # a candidate above the plausibility floor → override even on a
+    # weak score margin.  This recovers the dominant single failure
+    # mode in the live miss table (predicted 0.00 / sub-$1 vs an actual
+    # grand total in the tens-of-RM range) without regressing receipts
+    # whose true total is genuinely tiny.
+    if (learned_num is not None and learned_num <= _TOTAL_MIN_PLAUSIBLE
+            and best_num is not None and best_num > _TOTAL_MIN_PLAUSIBLE
+            and best_score > 0):
+        return best_signed
     # Learned value is a well-formed money string — protect it unless a
     # competing candidate is decisively better.  The required margin is
     # relaxed when the assigner is unsure of itself (flat attention row).
     learned_score = next(
         (sc for sc, _, v in scored if v.strip() == learned_clean), float("-inf"),
     )
+    # When the learned value doesn't appear verbatim on any money-bearing
+    # line (typical for ``total_arithmetic_consensus`` synthesised values
+    # — ``cash − change`` / ``subtotal + tax`` — that recover OCR-corrupted
+    # total lines), the legacy ``-inf`` learned-score forced the override
+    # path.  Treat those values as already arithmetic-validated and pin
+    # their score above the strict-margin threshold so the rule scorer
+    # only displaces them on a *very* decisive lead.
+    synthesised = (
+        learned_score == float("-inf") and learned_num is not None
+        and learned_num > _TOTAL_MIN_PLAUSIBLE
+    )
+    if synthesised:
+        learned_score = best_score
     margin = (_TOTAL_OVERRIDE_MARGIN_DIFFUSE if _is_attn_diffuse(attn_row)
               else _TOTAL_OVERRIDE_MARGIN)
     if best_score - learned_score >= margin and best_score > 0:
-        return _strip_currency(best_val)
-    return learned_clean
+        return best_signed
+    # Last resort: when both the learned pick and the best candidate are
+    # tiny, ask the arithmetic solver for an out-of-band consensus value.
+    if (learned_num is not None and learned_num <= _TOTAL_MIN_PLAUSIBLE
+            and (best_num is None or best_num <= _TOTAL_MIN_PLAUSIBLE)):
+        ar = _arithmetic_fallback()
+        if ar is not None:
+            return ar
+    # Sign re-attachment for the kept learned value (refund OCR loses
+    # the leading minus through ``_MONEY_RE``).
+    learned_signed = _attach_sign(
+        learned_clean,
+        repaired[best_idx] if 0 <= best_idx < len(repaired) else "",
+    )
+    # Only re-attach when the learned value actually appears on the
+    # best-scored line; otherwise fall back to scanning the full
+    # receipt for a ``-VALUE`` token matching the learned pick.
+    if learned_signed == learned_clean:
+        for line in repaired:
+            sgn = _attach_sign(learned_clean, line)
+            if sgn != learned_clean:
+                return sgn
+    return learned_signed
 
 
 def _refine_date(learned: str, texts: list[str]) -> str:
@@ -304,18 +599,74 @@ def _refine_company(
     total, and gives the pipeline a free F1 floor on precisely the
     receipts where the learned arm has no conviction.
     """
-    learned_clean = learned.strip()
+    learned_clean = _strip_decor(learned.strip())
+    learned_clean = _strip_company_tail(learned_clean)
     picked = _pick_company(texts, bboxes, used=set())
-    rule_pick = picked[1] if picked is not None else ""
+    rule_pick_raw = picked[1] if picked is not None else ""
+    rule_pick = _strip_company_tail(_strip_decor(rule_pick_raw))
+    # Boilerplate-line guard: when a candidate is dominantly a TAX
+    # INVOICE / CASH BILL / SIMPLIFIED RECEIPT line (the OCR header
+    # fired before the company anchor), discard it before scoring so
+    # the topmost non-boilerplate alternative wins.  Earlier code only
+    # caught full-line ``_HEADER_JUNK`` matches and missed the common
+    # "*** TAX INVOICE ***" / "SIMPLIFIED TAX INVOICE" forms.
+    def _is_boilerplate(v: str) -> bool:
+        s = v.strip()
+        if not s:
+            return True
+        if _COMPANY_BOILERPLATE_LINE_RE.search(s):
+            return True
+        return _HEADER_JUNK.match(s) is not None
+
+    def _maybe_extend(v: str) -> str:
+        """Apply forward/backward extension if the candidate looks partial."""
+        if not v:
+            return v
+        # Already complete (trade-name + SDN BHD) → leave alone.
+        if (_COMPANY_TOKEN.search(v)
+                and not _COMPANY_MULTI_SUFFIX_RE.match(v)):
+            return v
+        ext = _company_extend(v, texts, bboxes)
+        # Only accept extension when it added a trade-name OR a
+        # company-token that wasn't there before.  Otherwise keep the
+        # original to avoid noise concatenation.
+        if ext and ext != v:
+            had_token = bool(_COMPANY_TOKEN.search(v))
+            now_token = bool(_COMPANY_TOKEN.search(ext))
+            if (now_token and not had_token) or len(ext.split()) > len(v.split()):
+                return ext
+        return v
+
     candidates: list[str] = []
     seen: set[str] = set()
     for c in (learned_clean, rule_pick):
+        if not c or _is_boilerplate(c):
+            continue
+        c = _maybe_extend(c)
         k = c.lower()
-        if c and k not in seen:
+        if k not in seen:
             seen.add(k)
             candidates.append(c)
     if not candidates:
-        return learned
+        # Both candidates were boilerplate — fall back to the topmost
+        # non-boilerplate, non-junk line so we never return ``"*** TAX
+        # INVOICE ***"`` as the company answer.
+        order = sorted(
+            range(len(texts)),
+            key=lambda i: bboxes[i][1] if i < len(bboxes) else 0.0,
+        )
+        for i in order:
+            t = _strip_decor(texts[i].strip())
+            if not t or _is_boilerplate(t) or _is_short_junk(t):
+                continue
+            if _DATE_RE.search(t) or _MONEY_RE.search(t):
+                continue
+            if _ADDR_EXCLUDE.search(t):
+                continue
+            candidates.append(_maybe_extend(_strip_company_tail(t)))
+            break
+        if not candidates:
+            return learned
 
     def _y(v: str) -> float:
         return _y_of(v, texts, bboxes)
@@ -327,31 +678,41 @@ def _refine_company(
         upper = sum(1 for c in letters if c.isupper())
         return upper / len(letters) >= 0.70
 
-    def _score(v: str) -> tuple[int, int, int, float]:
+    def _score(v: str) -> tuple[int, int, int, int, float]:
         not_junk = (
             not _is_short_junk(v)
-            and _HEADER_JUNK.match(v) is None
+            and not _is_boilerplate(v)
             and _ADDR_EXCLUDE.search(v) is None
             and _DATE_RE.search(v) is None
             and _MONEY_RE.search(v) is None
         )
         has_token = 1 if _COMPANY_TOKEN.search(v) else 0
+        # New tier: candidates with a trade-name AND a suffix token
+        # rank above candidates that are pure suffix-only or pure
+        # trade-name-only (the partial-pick failure mode).  A
+        # candidate matching ``_COMPANY_MULTI_SUFFIX_RE`` *as a whole*
+        # is suffix-only and gets the lowest tier in this dimension.
+        is_complete = 1 if (
+            has_token
+            and not _COMPANY_MULTI_SUFFIX_RE.match(v)
+            and len([t for t in v.split() if t]) >= 2
+        ) else 0
         upper = 1 if _is_mostly_upper(v) else 0
         # Topmost wins ties (smaller y → higher score via negation).
-        return (int(not_junk), has_token, upper, -_y(v))
+        return (int(not_junk), is_complete, has_token, upper, -_y(v))
 
     scores = [_score(c) for c in candidates]
     if (_is_attn_diffuse(attn_row)
             and candidates[0] == learned_clean
             and not _COMPANY_TOKEN.search(learned_clean)):
-        # Demote learned candidate by zeroing its ``is_mostly_upper`` bit;
-        # rule pick wins ties.  Mirrors :func:`_refine_address` handling.
+        # Demote learned candidate by zeroing its ``upper`` bit; rule
+        # pick wins ties.  Mirrors :func:`_refine_address` handling.
         # A company token on the learned pick (``SDN BHD`` etc.) is such
         # strong positive evidence that we refuse to demote it even when
         # the attention row is flat — the H gate is only a tie-breaker,
         # not an eraser of legitimate signal.
         s = scores[0]
-        scores[0] = (s[0], s[1], 0, s[3])
+        scores[0] = (s[0], s[1], s[2], 0, s[4])
     return max(zip(candidates, scores, strict=True), key=lambda cs: cs[1])[0]
 
 
@@ -363,6 +724,197 @@ def _y_of(value: str, texts: list[str], bboxes: list[list[float]]) -> float:
         if key in t.lower():
             return bboxes[i][1] if i < len(bboxes) else 0.0
     return 0.0
+
+
+# --- Company repair (transformative) ---------------------------------------
+# Stars/hashes that the OCR or thermal-printer leaves around merchant
+# trade names ("***ROYALTEA***" or "*** TAX INVOICE ***").  Symmetric
+# leading/trailing run captured so a single pass strips both ends.
+_COMPANY_DECOR_RE = re.compile(r"^[\*\#\-_=~`\s]+|[\*\#\-_=~`\s]+$")
+# Whole-line boilerplate the company-anchor walk MUST skip.  Wider than
+# ``_HEADER_JUNK`` (which only matches lines whose entire content is the
+# keyword): also catches lines that *contain* TAX INVOICE / CASH BILL /
+# OFFICIAL RECEIPT etc., even when wrapped in ``***`` decorations.
+_COMPANY_BOILERPLATE_LINE_RE = re.compile(
+    r"\b(?:TAX\s+INVOICE|CASH\s+BILL|OFFICIAL\s+RECEIPT|CUSTOMER\s+COPY|"
+    r"MERCHANT\s+COPY|SIMPLIFIED(?:\s+TAX(?:\s+INVOICE)?)?|"
+    r"CREDIT\s+NOTE|DELIVERY\s+ORDER|SALES\s+RECEIPT|RECEIPT\s+COPY|"
+    r"DUPLICATE\s+RECEIPT)\b",
+    re.IGNORECASE,
+)
+# Tail tokens to drop when refining a company candidate: registration
+# numbers (``M076170-K``, ``107769-21``, ``139386 X``), GST IDs, OCR
+# fragments (``stud01/59572``), Wi-Fi tokens, single-orphan letters.
+_COMPANY_TAIL_DROP_RE = re.compile(
+    r"\s+(?:"
+    r"\(?\s*\d{4,}[\-\s]?[A-Z\d]{0,4}\s*\)?"  # 5+digit reg numbers
+    r"|GST\s*[:#]?\s*\d+"
+    r"|GST\s*ID\s*\d+"
+    r"|TEL\s*[:.]?\s*[\d\-]+"
+    r"|WI-?FI\s*\S+"
+    r"|STUD\d+\S*"
+    r"|MA?\d{5,}"
+    r"|[A-Z]{1,3}\d{5,}\S*"
+    r"|password\s*\S+"
+    r")\s*\.?\s*$",
+    re.IGNORECASE,
+)
+# Multi-token forward-extension regex that recognises a line whose
+# content is purely company-suffix material — strict ``_COMPANY_SUFFIX``
+# only matched a single segment.  This lets us pick up ``CO M SDN BHD``,
+# ``(M) SDN BHD``, ``HOLDINGS SDN BHD`` as a *whole* extension target.
+_COMPANY_MULTI_SUFFIX_RE = re.compile(
+    r"^\s*"
+    r"(?:\(?\s*M\s*\)?\s+)?(?:CO\.?\s*)?(?:M\s+)?"
+    r"(?:SDN\.?\s*BHD\.?|BERHAD|BHD|S/B|PTE\.?\s*LTD\.?|LTD\.?"
+    r"|HOLDINGS|ENTERPRISE(?:S)?|TRADING|MARKETING|CORPORATION|CORP\.?)"
+    r"(?:\s+(?:SDN\.?\s*BHD\.?|BERHAD|BHD|S/B|HOLDINGS"
+    r"|ENTERPRISE(?:S)?|TRADING|MARKETING))*"
+    r"\s*\.?\s*$",
+    re.IGNORECASE,
+)
+
+
+def _strip_decor(s: str) -> str:
+    """Remove ``***`` / ``###`` / dashes / equals from both ends."""
+    return _COMPANY_DECOR_RE.sub("", s).strip()
+
+
+def _strip_company_tail(s: str) -> str:
+    """Drop trailing OCR / registration noise from a company string.
+
+    Run twice so a two-suffix tail (``"... 139386 X (M)"``) is fully
+    removed.  Never returns empty — if the tail-drop would consume
+    everything, return the original string so the caller can still
+    score it (the trade-name / SDN-BHD scoring will rank it low).
+    """
+    prev = s
+    for _ in range(2):
+        cur = _COMPANY_TAIL_DROP_RE.sub("", prev).strip()
+        if cur == prev:
+            break
+        prev = cur
+    return prev or s
+
+
+def _line_index_of(value: str, texts: list[str]) -> int:
+    """Index of the first text-line that *contains* ``value`` (case-fold)."""
+    if not value:
+        return -1
+    key = value.strip().lower()
+    for i, t in enumerate(texts):
+        if key and key in t.lower():
+            return i
+    return -1
+
+
+def _company_extend(
+    value: str, texts: list[str], bboxes: list[list[float]],
+) -> str:
+    """Forward/backward-extend a partial company pick.
+
+    Two failure modes the score-only refiner cannot fix:
+
+    1. **Prefix-only pick** (``"POPULAR BOOK"`` vs GT
+       ``"POPULAR BOOK CO M SDN BHD"``): the picked line lacks any
+       ``_COMPANY_TOKEN`` but a neighbouring line below is a pure
+       company-suffix run (``"CO M SDN BHD"``).  Concatenate.
+
+    2. **Suffix-only pick** (``"CO M SDN BHD"`` vs GT
+       ``"POPULAR BOOK CO M SDN BHD"``): the picked line is *all*
+       suffix tokens; the line above carries the trade name.
+       Prepend that.
+
+    Bounded to one line of extension on each side so we never invent
+    a multi-line span out of thin air.  Idempotent on already-complete
+    candidates (anything already containing both a trade-name and a
+    suffix token returns unchanged).
+    """
+    cleaned = _strip_decor(value).strip()
+    if not cleaned:
+        return value
+    cleaned = _strip_company_tail(cleaned)
+    idx = _line_index_of(cleaned, texts)
+    if idx < 0:
+        return cleaned
+    # Forward-extend: cleaned has no _COMPANY_TOKEN, next line is pure
+    # suffix.  Skip only blank/junk lines between.
+    has_token = bool(_COMPANY_TOKEN.search(cleaned))
+    # Continuation marker: a trailing ``&`` / ``,`` / hanging
+    # ``of/the/and`` strongly signals the trade name was line-wrapped.
+    # Extend even when a company-token ending isn't on the next line,
+    # provided the next line is plausibly upper-case alpha-heavy.
+    ends_continuation = bool(re.search(r"[&,]\s*$|\b(?:and|of|the)\s*$",
+                                        cleaned, re.IGNORECASE))
+    if (ends_continuation or not has_token) and idx + 1 < len(texts):
+        for j in range(idx + 1, min(idx + 3, len(texts))):
+            nxt = _strip_decor(texts[j].strip())
+            if not nxt:
+                continue
+            if _COMPANY_BOILERPLATE_LINE_RE.search(nxt):
+                break
+            if _DATE_RE.search(nxt) or _MONEY_RE.search(nxt):
+                break
+            if _ADDR_EXCLUDE.search(nxt):
+                break
+            # Strict multi-suffix line: pure ``CO M SDN BHD`` /
+            # ``HOLDINGS SDN BHD`` etc.
+            if _COMPANY_MULTI_SUFFIX_RE.match(nxt):
+                cleaned = f"{cleaned} {_strip_company_tail(nxt)}"
+                has_token = True
+                break
+            # Permissive extend: line ENDS with a company token
+            # (``ENTERPRISE SETIA ALAM SDN BHD`` — the multi-token tail
+            # the strict regex can't enumerate without exploding).  The
+            # line must not also carry an address anchor (``JALAN`` /
+            # ``LOT`` / 5-digit postcode) so we don't accidentally pull
+            # in the first address line as part of the company name.
+            looks_address = bool(re.search(
+                r"\b(JALAN|JLN|LOT|TAMAN|TMN|BANDAR|NO\.?|\d{5})\b",
+                nxt, re.IGNORECASE,
+            ))
+            if (_COMPANY_TOKEN.search(nxt) and not looks_address):
+                cleaned = f"{cleaned} {_strip_company_tail(nxt)}"
+                has_token = True
+                break
+            # Continuation extend: when the picked line ends with ``&``
+            # / ``,`` etc., accept any short upper-case alpha-heavy
+            # next line as the wrapped tail of the trade name.  Bounded
+            # to one extension and rejected if the line contains an
+            # address anchor.
+            if ends_continuation and not looks_address:
+                letters = [c for c in nxt if c.isalpha()]
+                if (len(letters) >= 3
+                        and len(nxt.split()) <= 5
+                        and sum(1 for c in letters if c.isupper())
+                            / max(len(letters), 1) >= 0.7):
+                    cleaned = f"{cleaned} {_strip_company_tail(nxt)}"
+                    break
+            # Any other line stops the walk.
+            break
+    # Backward-extend: cleaned IS pure suffix (matches multi-suffix
+    # regex on its own), look up one line for the trade name.
+    if (idx > 0
+            and _COMPANY_MULTI_SUFFIX_RE.match(cleaned)
+            and not _is_short_junk(cleaned)):
+        for j in range(idx - 1, max(idx - 3, -1), -1):
+            prev = _strip_decor(texts[j].strip())
+            if not prev:
+                continue
+            if _COMPANY_BOILERPLATE_LINE_RE.search(prev):
+                break
+            if _HEADER_JUNK.match(prev):
+                break
+            if _DATE_RE.search(prev) or _MONEY_RE.search(prev):
+                break
+            if _is_short_junk(prev):
+                break
+            # Plausible trade name: alpha-heavy, not a phone/GST line.
+            if _ADDR_EXCLUDE.search(prev):
+                break
+            cleaned = f"{_strip_company_tail(prev)} {cleaned}"
+            break
+    return cleaned
 
 
 def _is_addr_boundary(t: str) -> bool:

@@ -39,12 +39,9 @@ import io
 import json
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from core.errors import DataError
-
-if TYPE_CHECKING:
-    from datasets import Dataset
 
 log = logging.getLogger("kaggle2")
 
@@ -223,22 +220,56 @@ def _extract_gt(row: dict[str, object]) -> dict[str, str] | None:
     return out
 
 
-def _select_canonical_split(snap_path: Path) -> Dataset:
-    """Pick the split (test/validation/train) with exactly 347 rows."""
-    from datasets import load_dataset
+def _read_parquet_splits(snap_path: Path) -> dict[str, Any]:
+    """Read every ``data/<split>-*.parquet`` (or root-level) into pyarrow tables.
+
+    Bypasses ``datasets.load_dataset`` whose ``multiprocess``/``dill`` path
+    is incompatible with Python 3.13 stdlib pickle in pinned
+    ``dill<0.3.9`` (raises ``Pickler._batch_setitems() takes 2 positional
+    arguments but 3 were given``).  HF parquet snapshots follow the
+    convention ``data/<split>-NNNNN-of-MMMMM.parquet``; we group by the
+    filename prefix before the first ``-``.
+    """
+    import pyarrow.parquet as pq
+    pq_any: Any = pq  # pyarrow stubs vary across versions: read_table is
+    # marked untyped and concat_tables is missing in some releases.
     data_dir = snap_path / "data"
     if not data_dir.is_dir():
         # Some snapshots ship parquet at the repo root.
         data_dir = snap_path
-    ds_dict = load_dataset("parquet", data_dir=str(data_dir))
+    grouped: dict[str, list[Path]] = {}
+    for p in sorted(data_dir.rglob("*.parquet")):
+        split_name = p.stem.split("-", 1)[0].lower()
+        grouped.setdefault(split_name, []).append(p)
+    out: dict[str, Any] = {}
+    for split_name, files in grouped.items():
+        tables = [pq_any.read_table(f) for f in files]
+        out[split_name] = (
+            tables[0] if len(tables) == 1
+            else pq_any.concat_tables(tables)
+        )
+    return out
+
+
+def _select_canonical_split(snap_path: Path) -> list[dict[str, object]]:
+    """Pick the parquet split with exactly 347 rows; return rows as dicts.
+
+    Reads parquet directly via ``pyarrow`` (see :func:`_read_parquet_splits`
+    for the rationale).  ``Table.to_pylist`` yields plain dicts where HF
+    Image columns are already ``{"bytes": ..., "path": ...}`` structs —
+    exactly the shape :func:`_extract_image_bytes` already handles.
+    """
+    tables = _read_parquet_splits(snap_path)
     for split_name in ("test", "validation", "train"):
-        if split_name in ds_dict and len(ds_dict[split_name]) == _TASK3_TEST_COUNT:
+        table = tables.get(split_name)
+        if table is not None and table.num_rows == _TASK3_TEST_COUNT:
             log.info(
                 "canonical-SROIE HF: using split=%s (%d rows)",
-                split_name, len(ds_dict[split_name]),
+                split_name, table.num_rows,
             )
-            return ds_dict[split_name]
-    sizes = {k: len(v) for k, v in ds_dict.items()}
+            rows: list[dict[str, object]] = table.to_pylist()
+            return rows
+    sizes = {k: v.num_rows for k, v in tables.items()}
     raise DataError(
         f"canonical-SROIE HF: no split with exactly {_TASK3_TEST_COUNT} rows. "
         f"Splits seen: {sizes}",
@@ -251,8 +282,8 @@ def _materialize_rows(snap_dir: Path, img_dir: Path, ent_dir: Path) -> int:
         ds = _select_canonical_split(snap_dir)
     except ImportError:
         log.warning(
-            "canonical-SROIE HF: 'datasets' library not installed "
-            "(pip install datasets).",
+            "canonical-SROIE HF: 'pyarrow' library not installed "
+            "(pip install pyarrow).",
         )
         return 0
     n_extracted = 0
@@ -352,20 +383,18 @@ def _peek(repo_id: str, revision: str) -> int:  # pragma: no cover
         return 2
     import tempfile
 
-    from datasets import load_dataset
     with tempfile.TemporaryDirectory() as td:
         snap = _snapshot_download(
             repo_id=repo_id, revision=revision,
             repo_type="dataset", local_dir=td,
         )
-        snap_p = Path(snap)
-        data_dir = snap_p / "data" if (snap_p / "data").is_dir() else snap_p
-        ds_dict = load_dataset("parquet", data_dir=str(data_dir))
+        tables = _read_parquet_splits(Path(snap))
         print(f"repo={repo_id} revision={revision}")
-        for split_name, ds in ds_dict.items():
-            print(f"  split={split_name}: rows={len(ds)} columns={list(ds.column_names)}")
-            if len(ds) > 0:
-                first: dict[str, Any] = dict(ds[0])
+        for split_name, tbl in tables.items():
+            cols = list(tbl.column_names)
+            print(f"  split={split_name}: rows={tbl.num_rows} columns={cols}")
+            if tbl.num_rows > 0:
+                first: dict[str, Any] = tbl.slice(0, 1).to_pylist()[0]
                 gt: object = next(
                     (first[c] for c in _GT_JSON_COLS if c in first), "<no gt-style col>",
                 )
