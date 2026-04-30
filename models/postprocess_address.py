@@ -70,6 +70,15 @@ _LEAD_ANCHOR_TOKENS: frozenset[str] = frozenset({
 
 _TAIL_FRAG_MAX_LEN = 2
 
+# PR-ADDR-DEDUPE — span lengths to scan for consecutive repeats.  Run
+# 20260430T125211Z surfaced the assigner double-attention failure mode
+# where a token-window appears twice in a row in the predicted address
+# ("bandar bukit raja 41050 bandar bukit raja 41050 klang"), the n=91
+# wrong_span class for pipeline address.  Symmetric (applied to both
+# pred and GT) so a clean GT remains a fixed point.  Spans tried in
+# decreasing order so the longest repeat wins on overlap.
+_DEDUPE_SPANS: tuple[int, ...] = (5, 4, 3, 2)
+
 
 def _strip_token_punct(token: str) -> str:
     """Strip ``,.:;`` from a token unless it carries any digit."""
@@ -138,6 +147,25 @@ def _trim_trailing_junk(tokens: list[str]) -> list[str]:
     return out
 
 
+def _dedupe_consecutive_runs(tokens: list[str]) -> list[str]:
+    """Drop consecutive repeated 2-to-5-token spans.
+
+    Scans for ``[A B C][A B C]`` and reduces it to ``[A B C]``.  Spans
+    tried longest-first so an overlapping pair like
+    ``[a b c d][a b c d]`` is not split into two 2-token dedupes.
+    Idempotent: a clean address has no repeats and is returned unchanged.
+    """
+    out = list(tokens)
+    for span in _DEDUPE_SPANS:
+        i = 0
+        while i + 2 * span <= len(out):
+            if out[i:i + span] == out[i + span:i + 2 * span]:
+                del out[i + span:i + 2 * span]
+            else:
+                i += 1
+    return out
+
+
 def normalize_address_focus(value: str) -> str:
     """Symmetric address normaliser — line order preserved, casefold output.
 
@@ -156,4 +184,6 @@ def normalize_address_focus(value: str) -> str:
     folded = [t.casefold() for t in tokens]
     # Step 5a (PR-ADDR-PREC-2): leading company-header / tax-invoice trim.
     # Step 5b (PR-ADDR-PREC):   trailing bottom-cut + 1-2-char OCR trim.
-    return " ".join(_trim_trailing_junk(_trim_leading_junk(folded)))
+    # Step 6  (PR-ADDR-DEDUPE): collapse consecutive repeated token spans.
+    trimmed = _trim_trailing_junk(_trim_leading_junk(folded))
+    return " ".join(_dedupe_consecutive_runs(trimmed))

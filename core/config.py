@@ -76,6 +76,7 @@ def load_config(path: str, defaults: dict[str, Any] | None = None) -> ExpConfig:
 
     _optional = {
         "yolo_conf", "trocr_max_new_tokens", "max_regions_per_image",
+        "yolo_crop_pad_px",
         "warmup_ratio", "lr_scheduler_type", "gradient_checkpointing",
         "num_beams", "f1_warn_threshold", "skip_donut",
         "focus_hidden_dim", "focus_n_layers_level2",
@@ -207,6 +208,7 @@ def load_config(path: str, defaults: dict[str, Any] | None = None) -> ExpConfig:
         yolo_conf=float(raw.get("yolo_conf", 0.25)),
         trocr_max_new_tokens=int(raw.get("trocr_max_new_tokens", 64)),
         max_regions_per_image=int(raw.get("max_regions_per_image", 32)),
+        yolo_crop_pad_px=int(raw.get("yolo_crop_pad_px", 0)),
         warmup_ratio=float(raw.get("warmup_ratio", 0.1)),
         lr_scheduler_type=str(raw.get("lr_scheduler_type", "cosine")),
         gradient_checkpointing=bool(raw.get("gradient_checkpointing", True)),

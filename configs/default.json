@@ -9,6 +9,7 @@
   "yolo_model": "yolov8n.pt",
   "image_size": [1280, 960],
   "yolo_image_size": 1024,
+  "yolo_crop_pad_px": 6,
   "max_length": 256,
   "trocr_max_len": 128,
   "epochs_donut": 35,

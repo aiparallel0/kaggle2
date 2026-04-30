@@ -85,9 +85,19 @@ def _detect_and_read(
     feats: list[torch.Tensor] = []
     bboxes: list[list[float]] = []
     w, h = img.width, img.height
+    pad = max(0, int(getattr(cfg, "yolo_crop_pad_px", 0)))
     for box in boxes[: cfg.max_regions_per_image]:
         x1, y1, x2, y2 = box[:4]
-        crop = img.crop((int(x1 * w), int(y1 * h), int(x2 * w), int(y2 * h)))
+        # Pad horizontally and vertically before cropping.  YOLO bboxes are
+        # tight enough that the leftmost digit of money lines is occasionally
+        # clipped (run 20260430T125211Z: 9 of the 88 pipeline ``total``
+        # assigner-errors were leading-digit drops "848.00"→"48.00").  Pad
+        # is symmetric so it never moves text *out* of the crop.
+        cx1 = max(0, int(x1 * w) - pad)
+        cy1 = max(0, int(y1 * h) - pad)
+        cx2 = min(w, int(x2 * w) + pad)
+        cy2 = min(h, int(y2 * h) + pad)
+        crop = img.crop((cx1, cy1, cx2, cy2))
         if crop.width < 1 or crop.height < 1:
             continue
         try:

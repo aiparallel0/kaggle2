@@ -314,6 +314,10 @@ class ExpConfig:
     yolo_conf: float = 0.25
     trocr_max_new_tokens: int = 64
     max_regions_per_image: int = 32
+    # YOLO crop padding (pixels) added to every bbox before TrOCR.  Recovers
+    # leftmost-digit drops on tight money-line bboxes ("848.00" → "48.00")
+    # observed on run 20260430T125211Z. 0 = bit-exact backward-compatible.
+    yolo_crop_pad_px: int = 0
     warmup_ratio: float = 0.1
     lr_scheduler_type: str = "cosine"
     gradient_checkpointing: bool = True

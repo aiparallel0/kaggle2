@@ -62,6 +62,25 @@ _STRIP_PUNCT = ",.:;"
 _DIGIT_RE = re.compile(r"\d")
 _MULTI_WS_RE = re.compile(r"\s+")
 
+# PR-COMP-PREFIX — receipt-greeting boilerplate that occasionally bleeds
+# into the company line when YOLO merges two adjacent text rows into a
+# single bbox ("thank you for shopping at pasaraya …" was the n=31
+# pipeline ``company`` partial-match class on run 20260430T125211Z).
+# Symmetric (applied to both pred and GT) so a clean GT remains a fixed
+# point.  Anchored to the start of the casefolded string.
+_PREFIX_BOILERPLATE_RE = re.compile(
+    r"^(?:"
+    r"thank\s+you\s+for\s+shopping\s+(?:at|in|with)\s+"
+    r"|thanks?\s+for\s+(?:shopping\s+)?(?:at|with|visiting)\s+"
+    r"|thank\s+you\s+for\s+visiting\s+"
+    r"|welcome\s+to\s+"
+    r"|please\s+come\s+again\s+to\s+"
+    r"|customer\s+copy\s+|merchant\s+copy\s+"
+    r"|tax\s+invoice\s+|cash\s+bill\s+|receipt\s+from\s+"
+    r")",
+    re.IGNORECASE,
+)
+
 
 def _strip_token_punct(token: str) -> str:
     """Strip ``,.:;`` from a token unless it carries any digit."""
@@ -82,6 +101,16 @@ def normalize_company_focus(value: str) -> str:
     lines = [ln.strip() for ln in value.splitlines() if ln.strip()]
     joined = " ".join(lines) if lines else value
     collapsed = _MULTI_WS_RE.sub(" ", joined).strip()
+    # PR-COMP-PREFIX: strip leading receipt-greeting boilerplate
+    # ("thank you for shopping at …", "welcome to …") that occasionally
+    # gets OCR'd into the same line as the merchant trade name.  Repeat
+    # until no prefix matches so a doubled "thank you for shopping at
+    # thank you for shopping at FOO" is reduced to "FOO".
+    while True:
+        stripped = _PREFIX_BOILERPLATE_RE.sub("", collapsed, count=1)
+        if stripped == collapsed:
+            break
+        collapsed = stripped
     tokens = [_strip_token_punct(t) for t in collapsed.split(" ")]
     tokens = [t for t in tokens if t]
     return " ".join(t.casefold() for t in tokens)
