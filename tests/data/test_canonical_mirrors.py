@@ -741,7 +741,6 @@ def test_select_canonical_split_picks_347_row_split(tmp_path: Path) -> None:
     """_select_canonical_split prefers the split with exactly 347 rows."""
     pa = pytest.importorskip("pyarrow")
     pa_pq = pytest.importorskip("pyarrow.parquet")
-    pytest.importorskip("datasets")
     data_dir = tmp_path / "data"
     data_dir.mkdir()
     # train has 500 rows (wrong), test has 347 (correct), validation has 63.
@@ -765,7 +764,6 @@ def test_select_canonical_split_raises_when_no_split_matches(tmp_path: Path) -> 
     """_select_canonical_split raises DataError when no split has 347 rows."""
     pa = pytest.importorskip("pyarrow")
     pa_pq = pytest.importorskip("pyarrow.parquet")
-    pytest.importorskip("datasets")
     data_dir = tmp_path / "data"
     data_dir.mkdir()
     pa_pq.write_table(
