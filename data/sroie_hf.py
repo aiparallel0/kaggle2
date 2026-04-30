@@ -231,6 +231,8 @@ def _read_parquet_splits(snap_path: Path) -> dict[str, Any]:
     filename prefix before the first ``-``.
     """
     import pyarrow.parquet as pq
+    pq_any: Any = pq  # pyarrow stubs vary across versions: read_table is
+    # marked untyped and concat_tables is missing in some releases.
     data_dir = snap_path / "data"
     if not data_dir.is_dir():
         # Some snapshots ship parquet at the repo root.
@@ -241,9 +243,10 @@ def _read_parquet_splits(snap_path: Path) -> dict[str, Any]:
         grouped.setdefault(split_name, []).append(p)
     out: dict[str, Any] = {}
     for split_name, files in grouped.items():
-        tables = [pq.read_table(f) for f in files]
+        tables = [pq_any.read_table(f) for f in files]
         out[split_name] = (
-            tables[0] if len(tables) == 1 else pq.concat_tables(tables)
+            tables[0] if len(tables) == 1
+            else pq_any.concat_tables(tables)
         )
     return out
 
