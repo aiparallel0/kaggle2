@@ -1,10 +1,18 @@
 [tool.mypy]
 strict = true
+# Mirror of mypy.ini: data/sroie_cache/ is a fixtures-only runtime cache
+# and must never be scanned (upstream SROIE clone has duplicate train.py
+# modules under task1/SSD Method/ and task1/CTPN Method/).
+exclude = ['^data/sroie_cache/']
 
 [[tool.mypy.overrides]]
 module = ["ultralytics", "ultralytics.*"]
 ignore_missing_imports = true
 follow_imports = "skip"
+
+[[tool.mypy.overrides]]
+module = ["pyarrow", "pyarrow.*"]
+ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 pythonpath = ["."]
