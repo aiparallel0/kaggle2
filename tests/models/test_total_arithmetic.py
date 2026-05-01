@@ -137,3 +137,58 @@ def test_identity_helpers_return_none_when_inputs_missing() -> None:
     sees a spurious zero candidate."""
     assert _identity_cash_change([]) is None
     assert _identity_sub_tax([]) is None
+
+
+# -----------------------------------------------------------------------
+# FOCUS-Σ — Identity 3 (items-subset-sum + tax_aug) regression suite.
+# -----------------------------------------------------------------------
+
+from models.total_arithmetic import (  # noqa: E402
+    subset_sum_target_cents,
+    total_witness_count,
+)
+
+
+def test_focus_sigma_fires_without_subtotal_keyword() -> None:
+    """Receipt with no SUBTOTAL keyword: I₁/I₂ silent, I₃ alone witnesses."""
+    texts = ["ITEM A 12.00", "ITEM B 18.50", "ITEM C 3.00",
+             "TAX 2.00", "TOTAL 35.50"]
+    c = _classify(texts)
+    assert total_witness_count(35.50, c) == 1
+    assert total_witness_count(12.00, c) == 0  # singleton item not a witness
+
+
+def test_focus_sigma_stacks_with_keyword_identities() -> None:
+    """When I₂ fires, I₃ stacks for a count of 2 on the true total."""
+    texts = ["ITEM A 12.00", "ITEM B 18.50", "ITEM C 3.00",
+             "SUBTOTAL 33.50", "TAX 2.00", "TOTAL 35.50"]
+    c = _classify(texts)
+    assert total_witness_count(35.50, c) == 2
+
+
+def test_focus_sigma_rejects_singleton_self_match() -> None:
+    """A noise money line (phone number parsed as money) is NOT its own
+    cardinality-1 witness — Identity 3 requires subset cardinality ≥ 2
+    (or 1 plus non-zero tax_aug)."""
+    texts = ["ITEM A 99.00", "TOTAL 99.00"]
+    c = _classify(texts)
+    assert total_witness_count(99.00, c) == 0
+
+
+def test_focus_sigma_drops_per_item_outliers() -> None:
+    """A line whose value exceeds the per-item cap (RM 5000) drops out
+    of the items pool so the DP bound stays tractable on noisy receipts."""
+    texts = ["ITEM A 200.00", "ITEM B 136.20", "ITEM C 100.00",
+             "TAX 0.00", "TOTAL 436.20", "PHONE 4838.20"]
+    c = _classify(texts)
+    # 200 + 136.20 + 100.00 = 436.20 — true total has a witness.
+    assert total_witness_count(436.20, c) >= 1
+    # Outlier 4838.20 has no witness (capped out of items pool, and not
+    # reachable as any subset-sum of remaining items + tax_aug=0).
+    assert total_witness_count(4838.20, c) == 0
+
+
+def test_focus_sigma_empty_classification() -> None:
+    """Empty input → empty target set, witness count 0."""
+    assert subset_sum_target_cents([]) == frozenset()
+    assert total_witness_count(10.0, []) == 0

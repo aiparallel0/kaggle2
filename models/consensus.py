@@ -55,6 +55,7 @@ from models.total_arithmetic import (
 from models.total_arithmetic import (
     _identity_cash_change,
     _identity_sub_tax,
+    subset_sum_target_cents,
     total_arithmetic_consensus,
 )
 
@@ -185,6 +186,7 @@ def _score_money(
     i: int, texts: list[str], rank: dict[int, int], money_idxs: list[int],
     attn_row: list[float] | None = None,
     arithmetic_targets: list[float] | None = None,
+    subset_sum_cents: frozenset[int] | None = None,
 ) -> float:
     """Higher = more likely the real TOTAL line.
 
@@ -265,14 +267,19 @@ def _score_money(
             s -= 1.0
         # Arithmetic-witness boost: a value satisfying one of the
         # receipt's identities (cash − change, subtotal + tax + svc −
-        # disc) is strong out-of-band evidence that this is the grand
-        # total — independent of any keyword anchor.  Two witnesses
-        # (rare) is essentially proof on SROIE.  This boost is what
-        # turns ``_score_money`` from a keyword-matching heuristic into
-        # an arithmetic-validated scorer.
-        if arithmetic_targets:
-            wit = _arithmetic_witness_count(val, arithmetic_targets)
-            if wit >= 2:
+        # disc, FOCUS-Σ items-subset-sum + tax_aug) is strong
+        # out-of-band evidence that this is the grand total —
+        # independent of any keyword anchor.  Two witnesses (rare)
+        # is essentially proof on SROIE; three is proof.  This boost
+        # is what turns ``_score_money`` from a keyword-matching
+        # heuristic into an arithmetic-validated scorer.
+        if arithmetic_targets or subset_sum_cents:
+            wit = _arithmetic_witness_count(
+                val, arithmetic_targets or [], subset_sum_cents,
+            )
+            if wit >= 3:
+                s += 8.0
+            elif wit == 2:
                 s += 6.0
             elif wit == 1:
                 s += 3.0
@@ -312,9 +319,21 @@ def _arithmetic_targets(
     return out
 
 
-def _arithmetic_witness_count(value: float, targets: list[float]) -> int:
-    """How many arithmetic identities ``value`` satisfies to ±2¢."""
-    return sum(1 for t in targets if abs(value - t) <= 0.02)
+def _arithmetic_witness_count(
+    value: float, targets: list[float],
+    subset_sum_cents: frozenset[int] | None = None,
+) -> int:
+    """How many arithmetic identities ``value`` satisfies to ±2¢.
+
+    Counts I₁ (cash−change) + I₂ (subtotal+tax+svc−disc) keyword-anchored
+    matches from ``targets``, plus FOCUS-Σ Identity 3 (items+tax_aug
+    subset-sum) when ``subset_sum_cents`` is provided.  Maximum count
+    is 3 (essentially proof on SROIE).
+    """
+    count = sum(1 for t in targets if abs(value - t) <= 0.02)
+    if subset_sum_cents is not None and int(round(value * 100)) in subset_sum_cents:
+        count += 1
+    return count
 
 
 def _value_close(a: str, b: str, eps: float = 0.02) -> bool:
@@ -421,6 +440,13 @@ def _refine_total(
     # promoted regardless of the keyword anchor on its line.
     classified = _classify_money_lines(repaired)
     targets = _arithmetic_targets(classified)
+    # FOCUS-Σ: precompute the items-subset-sum reachable cents-set once
+    # per receipt.  Identity 3 fires when the keyword-anchored I₁/I₂ are
+    # silent (no SUBTOTAL/CASH/CHANGE keyword survived OCR) but item
+    # lines still enumerate to the grand total — the dominant
+    # ``assigner_error`` failure mode in the diagnostics for run
+    # 20260430T125211Z (88 DONUT, 93 pipeline ``total`` errors).
+    subset_sum_cents = subset_sum_target_cents(classified)
     # OCR-drift correction: if arithmetic produces a clean target value
     # but the closest line value is within edit distance 1 (single OCR
     # digit drift — ``79.45`` vs ``70.45``, ``119.55`` vs ``118.55``,
@@ -430,7 +456,10 @@ def _refine_total(
     # path never invents a value out of thin air.
     rank = _attn_rank(attn_row) if attn_row else {}
     scored: list[tuple[float, int, str]] = sorted(
-        ((_score_money(i, repaired, rank, money_idxs, attn_row, targets), i,
+        ((_score_money(
+              i, repaired, rank, money_idxs, attn_row, targets,
+              subset_sum_cents,
+          ), i,
           _MONEY_RE.search(repaired[i]).group(0))  # type: ignore[union-attr]
          for i in money_idxs),
         reverse=True,
