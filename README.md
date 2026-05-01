@@ -1,9 +1,50 @@
-# kaggle2
+# kaggle2 — FOCUS-Σ verifier for document KIE
 
-Context-window-first receipt KIE. DONUT vs YOLO+TrOCR+Attention on SROIE.
-18 files, ≤166 LOC cap, 2-in/1-out contracts, mypy-as-test-suite.
-Replaces 34K-line Python monolith. Trains both architectures, evaluates on
-63-image split, generates IEEE-regional LaTeX paper.
+> **2026-05 reframing.**  This project's central contribution is now
+> **FOCUS-$\Sigma$**: a structural-arithmetic verification layer for
+> document KIE candidates, with theoretical soundness/completeness
+> guarantees (`report/sections/focus_sigma_theory.tex`) and an
+> architecture-agnostic wrapper that lifts $\Delta$F1 over DONUT,
+> LayoutLMv3, and a learned attention-assigner pipeline on SROIE
+> Task-3 + CORD-v2 with no upstream retrain required.  The original
+> "DONUT vs Pipeline on SROIE" comparison is now a single experiment
+> in the larger story; see [`docs/RESEARCH_DECONSTRUCTION.md`](docs/RESEARCH_DECONSTRUCTION.md)
+> for the cold-reading that motivated the reframing and
+> [`report/template_neurips.tex`](report/template_neurips.tex) for the
+> reorganized paper.
+
+**What's here.**  A typed-Python (`mypy --strict` clean), 24 K-LoC
+research stack that trains DONUT, fine-tunes LayoutLMv3, and runs a
+YOLOv8 + TrOCR + 400 K-parameter attention-assigner pipeline on SROIE
+Task-3 (n=347) and CORD-v2.  FOCUS-$\Sigma$ — the central contribution
+— is the inference-time verification layer in
+[`models/total_arithmetic.py`](models/total_arithmetic.py) +
+[`models/consensus.py`](models/consensus.py) that grounds every
+$\textsf{total}$-field candidate in three arithmetic identities,
+including a novel structural identity (subset-sum + tax_aug) that
+fires on receipts where keyword-anchored identities are silent.
+
+**Status.**  Single-seed point estimates measured; multi-seed
+($n{=}5$) runner shipped (`scripts/run_5seed_sweep.sh`), per-component
+ablation runner shipped (`scripts/run_focus_ablation.sh`),
+LayoutLMv3 fine-tune + inference shipped
+(`models/layoutlmv3_eval.py`, was a 70-line stub before the
+reframing), CORD-v2 loader shipped (`data/cord.py`).  The next
+vast.ai run produces the first multi-seed cross-dataset table — see
+[`docs/HONESTY.md`](docs/HONESTY.md) for the live gap list.
+
+---
+
+## Original framing (preserved for the IEEE/ICDAR template)
+
+The pre-reframing description below remains accurate for the
+`baseline` paper variant (`report/template_baseline.tex`,
+`paper_fixed.tex`) — the IEEE-regional submission.  For the NeurIPS
+submission see `report/template_neurips.tex`.
+
+Context-window-first receipt KIE.  DONUT vs YOLO+TrOCR+Attention on SROIE.
+Trains both architectures, evaluates on the canonical 347-image SROIE
+Task-3 split, generates the LaTeX paper.
 
 ## Expected F1 — honest range, no guarantees
 

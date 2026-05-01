@@ -98,7 +98,8 @@ def load_config(path: str, defaults: dict[str, Any] | None = None) -> ExpConfig:
         "canonical_sroie_test_url", "canonical_sroie_gt_url",
         "canonical_sroie_hf_repo", "canonical_sroie_hf_revision",
         "paper_variant",
-        "layoutlmv3_enabled", "layoutlmv3_model",
+        "layoutlmv3_enabled", "layoutlmv3_model", "layoutlmv3_epochs",
+        "cord_eval_enabled", "cord_split",
         "measure_latency",
         "qualitative_sample_ids", "fig1_receipt_id",
         "strict_paper",
@@ -264,6 +265,9 @@ def load_config(path: str, defaults: dict[str, Any] | None = None) -> ExpConfig:
         paper_variant=str(raw.get("paper_variant", "focus")),
         layoutlmv3_enabled=bool(raw.get("layoutlmv3_enabled", False)),
         layoutlmv3_model=str(raw.get("layoutlmv3_model", "microsoft/layoutlmv3-base")),
+        layoutlmv3_epochs=int(raw.get("layoutlmv3_epochs", 8)),
+        cord_eval_enabled=bool(raw.get("cord_eval_enabled", False)),
+        cord_split=str(raw.get("cord_split", "test")),
         measure_latency=bool(raw.get("measure_latency", False)),
         qualitative_sample_ids=[
             str(x) for x in raw.get("qualitative_sample_ids", []) or []

@@ -423,6 +423,12 @@ class ExpConfig:
     # GPU box that has the public HF checkpoint cached.
     layoutlmv3_enabled: bool = False
     layoutlmv3_model: str = "microsoft/layoutlmv3-base"
+    layoutlmv3_epochs: int = 8
+    # NeurIPS reframe — CORD-v2 cross-dataset eval (closes HONESTY §2.2).
+    # Off by default; flip to True to load ``naver-clova-ix/cord-v2`` and
+    # run the pipeline arm against it.  See ``data/cord.py``.
+    cord_eval_enabled: bool = False
+    cord_split: str = "test"
     # v4 — Inference-latency producer.  When True the eval loop times
     # each forward pass and writes ``metrics/latency_<system>.json``
     # so Table~X (the latency table) resolves.  Off by default to keep
