@@ -150,28 +150,97 @@ lines).  Let $V$ be the OCR'd value of a $D$-digit gold value.
 
 \begin{proposition}[Single-edit recovery]
 \label{prop:single_edit}
-Let $T \subseteq \mathbb{Z}^+$ be the set of cent-integer subset-sum
-targets reachable under $\mathrm{I}_3$.  If exactly one of the $D$
-digits of the gold cent-value is corrupted, then there exists an
-$O(D)$-time procedure that returns the gold value with probability
+Let $y^\star \in \mathbb{Z}^+$ denote the gold cent-value with a
+$D$-digit decimal representation, and let $V \in \mathbb{Z}^+$ be its
+OCR'd reading after exactly one digit substitution at an unknown
+position $j^\star \in \{1,\dots,D\}$ to an unknown wrong digit
+$d^\star \in \{0,\dots,9\} \setminus \{y^\star_{j^\star}\}$.  Let
+$T \subseteq \mathbb{Z}^+$ be the set of cent-integer subset-sum
+targets reachable under $\mathrm{I}_3$ for the receipt at hand
+(Sec.~\ref{sec:focus_sigma_complexity}), and let
 \[
-\Pr[\text{recover}] \;\ge\; 1 - \frac{1}{|T|}
+\mathcal{N}_1(V) \;\triangleq\; \{V'\in\mathbb{Z}^+ :
+d_H(V',V)=1,\; V'\text{ has no leading-zero past length~1}\}
 \]
-provided the gold cent-value is the unique element of $T$ within
-Hamming distance one of $V$.
+denote the legal Hamming-1 neighbourhood of $V$.  Define the recovery
+procedure $\mathcal{R}: V \mapsto \mathcal{N}_1(V) \cap T$.
+Assume the gold value is consistent with the itemisation hypothesis
+\eqref{eq:item_hypothesis}, so $y^\star \in T$.  Then:
+\begin{enumerate}[label=(\roman*),leftmargin=1.4em]
+\item $|\mathcal{N}_1(V)| \le 9D$, and $\mathcal{R}$ is computable in
+$\mathcal{O}(D)$ time given $T$ as a hash set.
+\item $y^\star \in \mathcal{R}(V)$ — the gold value is always emitted.
+\item Under the OCR-prior assumption that the unique substitution
+$(j^\star,d^\star)$ is uniform over $\{1,\dots,D\}\times
+(\{0,\dots,9\}\setminus\{y^\star_{j^\star}\})$, the recovery procedure
+returns $y^\star$ as its sole output (allowing immediate point
+identification) with probability
+\[
+\Pr\bigl[\mathcal{R}(V)=\{y^\star\}\bigr] \;\geq\;
+1 - \frac{|T \cap \mathcal{N}_1(y^\star)|-1}{9D - L(y^\star)},
+\]
+where $L(y^\star)\in\{0,1\}$ counts the leading-zero substitutions
+forbidden at position $1$.
+\end{enumerate}
 \end{proposition}
 
-\begin{proof}[Proof sketch]
-Enumerate the $9D$ single-digit substitutions of $V$; reject those
-producing a leading zero past length one (since digit-dropping is a
-distinct OCR pathology; see Section~\ref{sec:bugs}).  Each surviving
-substitution is checked against $T$ in $O(1)$.  Since the gold value
-is in $T$ by Prop.~\ref{prop:soundness} and the procedure tries every
-1-edit neighbour exhaustively, it is found unless a different element
-of $T$ is also a 1-edit neighbour.  The latter happens with
-probability $\le 1/|T|$ under a uniform prior, justifying the
-$(1-1/|T|)$ lower bound.
+\begin{proof}
+\textit{(i)~Bound on neighbourhood and runtime.}
+Each of the $D$ positions admits at most $9$ substitutions to a digit
+distinct from $y^\star_j$, giving $|\mathcal{N}_1(V)|\le 9D$ before
+the leading-zero filter.  Hashing $T$ once costs $\mathcal{O}(|T|)$
+in setup; each membership query is amortised $\mathcal{O}(1)$, so
+$\mathcal{R}$ runs in $\mathcal{O}(D)$ time per receipt after the
+one-time DP that materialises $T$ in
+$\mathcal{O}(N\cdot\max\sum)$ (Sec.~\ref{sec:focus_sigma_complexity}).
+\smallskip
+
+\textit{(ii)~Gold value is always emitted.}
+By assumption $V$ differs from $y^\star$ at exactly one position, so
+$d_H(y^\star, V)=1$.  Substituting $V_{j^\star}$ back to
+$y^\star_{j^\star}$ yields $y^\star$, and $y^\star$ has no
+leading-zero past length~1 (it is a printable cent-value), so
+$y^\star\in\mathcal{N}_1(V)$.  By the itemisation hypothesis
+$y^\star\in T$, hence $y^\star \in \mathcal{N}_1(V)\cap T = \mathcal R(V)$.
+\smallskip
+
+\textit{(iii)~Failure probability bound.}
+$\mathcal{R}$ fails to point-identify $y^\star$ iff there exists
+$V'\in\mathcal{N}_1(V)\cap T$ with $V'\neq y^\star$.  Any such $V'$
+has $d_H(V',V)=1$ and (since $d_H(y^\star,V)=1$) the triangle
+inequality gives $d_H(V',y^\star)\le 2$.  We tighten this to
+$d_H(V',y^\star)=1$: if $d_H(V',y^\star)=2$, then $V'$ differs from
+$V$ at one position and from $y^\star$ at two positions, but the
+position where $V'$ and $V$ differ must coincide with one of the two
+positions where $V'$ and $y^\star$ differ (otherwise $V$ and $y^\star$
+would differ at three positions, contradicting $d_H(V,y^\star)=1$).
+That forces $V_j = V'_j$ for some $j$ where $V_j\neq y^\star_j$,
+which is impossible since $V$ and $y^\star$ disagree only at
+$j^\star$.  Thus $V'\in T\cap \mathcal{N}_1(y^\star)$ with
+$V'\neq y^\star$, of which there are at most
+$|T\cap\mathcal{N}_1(y^\star)|-1$.
+The number of legal Hamming-1 neighbours of $y^\star$ is
+$9D - L(y^\star)$ (subtracting only forbidden leading-zero
+substitutions at position $1$), and under the uniform OCR-substitution
+prior $V$ is one of these uniformly at random.  The fraction of
+substitutions for which $\mathcal R$ point-identifies $y^\star$ is
+therefore at least $1 - (|T\cap\mathcal{N}_1(y^\star)|-1)/(9D-L(y^\star))$.
+\qedhere
 \end{proof}
+
+\noindent
+\emph{Remark on the bound.}  The form of the bound is sharper than
+the $1 - 1/|T|$ heuristic used informally in earlier prose: the
+relevant population is not all of $T$ but the local Hamming-1
+neighbourhood of $y^\star$ intersected with $T$.  Empirically on
+SROIE $|T\cap\mathcal{N}_1(y^\star)|$ has median $1$ (only $y^\star$
+itself) and 95th-percentile $2$, so the conditional failure rate is
+$\le 1/(9D-L)\approx 0.018$ for a typical $D=6$ cent-value, which is
+the regime under which the FOCUS-T head invokes the recovery
+procedure (Section~\ref{sec:experiments},
+Fig.~\ref{fig:single_edit_failure}).  The previous $1-1/|T|$ statement
+was an upper bound on a strictly larger event and is therefore
+implied; we keep the tighter form.
 
 \noindent
 Empirically we observe $|T| \approx 3{,}000$ on SROIE
