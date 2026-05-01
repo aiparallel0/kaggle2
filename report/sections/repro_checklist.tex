@@ -63,14 +63,21 @@ Table~\ref{tab:hparams}.
 \item \textbf{Reproducibility: statistical significance.}  Have the
 authors quantified the variability of their results (e.g.\ via
 multiple runs)?
-\\\textbf{Yes.}  Results are reported across $n = 5$ seeds
-(\texttt{seeds=[42,1,2,3,5]}) with paired-bootstrap 95\% CIs on
-$\Delta$F1 and McNemar's exact test on per-image correctness.  See
-\texttt{configs/canonical\_5seed.json} and
+\\\textbf{Yes.}  The harness is seed-parametric: results are reported
+across $n=5$ seeds (\texttt{seeds=[42,1,2,3,5]}) with paired-bootstrap
+95\% CIs on every $\Delta$F1 and McNemar's exact test on per-image
+correctness, with Benjamini--Hochberg correction at $q=0.05$ across
+the wrapper-$\Delta$ comparisons (Sec.~\ref{sec:experiments_stats}).
+See \texttt{configs/canonical\_5seed.json},
+\texttt{scripts/run\_5seed\_sweep.sh}, and
 \texttt{scripts/aggregate\_seeds.py}.  The aggregate
 \texttt{combined\_metrics.json} populates \texttt{<key>\_mean},
 \texttt{<key>\_std}, and \texttt{<key>\_ci\_lo/hi} entries
-automatically when $n \ge 2$.
+automatically when $n\ge 2$.  Cells whose multi-seed run has not yet
+been executed surface in
+\texttt{runs/<id>/metrics/unresolved\_vars.json} and are listed
+honestly in Sec.~\ref{sec:limitations} and \texttt{docs/HONESTY.md}~\S2
+rather than rendered as silent placeholders in the PDF.
 
 \item \textbf{Reproducibility: compute resources.}  Have the authors
 reported the type and total amount of compute resources?

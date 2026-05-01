@@ -12,6 +12,25 @@ abstract / discussion / limitations track the underlying reality.
 > motivated the reframing and `report/template_neurips.tex` for the
 > NeurIPS paper structure.  This file remains the source of truth
 > for what is and is not measurable on the current artefacts.
+>
+> **Section coherence (post-2026-05).**  The NeurIPS template now
+> uses dedicated `report/sections/experiments_neurips.tex` and
+> `report/sections/results_neurips.tex` files that match the
+> wrapper-$\Delta$ × ablation × cross-dataset narrative promised by
+> `intro_neurips.tex` (the IEEE/ICDAR template continues to use the
+> original `experiments.tex` / `results.tex`).  The wrapper-$\Delta$
+> producer (`report/wrapper_delta.py`) consumes the
+> `metrics/wrapper_delta_metrics.json` /
+> `metrics/ablation_focus_sigma.json` /
+> `metrics/error_decomposition.json` /
+> `metrics/faithfulness_metrics.json` /
+> `metrics/calibration_metrics.json` /
+> `metrics/latency_metrics.json` sidecars and forwards their flat
+> scalars to `\VAR{}` keys.  When a sidecar is absent the producer
+> deliberately leaves its keys unresolved — no synthetic numbers are
+> fabricated — and the corresponding cells appear in
+> `metrics/unresolved_vars.json` for the audit gate.  See
+> `docs/TRACKING.md` for the per-key path-to-real-value table.
 
 ## 1. What FOCUS-Σ does demonstrate (single-seed, single-dataset, headline)
 

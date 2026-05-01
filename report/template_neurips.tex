@@ -94,9 +94,15 @@ checklist.
 
 \input{sections/focus_sigma_theory}
 
-\input{sections/experiments}
+% NeurIPS-variant experiments + results.  The IEEE/ICDAR template
+% uses sections/experiments.tex + sections/results.tex; the NeurIPS
+% reframing puts the wrapper-Δ × ablation × cross-dataset matrix at
+% the centre of the paper, sourced from
+% runs/<id>/metrics/wrapper_delta_metrics.json (producer:
+% report.wrapper_delta).
+\input{sections/experiments_neurips}
 
-\input{sections/results}
+\input{sections/results_neurips}
 
 \input{sections/discussion}
 
