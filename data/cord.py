@@ -196,7 +196,7 @@ def _flatten_first(obj: Any, dotted: str) -> str | None:
             return None
     if isinstance(cur, str):
         return cur
-    if isinstance(cur, (int, float)):
+    if isinstance(cur, int | float):
         return str(cur)
     return None
 
