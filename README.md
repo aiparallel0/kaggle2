@@ -352,11 +352,19 @@ All hyperparameters live in `configs/default.json`. F1-affecting knobs:
 
 | Parameter | Default | Effect on expected F1 |
 |---|---|---|
-| `epochs_donut` | 30 | Longer training → higher F1, diminishing returns past ~30 on 500 SROIE receipts. |
-| `image_size` | [1280, 960] | Higher resolution → better address/total recognition; more VRAM. |
-| `num_beams` | 4 | Beam search typically gains 2–4 F1 points over greedy. |
-| `lr_scheduler_type` | cosine | Cosine > linear for short SROIE runs. |
-| `warmup_ratio` | 0.1 | Stabilises early loss on small data. |
+| `epochs_donut` | 30 | Original DONUT paper recipe (Kim et al. 2022, `clovaai/donut/config/train_sroie.yaml::max_epochs`). |
+| `image_size` | [1280, 960] | Original DONUT paper recipe (`input_size`). Higher resolution → better address/total recognition; more VRAM. |
+| `num_beams` | 1 | Original DONUT paper recipe (greedy decoding). Beam search at inference time is a tunable knob; raising to 4 typically gains 2–4 F1 points. |
+| `lr_scheduler_type` | cosine | Cosine warmup-then-decay; matches the PyTorch-Lightning scheduler used by the original DONUT codebase. |
+| `warmup_steps` | 300 | Original DONUT paper recipe (`warmup_steps`). Set `warmup_ratio=0.0` to honour `warmup_steps`. |
+| `warmup_ratio` | 0.0 | Disabled in favour of explicit `warmup_steps=300` per the original recipe. |
+| `lr` | 3e-5 | Original DONUT paper recipe (uniform across encoder + decoder). |
+| `lr_decoder` | 3e-5 | Set equal to `lr` to disable differential LR (paper used uniform LR). Raising to `3e-4` reintroduces the 10× decoder LR for resized special-token embeddings. |
+| `batch_size` | 1 | Original DONUT paper recipe (`train_batch_sizes=[1]`). |
+| `grad_accum` | 1 | Original DONUT paper recipe (no gradient accumulation). Effective batch size = 1. |
+| `max_length` | 768 | Original DONUT paper recipe (`max_length`). |
+| `weight_decay` | 0.0 | Original DONUT paper used `Adam` (no weight decay). Our AdamW with `weight_decay=0.0` is equivalent. |
+| `label_smoothing` | 0.0 | Original DONUT paper did not use label smoothing. |
 | `gradient_checkpointing` | true | Lets batch 8 × 1280 × 960 fit in 24 GB. |
 | `patience` | 3 | EarlyStopping on plateau of eval F1. |
 | `precision` | bf16 | bf16 on Ampere+; fp16 with grad-clip otherwise (Bug 4). |
