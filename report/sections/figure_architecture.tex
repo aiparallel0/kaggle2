@@ -1,0 +1,145 @@
+% Architecture / pipeline diagram for the FOCUS-Σ system.
+% Drop in via \input{sections/figure_architecture.tex} from Method.
+% Requires \usepackage{tikz}, \usetikzlibrary{...} — declared in
+% template_neurips.tex preamble (added alongside this file).
+
+\begin{figure*}[t]
+\centering
+\begin{tikzpicture}[
+  font=\small\sffamily,
+  >=Latex,
+  node distance=8mm and 11mm,
+  every node/.style={align=center},
+  stage/.style={
+    draw, rounded corners=2pt, very thick,
+    minimum width=22mm, minimum height=11mm,
+    fill=black!4, drop shadow={shadow xshift=0.4pt, shadow yshift=-0.4pt, opacity=.25},
+  },
+  detector/.style={stage, fill=blue!7, draw=blue!50!black},
+  recogniser/.style={stage, fill=teal!10, draw=teal!50!black},
+  assigner/.style={stage, fill=violet!10, draw=violet!60!black},
+  verifier/.style={
+    draw, rounded corners=3pt, ultra thick,
+    minimum width=42mm, minimum height=20mm,
+    fill=orange!12, draw=orange!75!black,
+    drop shadow={shadow xshift=0.6pt, shadow yshift=-0.6pt, opacity=.30},
+  },
+  identity/.style={
+    draw, rounded corners=1.5pt,
+    minimum width=20mm, minimum height=6.5mm,
+    fill=white, draw=orange!70!black, line width=0.7pt,
+    font=\footnotesize\sffamily,
+  },
+  data/.style={
+    draw, dashed, rounded corners=1pt,
+    minimum width=18mm, minimum height=8mm,
+    fill=gray!4, font=\footnotesize\sffamily,
+  },
+  arrow/.style={->, thick, draw=black!75},
+  flowarrow/.style={->, ultra thick, draw=black!85, line cap=round},
+  legend/.style={font=\scriptsize\sffamily, anchor=west},
+]
+
+% --------------------------------------------------------------------- %
+% Top row: detect -> recognise -> assign  (the upstream extractor).      %
+% --------------------------------------------------------------------- %
+\node[data]       (img)   at (0,0)        {Receipt\\image\\$\mathbf{x}$};
+\node[detector]   (yolo)  [right=10mm of img]                {YOLOv8\\\scriptsize text-line det.\\\scriptsize $1024^2$ in};
+\node[recogniser] (trocr) [right=of yolo]                    {TrOCR\\\scriptsize line $\to$ string\\\scriptsize 62\,M};
+\node[assigner]   (assig) [right=of trocr]                   {Attention\\Assigner\\\scriptsize 1.16\,M, 4 fields};
+
+% Auxiliary outputs from upstream stack.
+\node[data] (lines)   [above=4mm of trocr]   {OCR lines\\$\{(\ell_i, b_i)\}_{i=1}^{N}$};
+\node[data] (cands)   [above=4mm of assig]   {Field candidates\\$\hat y_{\mathrm{c}}, \hat y_{\mathrm{d}}, \hat y_{\mathrm{a}}, \hat y_{\mathrm{t}}$};
+
+% Top-row flow.
+\draw[flowarrow] (img.east) -- (yolo.west);
+\draw[flowarrow] (yolo.east) -- (trocr.west);
+\draw[flowarrow] (trocr.east) -- (assig.west);
+\draw[arrow, dashed] (trocr.north) -- (lines.south);
+\draw[arrow, dashed] (assig.north) -- (cands.south);
+
+% --------------------------------------------------------------------- %
+% FOCUS-Σ verifier (this paper's contribution) — large box below row 1. %
+% --------------------------------------------------------------------- %
+\node[verifier] (focus)
+  at ($(trocr.south)+(15mm,-22mm)$)
+  {};
+\node[anchor=north] at (focus.north) {\textbf{FOCUS-$\Sigma$ verifier}\\\scriptsize architecture-agnostic, $\sim$35\,ms / receipt};
+
+% Three identity boxes inside the verifier.
+\node[identity] (i1) at ($(focus.center)+(-13mm,-3mm)$) {$\mathrm{I}_1$: cash $-$ change};
+\node[identity] (i2) at ($(focus.center)+(  0mm,-3mm)$) {$\mathrm{I}_2$: subtotal $+\,\tau$};
+\node[identity] (i3) at ($(focus.center)+(+13mm,-3mm)$) {\textbf{$\mathrm{I}_3$: $\sum_{S\subseteq\mathcal I} v_i + \tau$}};
+
+% Witness count / consensus output.
+\node[stage, fill=orange!22, draw=orange!70!black]
+  (cons) [right=14mm of focus]
+  {Witness\\count $W(\hat y_t)$\\\scriptsize $\in\{0,1,2,3\}$};
+
+% Final field outputs (verified).
+\node[stage, fill=green!10, draw=green!50!black]
+  (out) [right=of cons]
+  {Verified\\fields\\\scriptsize {\footnotesize \texttt{company,date,addr,total}}};
+
+% Wires into the verifier.
+\draw[arrow] (lines.east)
+  to[out=0,in=90]
+  ($(focus.north)+(0mm,2mm)$);
+\draw[arrow] (cands.east)
+  to[out=0,in=90]
+  ($(focus.north east)+(-6mm,2mm)$);
+
+% Verifier -> consensus -> output.
+\draw[flowarrow] (focus.east) -- (cons.west);
+\draw[flowarrow] (cons.east)  -- (out.west);
+
+% Identity 3 emphasis: little subset-sum pictogram next to I3.
+\begin{scope}[shift={($(i3.south east)+(2mm,-6mm)$)}]
+  \fill[orange!25, rounded corners=0.5pt] (-1mm,-1mm) rectangle (1mm,1mm);
+  \node[font=\tiny\sffamily, anchor=north]
+    at (0,-1.5mm) {subset-sum DP};
+\end{scope}
+
+% --------------------------------------------------------------------- %
+% Legend strip                                                           %
+% --------------------------------------------------------------------- %
+\begin{scope}[shift={($(out.south east)+(2mm,-13mm)$)}]
+  \node[legend, anchor=south east]
+    {\textcolor{blue!50!black}{$\blacksquare$} detector \quad
+     \textcolor{teal!50!black}{$\blacksquare$} recogniser \quad
+     \textcolor{violet!60!black}{$\blacksquare$} learned assigner \quad
+     \textcolor{orange!75!black}{$\blacksquare$} \textbf{FOCUS-$\Sigma$ (this paper)} \quad
+     \textcolor{green!50!black}{$\blacksquare$} output};
+\end{scope}
+
+% --------------------------------------------------------------------- %
+% Stage callouts (top): show parameter counts + role.                    %
+% --------------------------------------------------------------------- %
+\node[font=\footnotesize\sffamily, text=blue!40!black]
+  [below=1mm of yolo] {detect};
+\node[font=\footnotesize\sffamily, text=teal!40!black]
+  [below=1mm of trocr] {recognise};
+\node[font=\footnotesize\sffamily, text=violet!50!black]
+  [below=1mm of assig] {assign};
+
+\end{tikzpicture}
+
+\caption{%
+\textbf{FOCUS-$\Sigma$ pipeline.}  An off-the-shelf detect–read–assign
+stack (YOLOv8 + TrOCR + a 1.16\,M-parameter attention assigner; total
+$\sim$65.8\,M parameters) emits one candidate per field per receipt.
+The candidate for the \textsf{total} field is then verified against
+three arithmetic identities defined over the receipt's own money
+lines: keyword-anchored $\mathrm{I}_1$ (cash$-$change) and
+$\mathrm{I}_2$ (subtotal$+\tau$), and the structural identity
+$\mathrm{I}_3$ — \emph{this paper's contribution} — which holds
+whenever a subset of item lines plus tax-augmentation $\tau$ matches
+the candidate within $\varepsilon=0.02$.  Identity $\mathrm{I}_3$ is
+keyword-independent and fires on $\geq 87.6\%$ of receipts where
+$\mathrm{I}_1, \mathrm{I}_2$ are silent.  The verifier is
+architecture-agnostic: any upstream extractor (DONUT, LayoutLMv3,
+BROS, $\dots$) that produces a candidate value can be wrapped without
+retraining.}
+\label{fig:architecture}
+\end{figure*}

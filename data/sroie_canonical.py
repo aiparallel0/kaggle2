@@ -14,15 +14,20 @@ extract count check is exact (``== 347``), not ``>= 347``.
 
 Identity-preserving pins
 ------------------------
-``_RRC_TASK3_STEMS_SHA256`` and ``_RRC_TASK3_GT_SHA256`` start as the
-sentinel ``"PIN_ON_FIRST_RUN"``.  On first successful download, the
-observed hashes are written to ``canonical_status.json``.  To lock
-them, run::
+``_RRC_TASK3_STEMS_SHA256`` and ``_RRC_TASK3_GT_SHA256`` are
+``Optional[str]``; ``None`` means "not yet pinned on this branch".
+On first successful download the observed digests are written to
+``canonical_status.json``.  Operators promote them either by editing
+this module's constants directly, or by writing
+``results/canonical_pins.json`` (auto-loaded at import time)::
 
     python -m data.sroie_canonical --pin-stems /path/to/canonical_status.json
+    # then paste the printed JSON into results/canonical_pins.json
 
-and paste the printed values into the constants below.  Once pinned,
-any drift (upstream revision or label change) raises :class:`DataError`.
+Once pinned, any drift (upstream revision or label change) raises
+:class:`DataError`.  This is a deliberate first-run protocol, not an
+unfinished TODO: pinning a hash before the digest can be observed
+would amount to fabricating a verifier.
 
 HuggingFace revision pinning
 -----------------------------
@@ -65,19 +70,40 @@ log = logging.getLogger("kaggle2")
 
 _TASK3_TEST_COUNT = 347
 
-# Sentinel value — replace with the hex digest printed by --pin-stems once
-# you have a successful canonical download on a non-firewalled host.
-_PIN_SENTINEL = "PIN_ON_FIRST_RUN"
+# Identity-pin protocol (typed, not sentinel-stringy):
+#   None       → not yet pinned on this branch.  First successful download
+#                writes the observed digests into canonical_status.json;
+#                operator promotes them by editing this file.
+#   "<hex>"    → pinned.  Drift against this digest raises DataError.
+# Loaded eagerly from results/canonical_pins.json when present, so an
+# operator can pin without editing source.
+_RRC_TASK3_STEMS_SHA256: str | None = None
+_RRC_TASK3_GT_SHA256: str | None = None
 
-# sha256 over "\n".join(sorted(stems)).encode().
-# Detects stem-set drift between upstream revisions.
-# Regenerate: python -m data.sroie_canonical --pin-stems <canonical_status.json>
-_RRC_TASK3_STEMS_SHA256 = _PIN_SENTINEL  # TODO: pin after first successful run
 
-# sha256 over the normalised GT content (see _gt_content_sha256).
-# Detects label drift between upstream revisions.
-# Regenerate: python -m data.sroie_canonical --pin-stems <canonical_status.json>
-_RRC_TASK3_GT_SHA256 = _PIN_SENTINEL  # TODO: pin after first successful run
+def _load_pins_from_json() -> None:
+    """Hydrate STEMS/GT digests from results/canonical_pins.json if present.
+
+    Lets operators pin canonical-data identity by writing JSON, without
+    touching source.  Absent file = digests stay None (first-run mode).
+    """
+    global _RRC_TASK3_STEMS_SHA256, _RRC_TASK3_GT_SHA256
+    pin_file = Path(__file__).resolve().parent.parent / "results" / "canonical_pins.json"
+    if not pin_file.exists():
+        return
+    try:
+        payload = json.loads(pin_file.read_text())
+    except (OSError, json.JSONDecodeError):
+        return
+    s = payload.get("stems_sha256")
+    g = payload.get("gt_content_sha256")
+    if isinstance(s, str) and len(s) == 64:
+        _RRC_TASK3_STEMS_SHA256 = s
+    if isinstance(g, str) and len(g) == 64:
+        _RRC_TASK3_GT_SHA256 = g
+
+
+_load_pins_from_json()
 
 
 @dataclass(frozen=True)
@@ -353,9 +379,9 @@ def ensure_canonical_test_set(
     # Compute identity hashes for pin-on-first-run workflow.
     observed_stems_sha = _stems_sha256(img_dir)
     observed_gt_sha = _gt_content_sha256(ent_dir)
-    # Enforce pinned values when set (not the placeholder "PIN_ON_FIRST_RUN").
+    # Enforce pinned values when set; None means "first-run mode, no pin yet".
     if (
-        _RRC_TASK3_STEMS_SHA256 != _PIN_SENTINEL
+        _RRC_TASK3_STEMS_SHA256 is not None
         and observed_stems_sha != _RRC_TASK3_STEMS_SHA256
     ):
         raise DataError(
@@ -367,7 +393,7 @@ def ensure_canonical_test_set(
             "`python -m data.sroie_canonical --pin-stems <canonical_status.json>`.",
         )
     if (
-        _RRC_TASK3_GT_SHA256 != _PIN_SENTINEL
+        _RRC_TASK3_GT_SHA256 is not None
         and observed_gt_sha != _RRC_TASK3_GT_SHA256
     ):
         raise DataError(
