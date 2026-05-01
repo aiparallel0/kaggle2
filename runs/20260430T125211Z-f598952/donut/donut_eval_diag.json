@@ -1,0 +1,144 @@
+{
+  "image_processor_size": {
+    "height": 960,
+    "width": 1280
+  },
+  "decoder_start_token_id": 57525,
+  "eos_token_id": 57526,
+  "pad_token_id": 1,
+  "tokenizer_has_s_sroie": true,
+  "tokenizer_s_sroie_id": 57525,
+  "tokenizer_eos_s_sroie_id": 57526,
+  "model_config_vocab_size": 57535,
+  "tokenizer_vocab_size": 57535,
+  "lm_head_out_features": 57535,
+  "generation_config": {
+    "forced_bos_token_id": null,
+    "forced_eos_token_id": null,
+    "decoder_start_token_id": 57525,
+    "eos_token_id": 57526,
+    "bos_token_id": 57525
+  },
+  "samples": [
+    {
+      "image_id": "X00016469670",
+      "tokens_full": "<s_sroie><s_company> IJC MARKETING SDN BHD</s_company><s_date> 15/01/2019</s_date><s_address> NO 2 & 4, JALAN BATU 4, BANDAR SERI ALAM, 81750 MASAI, JOHOR</s_address><s_total> 193.00</s_total></s_sroie>",
+      "raw_token2json": {
+        "sroie": {
+          "company": "IJC MARKETING SDN BHD",
+          "date": "15/01/2019",
+          "address": "NO 2 & 4, JALAN BATU 4, BANDAR SERI ALAM, 81750 MASAI, JOHOR",
+          "total": "193.00"
+        }
+      },
+      "parsed": {
+        "company": "IJC MARKETING SDN BHD",
+        "date": "15/01/2019",
+        "address": "NO 2 & 4, JALAN BATU 4, BANDAR SERI ALAM, 81750 MASAI, JOHOR",
+        "total": "193.00"
+      },
+      "gt": {
+        "company": "OJC MARKETING SDN BHD",
+        "date": "15/01/2019",
+        "address": "NO 2 & 4, JALAN BAYU 4, BANDAR SERI ALAM, B1750 MASAI, JOHOR",
+        "total": "193.00"
+      }
+    },
+    {
+      "image_id": "X00016469671",
+      "tokens_full": "<s_sroie><s_company> IJC MARKETING SDN BHD</s_company><s_date> 02/01/2019</s_date><s_address> NO 2 & 4, JALAN BATU 4, BANDAR SERI ALAM, 81750 MASAI, JOHOR</s_address><s_total> 170.00</s_total></s_sroie>",
+      "raw_token2json": {
+        "sroie": {
+          "company": "IJC MARKETING SDN BHD",
+          "date": "02/01/2019",
+          "address": "NO 2 & 4, JALAN BATU 4, BANDAR SERI ALAM, 81750 MASAI, JOHOR",
+          "total": "170.00"
+        }
+      },
+      "parsed": {
+        "company": "IJC MARKETING SDN BHD",
+        "date": "02/01/2019",
+        "address": "NO 2 & 4, JALAN BATU 4, BANDAR SERI ALAM, 81750 MASAI, JOHOR",
+        "total": "170.00"
+      },
+      "gt": {
+        "company": "OJC MARKETING SDN BHD",
+        "date": "02/01/2019",
+        "address": "NO 2 & 4, JALAN BAYU 4, BANDAR SERI ALAM, 81750 MASAI, JOHOR",
+        "total": "170.00"
+      }
+    },
+    {
+      "image_id": "X51005200931",
+      "tokens_full": "<s_sroie><s_company> PERNIAGAAN ZHENG HUI</s_company><s_date> 09/03/2018</s_date><s_address> NO.59 JALAN PERMAS JAYA BANDAR BARU PERMAS JAYA 81750 JOHOR BAHRU</s_address><s_total> 4838.20</s_total></s_sroie>",
+      "raw_token2json": {
+        "sroie": {
+          "company": "PERNIAGAAN ZHENG HUI",
+          "date": "09/03/2018",
+          "address": "NO.59 JALAN PERMAS JAYA BANDAR BARU PERMAS JAYA 81750 JOHOR BAHRU",
+          "total": "4838.20"
+        }
+      },
+      "parsed": {
+        "company": "PERNIAGAAN ZHENG HUI",
+        "date": "09/03/2018",
+        "address": "NO.59 JALAN PERMAS JAYA BANDAR BARU PERMAS JAYA 81750 JOHOR BAHRU",
+        "total": "4838.20"
+      },
+      "gt": {
+        "company": "PERNIAGAAN ZHENG HUI",
+        "date": "09/02/2018",
+        "address": "NO.59 JALAN PERMAS 9/5 BANDAR BARU PERMAS JAYA 81750 JOHOR BAHRU",
+        "total": "436.20"
+      }
+    },
+    {
+      "image_id": "X51005230605",
+      "tokens_full": "<s_sroie><s_company> PETROH BKI LANJAN SB</s_company><s_date> 01/02/2018</s_date><s_address> L/JAYA UTARA, SG BULOH 47000 SUNGAI BUL</s_address><s_total> 4.90</s_total></s_sroie>",
+      "raw_token2json": {
+        "sroie": {
+          "company": "PETROH BKI LANJAN SB",
+          "date": "01/02/2018",
+          "address": "L/JAYA UTARA, SG BULOH 47000 SUNGAI BUL",
+          "total": "4.90"
+        }
+      },
+      "parsed": {
+        "company": "PETROH BKI LANJAN SB",
+        "date": "01/02/2018",
+        "address": "L/JAYA UTARA, SG BULOH 47000 SUNGAI BUL",
+        "total": "4.90"
+      },
+      "gt": {
+        "company": "PETRON BKT LANJAN SB",
+        "date": "01/02/2018",
+        "address": "KM 458.4 BKT LANJAN UTARA, L/RAYA UTARA SELATAN,SG BULOH 47000 SUNGAI BUL",
+        "total": "4.90"
+      }
+    },
+    {
+      "image_id": "X51005230616",
+      "tokens_full": "<s_sroie><s_company> GERBANG ALAF RESTAURANTS SDN BHD</s_company><s_date> 18/01/2018</s_date><s_address> LEVEL 6, BANGUNAN TH, DAMANSARA UPTOWN3 NO.3, JALAN SS21/39,47400 PETALING JAYA</s_address><s_total> 38.90</s_total></s_sroie>",
+      "raw_token2json": {
+        "sroie": {
+          "company": "GERBANG ALAF RESTAURANTS SDN BHD",
+          "date": "18/01/2018",
+          "address": "LEVEL 6, BANGUNAN TH, DAMANSARA UPTOWN3 NO.3, JALAN SS21/39,47400 PETALING JAYA",
+          "total": "38.90"
+        }
+      },
+      "parsed": {
+        "company": "GERBANG ALAF RESTAURANTS SDN BHD",
+        "date": "18/01/2018",
+        "address": "LEVEL 6, BANGUNAN TH, DAMANSARA UPTOWN3 NO.3, JALAN SS21/39,47400 PETALING JAYA",
+        "total": "38.90"
+      },
+      "gt": {
+        "company": "GERBANG ALAF RESTAURANTS SDN BHD",
+        "date": "18/01/2018",
+        "address": "LEVEL 6, BANGUNAN TH, DAMANSARA UPTOWN3 NO.3, JALAN SS21/39,47400 PETALING JAYA SELANGOR",
+        "total": "38.90"
+      }
+    }
+  ]
+}

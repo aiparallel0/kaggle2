@@ -1,0 +1,85 @@
+% Related Work — NeurIPS framing.
+% Three positioning blocks: (a) document KIE landscape with the
+% structural-verification gap; (b) verifier-augmented generation in
+% NLP; (c) arithmetic-consistency post-processing in invoice
+% extraction (the closest published precedent for FOCUS-Σ I3).
+
+\section{Related Work}
+\label{sec:related}
+
+\paragraph{Document KIE without verification.}
+DONUT~\cite{kim2022donut} ingests an image and autoregressively decodes
+structured XML; LayoutLM~\cite{xu2020layoutlm} and its successors
+(v2~\cite{xu2021layoutlmv2}, v3~\cite{huang2022layoutlmv3},
+LayoutXLM~\cite{xu2021layoutxlm}) align OCR-token text with 2-D
+positional embeddings; BROS~\cite{hong2022bros} adds relative spatial
+attention; TILT~\cite{powalski2021going}, UDOP~\cite{tang2023unifying},
+DocLLM~\cite{wang2023docllm}, and StrucTexT~\cite{li2021structext}
+extend with multimodal pre-training objectives.  Pipeline approaches
+combine a text-line detector (YOLOv8~\cite{jocher2023yolov8}, DBNet,
+or PaddleOCR), a recogniser
+(TrOCR~\cite{li2023trocr}, Tesseract), and a learned or
+rule-based field assigner.  Across architectures, none of the cited
+systems verify their candidate outputs against the receipt's own
+arithmetic — they emit one prediction per field per receipt without
+post-hoc consistency checks.  Our contribution is a verification layer
+that wraps any of these architectures.
+
+\paragraph{Verifier-augmented generation in NLP.}
+The pattern of pairing a generator with a downstream verifier has
+become standard in NLP for chain-of-thought tasks
+(Cobbe et al.~\cite{cobbe2021training} train a verifier to score
+solution candidates;  Lightman et al.~\cite{lightman2023verify}
+train process- vs outcome-supervised verifiers on math problems;
+Madaan et al.~\cite{madaan2023selfrefine} use the generator itself
+as iterative critic; Chen et al.~\cite{chen2022codet} verify
+generated code against generated tests).
+FOCUS-$\Sigma$ is in this lineage but differs in two respects.
+\textbf{(i)} The verification target is a single numerical value
+bounded by a known arithmetic identity rather than a free-form claim
+or program; we exploit this to give exact soundness and completeness
+guarantees (Sec.~\ref{sec:focus_sigma}).
+\textbf{(ii)} The verifier is itself rule-based (a bounded subset-sum
+DP) rather than a learned head, which keeps it
+architecture-agnostic and trivially deployable across upstream
+extractors.
+
+\paragraph{Arithmetic post-processing in invoice extraction.}
+The closest published precedent is in the invoice-extraction
+literature, where heuristic checks of \texttt{subtotal + tax = total}
+appear as a post-processing step.  Kim et al.~\cite{kim2022donut} cite
+``arithmetic-consistency post-processing'' as an ablation;
+Hong et al.~\cite{hong2022bros} mention sub-total + tax sanity checks
+in their post-process; commercial systems
+(Microsoft Form Recogniser~\cite{azure-form-recogniser},
+AWS Textract~\cite{aws-textract}) advertise total-field validation
+without publishing their rule set.  These approaches are
+\emph{keyword-anchored}: they fire only when the \textsf{SUBTOTAL}
+and \textsf{TAX} keywords are both present and OCR'd correctly, which
+on the canonical SROIE Task-3 split holds for only 38.3\% of
+receipts.  FOCUS-$\Sigma$ adds the structural Identity $\mathrm{I}_3$
+which fires on the full 87.6\% of receipts that satisfy the
+itemisation hypothesis, regardless of which summary keywords the
+printer chose to emit.
+
+\paragraph{Subset-sum and combinatorial-verification methods.}
+The bounded subset-sum we use is classical knapsack DP
+(Karp~\cite{karp1972reducibility}; Bellman~\cite{bellman1957dynamic}).
+Its application as a verifier in document AI is, to our knowledge,
+new.  Closer methodologically is the program-by-construction
+literature
+(Solar-Lezama~\cite{solarlezama2008program};
+Polozov \& Gulwani~\cite{polozov2015flashmeta}) that synthesises
+domain-specific constraints from examples, but those systems
+synthesise rules; FOCUS-$\Sigma$ uses a fixed rule (a domain axiom)
+and verifies against it.
+
+\paragraph{Receipt benchmarks.}  SROIE~\cite{huang2019icdar} (626
+receipts, 4 fields) is the standard single-vendor-type benchmark.
+CORD~\cite{park2019cord} (Korean restaurant receipts, 30-field
+schema) is the second most-studied receipt corpus.
+WildReceipt~\cite{sun2021wildreceipt} extends to in-the-wild
+imaging conditions but is rarely used as a fine-tune target.
+We evaluate on SROIE Task-3 and CORD-v2; WildReceipt
+generalisation is flagged as future work
+(Sec.~\ref{sec:limitations}).

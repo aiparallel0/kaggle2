@@ -76,6 +76,7 @@ def load_config(path: str, defaults: dict[str, Any] | None = None) -> ExpConfig:
 
     _optional = {
         "yolo_conf", "trocr_max_new_tokens", "max_regions_per_image",
+        "yolo_crop_pad_px",
         "warmup_ratio", "lr_scheduler_type", "gradient_checkpointing",
         "num_beams", "f1_warn_threshold", "skip_donut",
         "focus_hidden_dim", "focus_n_layers_level2",
@@ -97,7 +98,8 @@ def load_config(path: str, defaults: dict[str, Any] | None = None) -> ExpConfig:
         "canonical_sroie_test_url", "canonical_sroie_gt_url",
         "canonical_sroie_hf_repo", "canonical_sroie_hf_revision",
         "paper_variant",
-        "layoutlmv3_enabled", "layoutlmv3_model",
+        "layoutlmv3_enabled", "layoutlmv3_model", "layoutlmv3_epochs",
+        "cord_eval_enabled", "cord_split",
         "measure_latency",
         "qualitative_sample_ids", "fig1_receipt_id",
         "strict_paper",
@@ -207,6 +209,7 @@ def load_config(path: str, defaults: dict[str, Any] | None = None) -> ExpConfig:
         yolo_conf=float(raw.get("yolo_conf", 0.25)),
         trocr_max_new_tokens=int(raw.get("trocr_max_new_tokens", 64)),
         max_regions_per_image=int(raw.get("max_regions_per_image", 32)),
+        yolo_crop_pad_px=int(raw.get("yolo_crop_pad_px", 0)),
         warmup_ratio=float(raw.get("warmup_ratio", 0.1)),
         lr_scheduler_type=str(raw.get("lr_scheduler_type", "cosine")),
         gradient_checkpointing=bool(raw.get("gradient_checkpointing", True)),
@@ -262,6 +265,9 @@ def load_config(path: str, defaults: dict[str, Any] | None = None) -> ExpConfig:
         paper_variant=str(raw.get("paper_variant", "focus")),
         layoutlmv3_enabled=bool(raw.get("layoutlmv3_enabled", False)),
         layoutlmv3_model=str(raw.get("layoutlmv3_model", "microsoft/layoutlmv3-base")),
+        layoutlmv3_epochs=int(raw.get("layoutlmv3_epochs", 8)),
+        cord_eval_enabled=bool(raw.get("cord_eval_enabled", False)),
+        cord_split=str(raw.get("cord_split", "test")),
         measure_latency=bool(raw.get("measure_latency", False)),
         qualitative_sample_ids=[
             str(x) for x in raw.get("qualitative_sample_ids", []) or []

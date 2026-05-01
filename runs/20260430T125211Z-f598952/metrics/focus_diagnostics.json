@@ -1,0 +1,26 @@
+{
+  "framework": "FOCUS \u2014 Field-specific Output heads with Cohesive Unified Selection",
+  "focus_enabled": true,
+  "sub_heads": {
+    "FOCUS-A": {
+      "enabled": true,
+      "max_span": 8,
+      "iou_weight": 1.0,
+      "boundary_weight": 1.0
+    },
+    "FOCUS-T": {
+      "enabled": true,
+      "witness_weight": 1.0
+    },
+    "FOCUS-C": {
+      "enabled": true,
+      "y_weight": 1.0,
+      "boilerplate_weight": 1.0
+    },
+    "FOCUS-D": {
+      "enabled": false,
+      "note": "regex-conforming substring, near-saturated by token-level cross-attention"
+    }
+  },
+  "priors_v4": true
+}

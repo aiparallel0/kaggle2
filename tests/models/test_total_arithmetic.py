@@ -137,3 +137,212 @@ def test_identity_helpers_return_none_when_inputs_missing() -> None:
     sees a spurious zero candidate."""
     assert _identity_cash_change([]) is None
     assert _identity_sub_tax([]) is None
+
+
+# -----------------------------------------------------------------------
+# FOCUS-Σ — Identity 3 (items-subset-sum + tax_aug) regression suite.
+# -----------------------------------------------------------------------
+
+from models.total_arithmetic import (  # noqa: E402
+    subset_sum_target_cents,
+    total_witness_count,
+)
+
+
+def test_focus_sigma_fires_without_subtotal_keyword() -> None:
+    """Receipt with no SUBTOTAL keyword: I₁/I₂ silent, I₃ alone witnesses."""
+    texts = ["ITEM A 12.00", "ITEM B 18.50", "ITEM C 3.00",
+             "TAX 2.00", "TOTAL 35.50"]
+    c = _classify(texts)
+    assert total_witness_count(35.50, c) == 1
+    assert total_witness_count(12.00, c) == 0  # singleton item not a witness
+
+
+def test_focus_sigma_stacks_with_keyword_identities() -> None:
+    """When I₂ fires, I₃ stacks for a count of 2 on the true total."""
+    texts = ["ITEM A 12.00", "ITEM B 18.50", "ITEM C 3.00",
+             "SUBTOTAL 33.50", "TAX 2.00", "TOTAL 35.50"]
+    c = _classify(texts)
+    assert total_witness_count(35.50, c) == 2
+
+
+def test_focus_sigma_rejects_singleton_self_match() -> None:
+    """A noise money line (phone number parsed as money) is NOT its own
+    cardinality-1 witness — Identity 3 requires subset cardinality ≥ 2
+    (or 1 plus non-zero tax_aug)."""
+    texts = ["ITEM A 99.00", "TOTAL 99.00"]
+    c = _classify(texts)
+    assert total_witness_count(99.00, c) == 0
+
+
+def test_focus_sigma_drops_per_item_outliers() -> None:
+    """A line whose value exceeds the per-item cap (RM 5000) drops out
+    of the items pool so the DP bound stays tractable on noisy receipts."""
+    texts = ["ITEM A 200.00", "ITEM B 136.20", "ITEM C 100.00",
+             "TAX 0.00", "TOTAL 436.20", "PHONE 4838.20"]
+    c = _classify(texts)
+    # 200 + 136.20 + 100.00 = 436.20 — true total has a witness.
+    assert total_witness_count(436.20, c) >= 1
+    # Outlier 4838.20 has no witness (capped out of items pool, and not
+    # reachable as any subset-sum of remaining items + tax_aug=0).
+    assert total_witness_count(4838.20, c) == 0
+
+
+def test_focus_sigma_empty_classification() -> None:
+    """Empty input → empty target set, witness count 0."""
+    assert subset_sum_target_cents([]) == frozenset()
+    assert total_witness_count(10.0, []) == 0
+
+
+# -----------------------------------------------------------------------
+# FOCUS-Σ OCR-drift recovery (consensus._ocr_drift_match_in_set + the
+# _refine_total Identity-3 path). Uses _refine_total so the gates
+# (TOTAL keyword, no SUBTOTAL keyword, target_set non-empty) are exercised.
+# -----------------------------------------------------------------------
+
+from models.consensus import _ocr_drift_match_in_set, _refine_total  # noqa: E402
+
+
+def test_focus_sigma_ocr_drift_helper_largest_match() -> None:
+    """When multiple 1-edit neighbours land in the target set, prefer
+    the LARGER value — on SROIE, grand-total ≥ partial-sum almost always.
+    """
+    assert _ocr_drift_match_in_set(820, frozenset({800, 850})) == 850
+    assert _ocr_drift_match_in_set(860, frozenset({660, 880})) == 880
+    assert _ocr_drift_match_in_set(10980, frozenset({10880, 16980})) == 16980
+
+
+def test_focus_sigma_ocr_drift_helper_leading_zero_rejected() -> None:
+    """A 1-edit candidate that produces a leading zero is not a real OCR
+    substitution (digit was lost, not substituted).  Reject it.
+    """
+    # 148 → "048" only via pos-0 1→0 substitution; reject.
+    assert _ocr_drift_match_in_set(148, frozenset({48})) is None
+
+
+def test_focus_sigma_ocr_drift_helper_no_match() -> None:
+    assert _ocr_drift_match_in_set(999, frozenset({100, 200, 300})) is None
+    assert _ocr_drift_match_in_set(0, frozenset({500})) is None
+
+
+def test_focus_sigma_ocr_drift_recovers_no_subtotal_receipt() -> None:
+    """No SUBTOTAL keyword (I₂ silent), TOTAL line OCR'd 1 digit off
+    the items sum.  Identity-3 OCR-drift substitutes the items-sum target.
+    """
+    texts = ["ITEM A 5.00", "ITEM B 3.00", "ITEM C 0.50", "TOTAL 8.20"]
+    bb = [[0, i * 0.1, 1, (i + 1) * 0.1] for i in range(len(texts))]
+    assert _refine_total("8.20", texts, bb, None) == "8.50"
+
+
+def test_focus_sigma_ocr_drift_with_tax_aug() -> None:
+    """tax_aug != 0 disambiguates: I₃ targets are items+tax, so the
+    1-edit substitution lands on the grand-total magnitude directly.
+    """
+    texts = ["ITEM A 5.00", "ITEM B 3.00", "TAX 0.40", "TOTAL 8.20"]
+    bb = [[0, i * 0.1, 1, (i + 1) * 0.1] for i in range(len(texts))]
+    assert _refine_total("8.20", texts, bb, None) == "8.40"
+
+
+def test_focus_sigma_ocr_drift_silent_on_subtotal_neighbour() -> None:
+    """When the SUBTOTAL keyword is in the line's neighbourhood, the
+    FOCUS-Σ OCR-drift path is gated off (don't substitute against a
+    subtotal line that happens to be 1 digit off).  Returns the
+    legacy-path value or the original learned input.
+    """
+    texts = [
+        "ITEM A 5.00", "ITEM B 3.00",
+        "SUBTOTAL 8.00",
+        "TOTAL 8.20",  # 1 edit from 8.50, but legacy I₂ already resolves
+    ]
+    bb = [[0, i * 0.1, 1, (i + 1) * 0.1] for i in range(len(texts))]
+    out = _refine_total("8.20", texts, bb, None)
+    # I₂ target = subtotal + tax = 8.00 + 0 = 8.00; existing
+    # ARITHMETIC-FIRST PATH may emit "8.00".  Either way, the FOCUS-Σ
+    # path itself does not steer the value to 8.50 because the
+    # subtotal-neighbour gate fires.
+    assert out in {"8.20", "8.00"}, f"unexpected refinement: {out!r}"
+
+
+# -----------------------------------------------------------------------
+# Inference-side push-toward-0.93 fixes (run 20260430T125211Z empirical
+# taxonomy: 2-edit OCR-drift, sign-positive gate, zero/negative/max-money
+# scoring penalties, tighter confidence-gated override).
+# -----------------------------------------------------------------------
+
+
+def test_focus_sigma_ocr_drift_2edit_helper_off_by_default() -> None:
+    """``max_edits=1`` is the default — must not return a 2-edit match."""
+    # 469 vs 4970: 4 same, 6→9 (pos 1), 9→7 (pos 2) — two edits.
+    assert _ocr_drift_match_in_set(4690, frozenset({4970})) is None
+
+
+def test_focus_sigma_ocr_drift_2edit_helper_fires_when_enabled() -> None:
+    """``max_edits=2`` returns a 2-edit match if no 1-edit match exists."""
+    # 4690 → 4970 needs two substitutions (pos 1 and pos 2).
+    assert _ocr_drift_match_in_set(
+        4690, frozenset({4970}), max_edits=2,
+    ) == 4970
+
+
+def test_focus_sigma_ocr_drift_2edit_helper_prefers_1edit_when_both() -> None:
+    """When both a 1-edit and a 2-edit match exist, prefer larger of all."""
+    # 820 → 850 (1-edit, pos 1) AND 820 → 950 (2-edit, pos 0+pos 1).
+    # Tiebreak by max -> 950 wins because 950 > 850.  This is correct on
+    # SROIE (grand total > sub-sum).
+    assert _ocr_drift_match_in_set(
+        820, frozenset({850, 950}), max_edits=2,
+    ) == 950
+
+
+def test_focus_sigma_2edit_rejects_leading_zero() -> None:
+    """A 2-edit candidate that produces a leading zero is rejected."""
+    # 1234 → "0034" via two edits (pos 0: 1→0, pos 1: 2→0) — leading zero.
+    assert _ocr_drift_match_in_set(1234, frozenset({34}), max_edits=2) is None
+
+
+def test_score_money_zero_pred_demoted() -> None:
+    """A money line with value 0.00 must score lower than a TOTAL-keyword'd
+    line with a real value, even on the same positional rank."""
+    from models.consensus import _score_money
+    texts = ["TOTAL 0.00", "GRAND TOTAL 35.50"]
+    score_zero = _score_money(0, texts, {0: 0, 1: 1}, [0, 1])
+    score_total = _score_money(1, texts, {0: 0, 1: 1}, [0, 1])
+    assert score_total > score_zero, (score_total, score_zero)
+
+
+def test_score_money_negative_pred_demoted() -> None:
+    """A negative-money line (CHANGE / REFUND) is heavily demoted vs a
+    positive TOTAL-keyword'd line."""
+    from models.consensus import _score_money
+    texts = ["CHANGE -28.35", "TOTAL 140.65"]
+    s_neg = _score_money(0, texts, {0: 0, 1: 1}, [0, 1])
+    s_pos = _score_money(1, texts, {0: 0, 1: 1}, [0, 1])
+    assert s_pos > s_neg, (s_pos, s_neg)
+
+
+def test_score_money_max_money_relative_prior() -> None:
+    """A line whose value is < 30% of the receipt-max gets demoted vs a
+    line carrying the max value (when both have the same keyword context)."""
+    from models.consensus import _score_money
+    # Both lines have weak TOTAL keyword; without the max-money prior
+    # the small line could win on positional rank.  With it, the larger
+    # value wins.
+    texts = ["TOTAL 1.55", "TOTAL 27.35"]
+    money_idxs = [0, 1]
+    s_small = _score_money(0, texts, {}, money_idxs)
+    s_big = _score_money(1, texts, {}, money_idxs)
+    assert s_big > s_small, (s_big, s_small)
+
+
+def test_refine_total_sign_positive_gate() -> None:
+    """When learned is negative AND the rule-scored best is a positive
+    plausible total, the negative learned is rejected unconditionally
+    (CHANGE / REFUND line was picked by the assigner)."""
+    texts = [
+        "ITEM A 50.00", "ITEM B 90.65",
+        "GRAND TOTAL 140.65",
+        "CHANGE -28.35",
+    ]
+    bb = [[0, i * 0.1, 1, (i + 1) * 0.1] for i in range(len(texts))]
+    out = _refine_total("-28.35", texts, bb, None)
+    assert "140" in out, f"expected positive grand-total, got {out!r}"

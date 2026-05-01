@@ -314,6 +314,10 @@ class ExpConfig:
     yolo_conf: float = 0.25
     trocr_max_new_tokens: int = 64
     max_regions_per_image: int = 32
+    # YOLO crop padding (pixels) added to every bbox before TrOCR.  Recovers
+    # leftmost-digit drops on tight money-line bboxes ("848.00" → "48.00")
+    # observed on run 20260430T125211Z. 0 = bit-exact backward-compatible.
+    yolo_crop_pad_px: int = 0
     warmup_ratio: float = 0.1
     lr_scheduler_type: str = "cosine"
     gradient_checkpointing: bool = True
@@ -419,6 +423,12 @@ class ExpConfig:
     # GPU box that has the public HF checkpoint cached.
     layoutlmv3_enabled: bool = False
     layoutlmv3_model: str = "microsoft/layoutlmv3-base"
+    layoutlmv3_epochs: int = 8
+    # NeurIPS reframe — CORD-v2 cross-dataset eval (closes HONESTY §2.2).
+    # Off by default; flip to True to load ``naver-clova-ix/cord-v2`` and
+    # run the pipeline arm against it.  See ``data/cord.py``.
+    cord_eval_enabled: bool = False
+    cord_split: str = "test"
     # v4 — Inference-latency producer.  When True the eval loop times
     # each forward pass and writes ``metrics/latency_<system>.json``
     # so Table~X (the latency table) resolves.  Off by default to keep

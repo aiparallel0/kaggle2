@@ -1,0 +1,1602 @@
+**
+(paper_filled.tex
+LaTeX2e <2021-11-15> patch level 1
+L3 programming layer <2022-02-24> (IEEEtran.cls
+Document Class: IEEEtran 2015/08/26 V1.8b by Michael Shell
+-- See the "IEEEtran_HOWTO" manual for usage information.
+-- http://www.michaelshell.org/tex/ieeetran/
+\@IEEEtrantmpdimenA=\dimen138
+\@IEEEtrantmpdimenB=\dimen139
+\@IEEEtrantmpdimenC=\dimen140
+\@IEEEtrantmpcountA=\count181
+\@IEEEtrantmpcountB=\count182
+\@IEEEtrantmpcountC=\count183
+\@IEEEtrantmptoksA=\toks16
+LaTeX Font Info:    Trying to load font information for TU+ptm on input line 50
+3.
+LaTeX Font Info:    No file TUptm.fd. on input line 503.
+
+LaTeX Font Warning: Font shape `TU/ptm/m/n' undefined
+(Font)              using `TU/lmr/m/n' instead on input line 503.
+
+-- Using 8.5in x 11in (letter) paper.
+-- Using DVI output.
+\@IEEEnormalsizeunitybaselineskip=\dimen141
+-- This is a 10 point document.
+\CLASSINFOnormalsizebaselineskip=\dimen142
+\CLASSINFOnormalsizeunitybaselineskip=\dimen143
+\IEEEnormaljot=\dimen144
+
+LaTeX Font Warning: Font shape `TU/ptm/bx/n' undefined
+(Font)              using `TU/ptm/m/n' instead on input line 1090.
+
+
+LaTeX Font Warning: Font shape `TU/ptm/m/it' undefined
+(Font)              using `TU/ptm/m/n' instead on input line 1090.
+
+
+LaTeX Font Warning: Font shape `TU/ptm/bx/it' undefined
+(Font)              using `TU/ptm/bx/n' instead on input line 1090.
+
+\IEEEquantizedlength=\dimen145
+\IEEEquantizedlengthdiff=\dimen146
+\IEEEquantizedtextheightdiff=\dimen147
+\IEEEilabelindentA=\dimen148
+\IEEEilabelindentB=\dimen149
+\IEEEilabelindent=\dimen150
+\IEEEelabelindent=\dimen151
+\IEEEdlabelindent=\dimen152
+\IEEElabelindent=\dimen153
+\IEEEiednormlabelsep=\dimen154
+\IEEEiedmathlabelsep=\dimen155
+\IEEEiedtopsep=\skip47
+\c@section=\count184
+\c@subsection=\count185
+\c@subsubsection=\count186
+\c@paragraph=\count187
+\c@IEEEsubequation=\count188
+\abovecaptionskip=\skip48
+\belowcaptionskip=\skip49
+\c@figure=\count189
+\c@table=\count190
+\@IEEEeqnnumcols=\count191
+\@IEEEeqncolcnt=\count192
+\@IEEEsubeqnnumrollback=\count193
+\@IEEEquantizeheightA=\dimen156
+\@IEEEquantizeheightB=\dimen157
+\@IEEEquantizeheightC=\dimen158
+\@IEEEquantizeprevdepth=\dimen159
+\@IEEEquantizemultiple=\count194
+\@IEEEquantizeboxA=\box50
+\@IEEEtmpitemindent=\dimen160
+\IEEEPARstartletwidth=\dimen161
+\c@IEEEbiography=\count195
+\@IEEEtranrubishbin=\box51
+) (cite.sty
+LaTeX Info: Redefining \cite on input line 302.
+LaTeX Info: Redefining \nocite on input line 332.
+Package: cite 2015/02/27  v 5.5
+) (amsmath.sty
+Package: amsmath 2021/10/15 v2.17l AMS math features
+\@mathmargin=\skip50
+
+For additional information on amsmath, use the `?' option.
+(amstext.sty
+Package: amstext 2021/08/26 v2.01 AMS text
+ (amsgen.sty
+File: amsgen.sty 1999/11/30 v2.0 generic functions
+\@emptytoks=\toks17
+\ex@=\dimen162
+)) (amsbsy.sty
+Package: amsbsy 1999/11/29 v1.2d Bold Symbols
+\pmbraise@=\dimen163
+) (amsopn.sty
+Package: amsopn 2021/08/26 v2.02 operator names
+)
+\inf@bad=\count196
+LaTeX Info: Redefining \frac on input line 234.
+\uproot@=\count197
+\leftroot@=\count198
+LaTeX Info: Redefining \overline on input line 399.
+\classnum@=\count199
+\DOTSCASE@=\count266
+LaTeX Info: Redefining \ldots on input line 496.
+LaTeX Info: Redefining \dots on input line 499.
+LaTeX Info: Redefining \cdots on input line 620.
+\Mathstrutbox@=\box52
+\strutbox@=\box53
+\big@size=\dimen164
+LaTeX Font Info:    Redeclaring font encoding OML on input line 743.
+LaTeX Font Info:    Redeclaring font encoding OMS on input line 744.
+\macc@depth=\count267
+\c@MaxMatrixCols=\count268
+\dotsspace@=\muskip16
+\c@parentequation=\count269
+\dspbrk@lvl=\count270
+\tag@help=\toks18
+\row@=\count271
+\column@=\count272
+\maxfields@=\count273
+\andhelp@=\toks19
+\eqnshift@=\dimen165
+\alignsep@=\dimen166
+\tagshift@=\dimen167
+\tagwidth@=\dimen168
+\totwidth@=\dimen169
+\lineht@=\dimen170
+\@envbody=\toks20
+\multlinegap=\skip51
+\multlinetaggap=\skip52
+\mathdisplay@stack=\toks21
+LaTeX Info: Redefining \[ on input line 2938.
+LaTeX Info: Redefining \] on input line 2939.
+) (amssymb.sty
+Package: amssymb 2013/01/14 v3.01 AMS font symbols
+
+(amsfonts.sty
+Package: amsfonts 2013/01/14 v3.01 Basic AMSFonts support
+\symAMSa=\mathgroup4
+\symAMSb=\mathgroup5
+LaTeX Font Info:    Redeclaring math symbol \hbar on input line 98.
+LaTeX Font Info:    Overwriting math alphabet `\mathfrak' in version `bold'
+(Font)                  U/euf/m/n --> U/euf/b/n on input line 106.
+)) (graphicx.sty
+Package: graphicx 2021/09/16 v1.2d Enhanced LaTeX Graphics (DPC,SPQR)
+ (keyval.sty
+Package: keyval 2014/10/28 v1.15 key=value parser (DPC)
+\KV@toks@=\toks22
+) (graphics.sty
+Package: graphics 2021/03/04 v1.4d Standard LaTeX Graphics (DPC,SPQR)
+ (trig.sty
+Package: trig 2021/08/11 v1.11 sin cos tan (DPC)
+)
+(graphics.cfg
+File: graphics.cfg 2016/06/04 v1.11 sample graphics configuration
+)
+Package graphics Info: Driver file: xetex.def on input line 107.
+ (xetex.def
+File: xetex.def 2021/03/18 v5.0k Graphics/color driver for xetex
+))
+\Gin@req@height=\dimen171
+\Gin@req@width=\dimen172
+) (booktabs.sty
+Package: booktabs 2020/01/12 v1.61803398 Publication quality tables
+\heavyrulewidth=\dimen173
+\lightrulewidth=\dimen174
+\cmidrulewidth=\dimen175
+\belowrulesep=\dimen176
+\belowbottomsep=\dimen177
+\aboverulesep=\dimen178
+\abovetopsep=\dimen179
+\cmidrulesep=\dimen180
+\cmidrulekern=\dimen181
+\defaultaddspace=\dimen182
+\@cmidla=\count274
+\@cmidlb=\count275
+\@aboverulesep=\dimen183
+\@belowrulesep=\dimen184
+\@thisruleclass=\count276
+\@lastruleclass=\count277
+\@thisrulewidth=\dimen185
+) (multirow.sty
+Package: multirow 2021/03/15 v2.8 Span multiple rows of a table
+\multirow@colwidth=\skip53
+\multirow@cntb=\count278
+\multirow@dima=\skip54
+\bigstrutjot=\dimen186
+) (siunitx.sty
+Package: siunitx 2022-02-15 v3.0.49 A comprehensive (SI) units package
+\l__siunitx_angle_tmp_dim=\dimen187
+\l__siunitx_angle_marker_box=\box54
+\l__siunitx_angle_unit_box=\box55
+\l__siunitx_compound_count_int=\count279
+
+(translations.sty
+Package: translations 2022/02/05 v1.12 internationalization of LaTeX2e packages
+ (CN)
+ (etoolbox.sty
+Package: etoolbox 2020/10/05 v2.5k e-TeX tools for LaTeX (JAW)
+\etb@tempcnta=\count280
+) (pdftexcmds.sty
+Package: pdftexcmds 2020-06-27 v0.33 Utility functions of pdfTeX for LuaTeX (HO
+)
+ (infwarerr.sty
+Package: infwarerr 2019/12/03 v1.5 Providing info/warning/error messages (HO)
+) (iftex.sty
+Package: iftex 2022/02/03 v1.0f TeX engine tests
+)
+(ltxcmds.sty
+Package: ltxcmds 2020-05-10 v1.25 LaTeX kernel commands for general use (HO)
+)
+Package pdftexcmds Info: \pdf@primitive is available.
+Package pdftexcmds Info: \pdf@ifprimitive is available.
+Package pdftexcmds Info: \pdfdraftmode not found.
+))
+\l__siunitx_number_exponent_fixed_int=\count281
+\l__siunitx_number_min_decimal_int=\count282
+\l__siunitx_number_min_integer_int=\count283
+\l__siunitx_number_round_precision_int=\count284
+\l__siunitx_number_group_minimum_int=\count285
+\l__siunitx_table_tmp_box=\box56
+\l__siunitx_table_tmp_dim=\dimen188
+\l__siunitx_table_column_width_dim=\dimen189
+\l__siunitx_table_integer_box=\box57
+\l__siunitx_table_decimal_box=\box58
+\l__siunitx_table_before_box=\box59
+\l__siunitx_table_after_box=\box60
+\l__siunitx_table_before_dim=\dimen190
+\l__siunitx_table_carry_dim=\dimen191
+\l__siunitx_unit_tmp_int=\count286
+\l__siunitx_unit_position_int=\count287
+\l__siunitx_unit_total_int=\count288
+ (l3keys2e.sty (expl3.sty
+Package: expl3 2022-02-24 L3 programming layer (loader) 
+ (l3backend-xetex.def
+File: l3backend-xetex.def 2022-02-07 L3 backend support: XeTeX
+\c__kernel_sys_dvipdfmx_version_int=\count289
+\l__color_backend_stack_int=\count290
+\g__color_backend_stack_int=\count291
+\g__graphics_track_int=\count292
+\l__pdf_internal_box=\box61
+\g__pdf_backend_object_int=\count293
+\g__pdf_backend_annotation_int=\count294
+\g__pdf_backend_link_int=\count295
+))
+Package: l3keys2e 2022-01-12 LaTeX2e option processing using LaTeX3 keys
+) (array.sty
+Package: array 2021/10/04 v2.5f Tabular extension package (FMi)
+\col@sep=\dimen192
+\ar@mcellbox=\box62
+\extrarowheight=\dimen193
+\NC@list=\toks23
+\extratabsurround=\skip55
+\backup@length=\skip56
+\ar@cellbox=\box63
+))
+(subcaption.sty
+Package: subcaption 2022/01/07 v1.5 Sub-captions (AR)
+ (caption.sty
+Package: caption 2022/03/01 v3.6b Customizing captions (AR)
+ (caption3.sty
+Package: caption3 2022/03/17 v2.3b caption3 kernel (AR)
+\caption@tempdima=\dimen194
+\captionmargin=\dimen195
+\caption@leftmargin=\dimen196
+\caption@rightmargin=\dimen197
+\caption@width=\dimen198
+\caption@indent=\dimen199
+\caption@parindent=\dimen256
+\caption@hangindent=\dimen257
+Package caption Info: Unknown document class (or package),
+(caption)             standard defaults will be used.
+Package caption Info: \@makecaption = \long macro:#1#2->\ifx \@captype \@IEEEta
+blestring \footnotesize \bgroup \par \centering \@IEEEtabletopskipstrut {\norma
+lfont \footnotesize #1}\\{\normalfont \footnotesize \scshape #2}\par \addvspace
+ {0.5\baselineskip }\egroup \@IEEEtablecaptionsepspace \else \@IEEEfigurecaptio
+nsepspace \setbox \@tempboxa \hbox {\normalfont \footnotesize {#1.}\nobreakspac
+e \nobreakspace #2}\ifdim \wd \@tempboxa >\hsize \setbox \@tempboxa \hbox {\nor
+malfont \footnotesize {#1.}\nobreakspace \nobreakspace }\parbox [t]{\hsize }{\n
+ormalfont \footnotesize \noindent \unhbox \@tempboxa #2}\else \ifCLASSOPTIONcon
+ference \hbox to\hsize {\normalfont \footnotesize \hfil \box \@tempboxa \hfil }
+\else \hbox to\hsize {\normalfont \footnotesize \box \@tempboxa \hfil }\fi \fi 
+\fi  on input line 1176.
+)
+
+Package caption Warning: Unknown document class (or package),
+(caption)                standard defaults will be used.
+See the caption package documentation for explanation.
+
+\c@caption@flags=\count296
+\c@continuedfloat=\count297
+)
+\c@subfigure=\count298
+\c@subtable=\count299
+) (colortbl.sty
+Package: colortbl 2020/01/04 v1.0e Color table columns (DPC)
+ (color.sty
+Package: color 2021/12/07 v1.3c Standard LaTeX Color (DPC)
+ (color.cfg
+File: color.cfg 2016/01/02 v1.6 sample color configuration
+)
+Package color Info: Driver file: xetex.def on input line 149.
+)
+\everycr=\toks24
+\minrowclearance=\skip57
+) (xcolor.sty
+Package: xcolor 2021/10/31 v2.13 LaTeX color extensions (UK)
+ (color.cfg
+File: color.cfg 2016/01/02 v1.6 sample color configuration
+)
+Package xcolor Info: Driver file: xetex.def on input line 227.
+LaTeX Info: Redefining \color on input line 711.
+Package xcolor Info: Model `cmy' substituted by `cmy0' on input line 1352.
+Package xcolor Info: Model `RGB' extended on input line 1368.
+Package xcolor Info: Model `HTML' substituted by `rgb' on input line 1370.
+Package xcolor Info: Model `Hsb' substituted by `hsb' on input line 1371.
+Package xcolor Info: Model `tHsb' substituted by `hsb' on input line 1372.
+Package xcolor Info: Model `HSB' substituted by `hsb' on input line 1373.
+Package xcolor Info: Model `Gray' substituted by `gray' on input line 1374.
+Package xcolor Info: Model `wave' substituted by `hsb' on input line 1375.
+ (dvipsnam.def
+File: dvipsnam.def 2016/06/17 v3.0m Driver-dependent file (DPC,SPQR)
+)) (tikz.sty (pgf.sty (pgfrcs.sty (pgfutil-common.tex
+\pgfutil@everybye=\toks25
+\pgfutil@tempdima=\dimen258
+\pgfutil@tempdimb=\dimen259
+ (pgfutil-common-lists.tex)) (pgfutil-latex.def
+\pgfutil@abb=\box64
+) (pgfrcs.code.tex (pgf.revision.tex)
+Package: pgfrcs 2021/05/15 v3.1.9a (3.1.9a)
+))
+Package: pgf 2021/05/15 v3.1.9a (3.1.9a)
+ (pgfcore.sty
+(pgfsys.sty (pgfsys.code.tex
+Package: pgfsys 2021/05/15 v3.1.9a (3.1.9a)
+ (pgfkeys.code.tex
+\pgfkeys@pathtoks=\toks26
+\pgfkeys@temptoks=\toks27
+ (pgfkeysfiltered.code.tex
+\pgfkeys@tmptoks=\toks28
+))
+\pgf@x=\dimen260
+\pgf@y=\dimen261
+\pgf@xa=\dimen262
+\pgf@ya=\dimen263
+\pgf@xb=\dimen264
+\pgf@yb=\dimen265
+\pgf@xc=\dimen266
+\pgf@yc=\dimen267
+\pgf@xd=\dimen268
+\pgf@yd=\dimen269
+\w@pgf@writea=\write3
+\r@pgf@reada=\read2
+\c@pgf@counta=\count300
+\c@pgf@countb=\count301
+\c@pgf@countc=\count302
+\c@pgf@countd=\count303
+\t@pgf@toka=\toks29
+\t@pgf@tokb=\toks30
+\t@pgf@tokc=\toks31
+\pgf@sys@id@count=\count304
+
+(pgf.cfg
+File: pgf.cfg 2021/05/15 v3.1.9a (3.1.9a)
+)
+Driver file for pgf: pgfsys-xetex.def
+ (pgfsys-xetex.def
+File: pgfsys-xetex.def 2021/05/15 v3.1.9a (3.1.9a)
+ (pgfsys-dvipdfmx.def
+File: pgfsys-dvipdfmx.def 2021/05/15 v3.1.9a (3.1.9a)
+ (pgfsys-common-pdf.def
+File: pgfsys-common-pdf.def 2021/05/15 v3.1.9a (3.1.9a)
+)
+\pgfsys@objnum=\count305
+)))
+(pgfsyssoftpath.code.tex
+File: pgfsyssoftpath.code.tex 2021/05/15 v3.1.9a (3.1.9a)
+\pgfsyssoftpath@smallbuffer@items=\count306
+\pgfsyssoftpath@bigbuffer@items=\count307
+) (pgfsysprotocol.code.tex
+File: pgfsysprotocol.code.tex 2021/05/15 v3.1.9a (3.1.9a)
+)) (pgfcore.code.tex
+Package: pgfcore 2021/05/15 v3.1.9a (3.1.9a)
+
+(pgfmath.code.tex (pgfmathcalc.code.tex (pgfmathutil.code.tex)
+(pgfmathparser.code.tex
+\pgfmath@dimen=\dimen270
+\pgfmath@count=\count308
+\pgfmath@box=\box65
+\pgfmath@toks=\toks32
+\pgfmath@stack@operand=\toks33
+\pgfmath@stack@operation=\toks34
+) (pgfmathfunctions.code.tex
+(pgfmathfunctions.basic.code.tex) (pgfmathfunctions.trigonometric.code.tex)
+(pgfmathfunctions.random.code.tex) (pgfmathfunctions.comparison.code.tex)
+(pgfmathfunctions.base.code.tex) (pgfmathfunctions.round.code.tex)
+(pgfmathfunctions.misc.code.tex) (pgfmathfunctions.integerarithmetics.code.tex)
+)) (pgfmathfloat.code.tex
+\c@pgfmathroundto@lastzeros=\count309
+)) (pgfint.code.tex) (pgfcorepoints.code.tex
+File: pgfcorepoints.code.tex 2021/05/15 v3.1.9a (3.1.9a)
+\pgf@picminx=\dimen271
+\pgf@picmaxx=\dimen272
+\pgf@picminy=\dimen273
+\pgf@picmaxy=\dimen274
+\pgf@pathminx=\dimen275
+\pgf@pathmaxx=\dimen276
+\pgf@pathminy=\dimen277
+\pgf@pathmaxy=\dimen278
+\pgf@xx=\dimen279
+\pgf@xy=\dimen280
+\pgf@yx=\dimen281
+\pgf@yy=\dimen282
+\pgf@zx=\dimen283
+\pgf@zy=\dimen284
+)
+(pgfcorepathconstruct.code.tex
+File: pgfcorepathconstruct.code.tex 2021/05/15 v3.1.9a (3.1.9a)
+\pgf@path@lastx=\dimen285
+\pgf@path@lasty=\dimen286
+) (pgfcorepathusage.code.tex
+File: pgfcorepathusage.code.tex 2021/05/15 v3.1.9a (3.1.9a)
+\pgf@shorten@end@additional=\dimen287
+\pgf@shorten@start@additional=\dimen288
+)
+(pgfcorescopes.code.tex
+File: pgfcorescopes.code.tex 2021/05/15 v3.1.9a (3.1.9a)
+\pgfpic=\box66
+\pgf@hbox=\box67
+\pgf@layerbox@main=\box68
+\pgf@picture@serial@count=\count310
+) (pgfcoregraphicstate.code.tex
+File: pgfcoregraphicstate.code.tex 2021/05/15 v3.1.9a (3.1.9a)
+\pgflinewidth=\dimen289
+)
+(pgfcoretransformations.code.tex
+File: pgfcoretransformations.code.tex 2021/05/15 v3.1.9a (3.1.9a)
+\pgf@pt@x=\dimen290
+\pgf@pt@y=\dimen291
+\pgf@pt@temp=\dimen292
+) (pgfcorequick.code.tex
+File: pgfcorequick.code.tex 2021/05/15 v3.1.9a (3.1.9a)
+)
+(pgfcoreobjects.code.tex
+File: pgfcoreobjects.code.tex 2021/05/15 v3.1.9a (3.1.9a)
+) (pgfcorepathprocessing.code.tex
+File: pgfcorepathprocessing.code.tex 2021/05/15 v3.1.9a (3.1.9a)
+)
+(pgfcorearrows.code.tex
+File: pgfcorearrows.code.tex 2021/05/15 v3.1.9a (3.1.9a)
+\pgfarrowsep=\dimen293
+) (pgfcoreshade.code.tex
+File: pgfcoreshade.code.tex 2021/05/15 v3.1.9a (3.1.9a)
+\pgf@max=\dimen294
+\pgf@sys@shading@range@num=\count311
+\pgf@shadingcount=\count312
+) (pgfcoreimage.code.tex
+File: pgfcoreimage.code.tex 2021/05/15 v3.1.9a (3.1.9a)
+
+(pgfcoreexternal.code.tex
+File: pgfcoreexternal.code.tex 2021/05/15 v3.1.9a (3.1.9a)
+\pgfexternal@startupbox=\box69
+)) (pgfcorelayers.code.tex
+File: pgfcorelayers.code.tex 2021/05/15 v3.1.9a (3.1.9a)
+)
+(pgfcoretransparency.code.tex
+File: pgfcoretransparency.code.tex 2021/05/15 v3.1.9a (3.1.9a)
+) (pgfcorepatterns.code.tex
+File: pgfcorepatterns.code.tex 2021/05/15 v3.1.9a (3.1.9a)
+) (pgfcorerdf.code.tex
+File: pgfcorerdf.code.tex 2021/05/15 v3.1.9a (3.1.9a)
+))) (pgfmoduleshapes.code.tex
+File: pgfmoduleshapes.code.tex 2021/05/15 v3.1.9a (3.1.9a)
+\pgfnodeparttextbox=\box70
+) (pgfmoduleplot.code.tex
+File: pgfmoduleplot.code.tex 2021/05/15 v3.1.9a (3.1.9a)
+)
+(pgfcomp-version-0-65.sty
+Package: pgfcomp-version-0-65 2021/05/15 v3.1.9a (3.1.9a)
+\pgf@nodesepstart=\dimen295
+\pgf@nodesepend=\dimen296
+) (pgfcomp-version-1-18.sty
+Package: pgfcomp-version-1-18 2021/05/15 v3.1.9a (3.1.9a)
+)) (pgffor.sty (pgfkeys.sty (pgfkeys.code.tex)) (pgfmath.sty (pgfmath.code.tex)
+) (pgffor.code.tex
+Package: pgffor 2021/05/15 v3.1.9a (3.1.9a)
+
+(pgfmath.code.tex)
+\pgffor@iter=\dimen297
+\pgffor@skip=\dimen298
+\pgffor@stack=\toks35
+\pgffor@toks=\toks36
+)) (tikz.code.tex
+Package: tikz 2021/05/15 v3.1.9a (3.1.9a)
+ (pgflibraryplothandlers.code.tex
+File: pgflibraryplothandlers.code.tex 2021/05/15 v3.1.9a (3.1.9a)
+\pgf@plot@mark@count=\count313
+\pgfplotmarksize=\dimen299
+)
+\tikz@lastx=\dimen300
+\tikz@lasty=\dimen301
+\tikz@lastxsaved=\dimen302
+\tikz@lastysaved=\dimen303
+\tikz@lastmovetox=\dimen304
+\tikz@lastmovetoy=\dimen305
+\tikzleveldistance=\dimen306
+\tikzsiblingdistance=\dimen307
+\tikz@figbox=\box71
+\tikz@figbox@bg=\box72
+\tikz@tempbox=\box73
+\tikz@tempbox@bg=\box74
+\tikztreelevel=\count314
+\tikznumberofchildren=\count315
+\tikznumberofcurrentchild=\count316
+\tikz@fig@count=\count317
+
+(pgfmodulematrix.code.tex
+File: pgfmodulematrix.code.tex 2021/05/15 v3.1.9a (3.1.9a)
+\pgfmatrixcurrentrow=\count318
+\pgfmatrixcurrentcolumn=\count319
+\pgf@matrix@numberofcolumns=\count320
+)
+\tikz@expandcount=\count321
+ (tikzlibrarytopaths.code.tex
+File: tikzlibrarytopaths.code.tex 2021/05/15 v3.1.9a (3.1.9a)
+))) (url.sty
+\Urlmuskip=\muskip17
+Package: url 2013/09/16  ver 3.4  Verb mode for urls, etc.
+)
+(algorithm.sty
+Invalid UTF-8 byte or sequence at line 11 replaced by U+FFFD.
+Package: algorithm 2009/08/24 v0.1 Document Style `algorithm' - floating enviro
+nment
+ (float.sty
+Package: float 2001/11/08 v1.3d Float enhancements (AL)
+\c@float@type=\count322
+\float@exts=\toks37
+\float@box=\box75
+\@float@everytoks=\toks38
+\@floatcapt=\box76
+) (ifthen.sty
+Package: ifthen 2020/11/24 v1.1c Standard LaTeX ifthen package (DPC)
+)
+\@float@every@algorithm=\toks39
+\c@algorithm=\count323
+) (algpseudocode.sty
+Package: algpseudocode 
+ (algorithmicx.sty
+Package: algorithmicx 2005/04/27 v1.2 Algorithmicx
+
+Document Style algorithmicx 1.2 - a greatly improved `algorithmic' style
+\c@ALG@line=\count324
+\c@ALG@rem=\count325
+\c@ALG@nested=\count326
+\ALG@tlm=\skip58
+\ALG@thistlm=\skip59
+\c@ALG@Lnr=\count327
+\c@ALG@blocknr=\count328
+\c@ALG@storecount=\count329
+\c@ALG@tmpcounter=\count330
+\ALG@tmplength=\skip60
+)
+Document Style - pseudocode environments for use with the `algorithmicx' style
+) (microtype.sty
+Package: microtype 2022/03/14 v3.0d Micro-typographical refinements (RS)
+\MT@toks=\toks40
+\MT@tempbox=\box77
+\MT@count=\count331
+LaTeX Info: Redefining \noprotrusionifhmode on input line 1027.
+LaTeX Info: Redefining \leftprotrusion on input line 1028.
+LaTeX Info: Redefining \rightprotrusion on input line 1036.
+LaTeX Info: Redefining \textls on input line 1195.
+\MT@outer@kern=\dimen308
+LaTeX Info: Redefining \textmicrotypecontext on input line 1781.
+\MT@listname@count=\count332
+ (microtype-xetex.def
+File: microtype-xetex.def 2022/03/14 v3.0d Definitions specific to xetex (RS)
+LaTeX Info: Redefining \lsstyle on input line 236.
+)
+Package microtype Info: Loading configuration file microtype.cfg.
+ (microtype.cfg
+File: microtype.cfg 2022/03/14 v3.0d microtype main configuration file (RS)
+)) (hyperref.sty
+Package: hyperref 2022-02-21 v7.00n Hypertext links for LaTeX
+
+(kvsetkeys.sty
+Package: kvsetkeys 2019/12/15 v1.18 Key value parser (HO)
+) (kvdefinekeys.sty
+Package: kvdefinekeys 2019-12-19 v1.6 Define keys (HO)
+) (pdfescape.sty
+Package: pdfescape 2019/12/09 v1.15 Implements pdfTeX's escape features (HO)
+) (hycolor.sty
+Package: hycolor 2020-01-27 v1.10 Color options for hyperref/bookmark (HO)
+)
+(letltxmacro.sty
+Package: letltxmacro 2019/12/03 v1.6 Let assignment for LaTeX macros (HO)
+) (auxhook.sty
+Package: auxhook 2019-12-17 v1.6 Hooks for auxiliary files (HO)
+) (kvoptions.sty
+Package: kvoptions 2020-10-07 v3.14 Key value format for package options (HO)
+)
+\@linkdim=\dimen309
+\Hy@linkcounter=\count333
+\Hy@pagecounter=\count334
+ (pd1enc.def
+File: pd1enc.def 2022-02-21 v7.00n Hyperref: PDFDocEncoding definition (HO)
+) (intcalc.sty
+Package: intcalc 2019/12/15 v1.3 Expandable calculations with integers (HO)
+)
+(etexcmds.sty
+Package: etexcmds 2019/12/15 v1.7 Avoid name clashes with e-TeX commands (HO)
+)
+\Hy@SavedSpaceFactor=\count335
+ (puenc.def
+File: puenc.def 2022-02-21 v7.00n Hyperref: PDF Unicode definition (HO)
+)
+Package hyperref Info: Hyper figures OFF on input line 4137.
+Package hyperref Info: Link nesting OFF on input line 4142.
+Package hyperref Info: Hyper index ON on input line 4145.
+Package hyperref Info: Plain pages OFF on input line 4152.
+Package hyperref Info: Backreferencing OFF on input line 4157.
+Package hyperref Info: Implicit mode ON; LaTeX internals redefined.
+Package hyperref Info: Bookmarks ON on input line 4390.
+\c@Hy@tempcnt=\count336
+LaTeX Info: Redefining \url on input line 4749.
+\XeTeXLinkMargin=\dimen310
+ (bitset.sty
+Package: bitset 2019/12/09 v1.3 Handle bit-vector datatype (HO)
+ (bigintcalc.sty
+Package: bigintcalc 2019/12/15 v1.5 Expandable calculations on big integers (HO
+)
+))
+\Fld@menulength=\count337
+\Field@Width=\dimen311
+\Fld@charsize=\dimen312
+Package hyperref Info: Hyper figures OFF on input line 6027.
+Package hyperref Info: Link nesting OFF on input line 6032.
+Package hyperref Info: Hyper index ON on input line 6035.
+Package hyperref Info: backreferencing OFF on input line 6042.
+Package hyperref Info: Link coloring OFF on input line 6047.
+Package hyperref Info: Link coloring with OCG OFF on input line 6052.
+Package hyperref Info: PDF/A mode OFF on input line 6057.
+LaTeX Info: Redefining \ref on input line 6097.
+LaTeX Info: Redefining \pageref on input line 6101.
+ (atbegshi-ltx.sty
+Package: atbegshi-ltx 2021/01/10 v1.0c Emulation of the original atbegshi
+package with kernel methods
+)
+\Hy@abspage=\count338
+\c@Item=\count339
+\c@Hfootnote=\count340
+)
+Package hyperref Info: Driver (autodetected): hxetex.
+
+(hxetex.def
+File: hxetex.def 2022-02-21 v7.00n Hyperref driver for XeTeX
+ (stringenc.sty
+Package: stringenc 2019/11/29 v1.12 Convert strings between diff. encodings (HO
+)
+)
+\pdfm@box=\box78
+\c@Hy@AnnotLevel=\count341
+\HyField@AnnotCount=\count342
+\Fld@listcount=\count343
+\c@bookmark@seq@number=\count344
+ (rerunfilecheck.sty
+Package: rerunfilecheck 2019/12/05 v1.9 Rerun checks for auxiliary files (HO)
+ (atveryend-ltx.sty
+Package: atveryend-ltx 2020/08/19 v1.0a Emulation of the original atveryend pac
+kage
+with kernel methods
+)
+(uniquecounter.sty
+Package: uniquecounter 2019/12/15 v1.4 Provide unlimited unique counter (HO)
+)
+Package uniquecounter Info: New unique counter `rerunfilecheck' on input line 2
+86.
+)
+\Hy@SectionHShift=\skip61
+) (placeins.sty
+Package: placeins 2005/04/18  v 2.2
+) (pgflibraryarrows.meta.code.tex
+File: pgflibraryarrows.meta.code.tex 2021/05/15 v3.1.9a (3.1.9a)
+\pgfarrowinset=\dimen313
+\pgfarrowlength=\dimen314
+\pgfarrowwidth=\dimen315
+\pgfarrowlinewidth=\dimen316
+)
+(tikzlibrarypositioning.code.tex
+File: tikzlibrarypositioning.code.tex 2021/05/15 v3.1.9a (3.1.9a)
+) (tikzlibraryfit.code.tex
+File: tikzlibraryfit.code.tex 2021/05/15 v3.1.9a (3.1.9a)
+)
+(tikzlibrarybackgrounds.code.tex
+File: tikzlibrarybackgrounds.code.tex 2021/05/15 v3.1.9a (3.1.9a)
+\pgf@layerbox@background=\box79
+\pgf@layerboxsaved@background=\box80
+)
+Package translations Info: No language package found. I am going to use `englis
+h' as default language. on input line 95.
+ (paper_filled.aux)
+\openout1 = `paper_filled.aux'.
+
+LaTeX Font Info:    Checking defaults for OML/cmm/m/it on input line 95.
+LaTeX Font Info:    ... okay on input line 95.
+LaTeX Font Info:    Checking defaults for OMS/cmsy/m/n on input line 95.
+LaTeX Font Info:    ... okay on input line 95.
+LaTeX Font Info:    Checking defaults for OT1/cmr/m/n on input line 95.
+LaTeX Font Info:    ... okay on input line 95.
+LaTeX Font Info:    Checking defaults for T1/cmr/m/n on input line 95.
+LaTeX Font Info:    ... okay on input line 95.
+LaTeX Font Info:    Checking defaults for TS1/cmr/m/n on input line 95.
+LaTeX Font Info:    Trying to load font information for TS1+cmr on input line 9
+5.
+ (ts1cmr.fd
+File: ts1cmr.fd 2019/12/16 v2.5j Standard LaTeX font definitions
+)
+LaTeX Font Info:    ... okay on input line 95.
+LaTeX Font Info:    Checking defaults for TU/lmr/m/n on input line 95.
+LaTeX Font Info:    ... okay on input line 95.
+LaTeX Font Info:    Checking defaults for OMX/cmex/m/n on input line 95.
+LaTeX Font Info:    ... okay on input line 95.
+LaTeX Font Info:    Checking defaults for U/cmr/m/n on input line 95.
+LaTeX Font Info:    ... okay on input line 95.
+LaTeX Font Info:    Checking defaults for PD1/pdf/m/n on input line 95.
+LaTeX Font Info:    ... okay on input line 95.
+LaTeX Font Info:    Checking defaults for PU/pdf/m/n on input line 95.
+LaTeX Font Info:    ... okay on input line 95.
+
+
+LaTeX Font Warning: Font shape `TU/ptm/b/n' undefined
+(Font)              using `TU/ptm/bx/n' instead on input line 95.
+
+
+LaTeX Font Warning: Font shape `TU/ptm/b/it' undefined
+(Font)              using `TU/ptm/bx/it' instead on input line 95.
+
+
+LaTeX Font Warning: Font shape `TU/ptm/b/n' undefined
+(Font)              using `TU/ptm/bx/n' instead on input line 95.
+
+
+LaTeX Font Warning: Font shape `TU/ptm/b/it' undefined
+(Font)              using `TU/ptm/bx/it' instead on input line 95.
+
+
+LaTeX Font Warning: Font shape `TU/ptm/b/n' undefined
+(Font)              using `TU/ptm/bx/n' instead on input line 95.
+
+
+LaTeX Font Warning: Font shape `TU/ptm/b/it' undefined
+(Font)              using `TU/ptm/bx/it' instead on input line 95.
+
+
+LaTeX Font Warning: Font shape `TU/ptm/b/n' undefined
+(Font)              using `TU/ptm/bx/n' instead on input line 95.
+
+
+LaTeX Font Warning: Font shape `TU/ptm/b/it' undefined
+(Font)              using `TU/ptm/bx/it' instead on input line 95.
+
+
+LaTeX Font Warning: Font shape `TU/ptm/b/n' undefined
+(Font)              using `TU/ptm/bx/n' instead on input line 95.
+
+
+LaTeX Font Warning: Font shape `TU/ptm/b/it' undefined
+(Font)              using `TU/ptm/bx/it' instead on input line 95.
+
+
+LaTeX Font Warning: Font shape `TU/ptm/b/n' undefined
+(Font)              using `TU/ptm/bx/n' instead on input line 95.
+
+
+LaTeX Font Warning: Font shape `TU/ptm/b/it' undefined
+(Font)              using `TU/ptm/bx/it' instead on input line 95.
+
+
+LaTeX Font Warning: Font shape `TU/ptm/b/n' undefined
+(Font)              using `TU/ptm/bx/n' instead on input line 95.
+
+
+LaTeX Font Warning: Font shape `TU/ptm/b/it' undefined
+(Font)              using `TU/ptm/bx/it' instead on input line 95.
+
+
+LaTeX Font Warning: Font shape `TU/ptm/b/n' undefined
+(Font)              using `TU/ptm/bx/n' instead on input line 95.
+
+
+LaTeX Font Warning: Font shape `TU/ptm/b/it' undefined
+(Font)              using `TU/ptm/bx/it' instead on input line 95.
+
+
+LaTeX Font Warning: Font shape `TU/ptm/b/n' undefined
+(Font)              using `TU/ptm/bx/n' instead on input line 95.
+
+
+LaTeX Font Warning: Font shape `TU/ptm/b/it' undefined
+(Font)              using `TU/ptm/bx/it' instead on input line 95.
+
+
+LaTeX Font Warning: Font shape `TU/ptm/b/n' undefined
+(Font)              using `TU/ptm/bx/n' instead on input line 95.
+
+
+LaTeX Font Warning: Font shape `TU/ptm/b/it' undefined
+(Font)              using `TU/ptm/bx/it' instead on input line 95.
+
+-- Lines per column: 56 (exact).
+(translations-basic-dictionary-english.trsl
+File: translations-basic-dictionary-english.trsl (english translation file `tra
+nslations-basic-dictionary')
+)
+Package translations Info: loading dictionary `translations-basic-dictionary' f
+or `english'. on input line 95.
+Package caption Info: Begin \AtBeginDocument code.
+Package caption Info: float package is loaded.
+Package caption Info: hyperref package is loaded.
+Package caption Info: End \AtBeginDocument code.
+LaTeX Info: Redefining \microtypecontext on input line 95.
+Package microtype Info: Applying patch `item' on input line 95.
+Package microtype Info: Applying patch `toc' on input line 95.
+Package microtype Info: Applying patch `eqnum' on input line 95.
+Package microtype Info: Applying patch `footnote' on input line 95.
+Package microtype Info: Character protrusion enabled (level 2).
+Package microtype Info: Using default protrusion set `alltext'.
+Package microtype Info: No adjustment of tracking.
+Package microtype Info: No adjustment of spacing.
+Package microtype Info: No adjustment of kerning.
+ (mt-ptm.cfg
+File: mt-ptm.cfg 2006/04/20 v1.7 microtype config. file: Times (RS)
+)
+Package microtype Info: Loading generic protrusion settings for font family
+(microtype)             `ptm' (encoding: TU).
+(microtype)             For optimal results, create family-specific settings.
+(microtype)             See the microtype manual for details.
+Package hyperref Info: Link coloring OFF on input line 95.
+ (nameref.sty
+Package: nameref 2021-04-02 v2.47 Cross-referencing by name of section
+
+(refcount.sty
+Package: refcount 2019/12/15 v3.6 Data extraction from label references (HO)
+) (gettitlestring.sty
+Package: gettitlestring 2019/12/15 v1.6 Cleanup title references (HO)
+)
+\c@section@level=\count345
+)
+LaTeX Info: Redefining \ref on input line 95.
+LaTeX Info: Redefining \pageref on input line 95.
+LaTeX Info: Redefining \nameref on input line 95.
+ (paper_filled.out) (paper_filled.out)
+\@outlinefile=\write4
+\openout4 = `paper_filled.out'.
+
+LaTeX Font Info:    Calculating math sizes for size <24> on input line 105.
+
+(mt-cmr.cfg
+File: mt-cmr.cfg 2013/05/19 v2.2 microtype config. file: Computer Modern Roman 
+(RS)
+)
+LaTeX Font Info:    Trying to load font information for U+msa on input line 105
+.
+ (umsa.fd
+File: umsa.fd 2013/01/14 v3.01 AMS symbols A
+) (mt-msa.cfg
+File: mt-msa.cfg 2006/02/04 v1.1 microtype config. file: AMS symbols (a) (RS)
+)
+LaTeX Font Info:    Trying to load font information for U+msb on input line 105
+.
+ (umsb.fd
+File: umsb.fd 2013/01/14 v3.01 AMS symbols B
+) (mt-msb.cfg
+File: mt-msb.cfg 2005/06/01 v1.0 microtype config. file: AMS symbols (b) (RS)
+)
+
+LaTeX Font Warning: Font shape `TU/ptm/b/n' undefined
+(Font)              using `TU/ptm/bx/n' instead on input line 106.
+
+
+LaTeX Font Warning: Font shape `TU/ptm/b/n' undefined
+(Font)              using `TU/ptm/bx/n' instead on input line 112.
+
+
+LaTeX Font Warning: Font shape `TU/ptm/bx/sc' undefined
+(Font)              using `TU/ptm/bx/n' instead on input line 115.
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 112--144
+[]\TU/ptm/bx/it/9 Abstract—We compare an end-to-end sequence-to-
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 112--144
+\TU/ptm/bx/it/9 sequence model (DONUT, $\OMS/cmsy/m/n/9 ^^Y$\TU/ptm/bx/it/9 260
+.78M parameters)
+ []
+
+
+Underfull \hbox (badness 1616) in paragraph at lines 112--144
+\TU/ptm/bx/it/9 against a modular detect$\OMS/cmsy/m/n/9 !$\TU/ptm/bx/it/9 read
+$\OMS/cmsy/m/n/9 !$\TU/ptm/bx/it/9 assign pipeline (focus:
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 112--144
+\TU/ptm/bx/it/9 YOLOv8$\OT1/cmr/m/n/9 +$\TU/ptm/bx/it/9 TrOCR$\OT1/cmr/m/n/9 +$
+\TU/ptm/bx/it/9 learned cross-attention assigner,
+ []
+
+
+Underfull \hbox (badness 2126) in paragraph at lines 112--144
+\OMS/cmsy/m/n/9 ^^Y$\TU/ptm/bx/it/9 65.77M$\OT1/cmr/m/n/9 +$\TU/ptm/bx/it/9 116
+0K parameters) on the canonical ICDAR-
+ []
+
+
+Underfull \hbox (badness 1515) in paragraph at lines 112--144
+\TU/ptm/bx/it/9 2019 SROIE Task-3 evaluation set: 626 official training
+ []
+
+
+Underfull \hbox (badness 1769) in paragraph at lines 112--144
+\TU/ptm/bx/it/9 (DONUT $\OMS/cmsy/m/n/9 ^^@$ \TU/ptm/bx/it/9 Pipeline)$\OT1/cmr
+/m/n/9 =$\TU/ptm/bx/it/9 -0.0309, paired-bootstrap 95% CI
+ []
+
+
+LaTeX Font Warning: Font shape `TU/ptm/m/sc' undefined
+(Font)              using `TU/ptm/m/n' instead on input line 146.
+
+
+LaTeX Font Warning: Font shape `TU/ptm/b/n' undefined
+(Font)              using `TU/ptm/bx/n' instead on input line 197.
+
+[1
+
+
+]
+Underfull \hbox (badness 2393) in paragraph at lines 221--230
+\TU/ptm/m/sc/10 decoder [[]7[]] autoregressively emits structured JSON
+ []
+
+LaTeX Font Info:    Trying to load font information for TU+pcr on input line 25
+6.
+LaTeX Font Info:    No file TUpcr.fd. on input line 256.
+
+LaTeX Font Warning: Font shape `TU/pcr/m/n' undefined
+(Font)              using `TU/lmr/m/n' instead on input line 256.
+
+(mt-LatinModernRoman.cfg
+File: mt-LatinModernRoman.cfg 2021/02/21 v1.1 microtype config. file: Latin Mod
+ern Roman (RS)
+)
+
+LaTeX Font Warning: Font shape `TU/ptm/b/n' undefined
+(Font)              using `TU/ptm/bx/n' instead on input line 306.
+
+
+Underfull \hbox (badness 8094) in paragraph at lines 306--315
+[]\TU/pcr/m/n/10 Autoregressive XML decoding. The decoder is
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 306--315
+\TU/pcr/m/n/10 MART</s_company><s_date>26/03/2018
+ []
+
+
+LaTeX Font Warning: Font shape `TU/ptm/b/n' undefined
+(Font)              using `TU/ptm/bx/n' instead on input line 316.
+
+
+LaTeX Font Warning: Font shape `TU/ptm/b/n' undefined
+(Font)              using `TU/ptm/bx/n' instead on input line 326.
+
+[2]
+
+LaTeX Font Warning: Font shape `TU/ptm/b/n' undefined
+(Font)              using `TU/ptm/bx/n' instead on input line 336.
+
+
+LaTeX Font Warning: Font shape `TU/ptm/b/n' undefined
+(Font)              using `TU/ptm/bx/n' instead on input line 341.
+
+
+LaTeX Font Warning: Font shape `TU/ptm/b/n' undefined
+(Font)              using `TU/ptm/bx/n' instead on input line 359.
+
+
+LaTeX Font Warning: Font shape `TU/ptm/b/n' undefined
+(Font)              using `TU/ptm/bx/n' instead on input line 371.
+
+
+LaTeX Font Warning: Font shape `TU/ptm/b/n' undefined
+(Font)              using `TU/ptm/bx/n' instead on input line 385.
+
+
+Underfull \hbox (badness 2213) in paragraph at lines 400--421
+\TU/pcr/m/n/10 field. The cross-attention weights $\OML/cmm/m/it/10 A \OMS/cmsy
+/m/n/10 2 \U/msb/m/n/10 R[]$ \TU/pcr/m/n/10 are
+ []
+
+
+Underfull \hbox (badness 2626) in paragraph at lines 400--421
+\TU/pcr/m/n/10 surfaced as the soft assignment and visualised in
+ []
+
+
+LaTeX Font Warning: Font shape `TU/ptm/b/n' undefined
+(Font)              using `TU/ptm/bx/n' instead on input line 422.
+
+Package hyperref Info: bookmark level for unknown algorithm defaults to 0 on in
+put line 440.
+
+LaTeX Font Warning: Font shape `TU/ptm/b/n' undefined
+(Font)              using `TU/ptm/bx/n' instead on input line 440.
+
+
+LaTeX Font Warning: Font shape `TU/ptm/b/n' undefined
+(Font)              using `TU/ptm/bx/n' instead on input line 440.
+
+
+LaTeX Font Warning: Font shape `TU/ptm/b/n' undefined
+(Font)              using `TU/ptm/bx/n' instead on input line 440.
+
+
+LaTeX Font Warning: Font shape `TU/ptm/b/n' undefined
+(Font)              using `TU/ptm/bx/n' instead on input line 440.
+
+
+LaTeX Font Warning: Font shape `TU/ptm/b/n' undefined
+(Font)              using `TU/ptm/bx/n' instead on input line 443.
+
+
+LaTeX Font Warning: Font shape `TU/ptm/b/n' undefined
+(Font)              using `TU/ptm/bx/n' instead on input line 458.
+
+
+LaTeX Font Warning: Font shape `TU/ptm/b/n' undefined
+(Font)              using `TU/ptm/bx/n' instead on input line 458.
+
+
+LaTeX Font Warning: Font shape `TU/ptm/b/n' undefined
+(Font)              using `TU/ptm/bx/n' instead on input line 460.
+
+
+LaTeX Font Warning: Font shape `TU/ptm/b/n' undefined
+(Font)              using `TU/ptm/bx/n' instead on input line 460.
+
+
+LaTeX Font Warning: Font shape `TU/ptm/b/n' undefined
+(Font)              using `TU/ptm/bx/n' instead on input line 461.
+
+
+LaTeX Font Warning: Font shape `TU/ptm/b/n' undefined
+(Font)              using `TU/ptm/bx/n' instead on input line 465.
+
+
+LaTeX Font Warning: Font shape `TU/ptm/b/n' undefined
+(Font)              using `TU/ptm/bx/n' instead on input line 475.
+
+
+LaTeX Font Warning: Font shape `TU/ptm/b/n' undefined
+(Font)              using `TU/ptm/bx/n' instead on input line 483.
+
+[3]
+
+LaTeX Font Warning: Font shape `TU/ptm/b/n' undefined
+(Font)              using `TU/ptm/bx/n' instead on input line 490.
+
+
+Underfull \hbox (badness 6204) in paragraph at lines 505--525
+[]\TU/pcr/m/n/10 As an alternative to the full transformer as-
+ []
+
+
+Underfull \hbox (badness 1472) in paragraph at lines 505--525
+\TU/pcr/m/n/10 (models/focus_gat.py) that operates on a $\OML/cmm/m/it/10 k$\TU
+/pcr/m/n/10 -nearest-
+ []
+
+
+LaTeX Font Warning: Font shape `TU/ptm/b/n' undefined
+(Font)              using `TU/ptm/bx/n' instead on input line 563.
+
+
+LaTeX Font Warning: Font shape `TU/ptm/b/n' undefined
+(Font)              using `TU/ptm/bx/n' instead on input line 563.
+
+
+Underfull \hbox (badness 3108) in paragraph at lines 571--593
+[]\TU/pcr/m/n/10 The fine-tuning set is small (563 receipts) but
+ []
+
+
+Underfull \hbox (badness 4048) in paragraph at lines 571--593
+\TU/pcr/m/n/10 orderings, and total-line formatting patterns recur
+ []
+
+
+Underfull \hbox (badness 2334) in paragraph at lines 571--593
+\TU/pcr/m/n/10 across dozens of scans. We exploit this regularity
+ []
+
+
+Underfull \hbox (badness 6961) in paragraph at lines 571--593
+\TU/pcr/m/n/10 with a lightweight retrieval-augmented variant of
+ []
+
+
+Underfull \hbox (badness 3118) in paragraph at lines 571--593
+\TU/pcr/m/n/10 by the frozen Swin encoder into 1024-dim [CLS]
+ []
+
+
+Underfull \hbox (badness 3179) in paragraph at lines 571--593
+\TU/pcr/m/n/10 embeddings and indexed with FAISS (IndexFlatIP,
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 571--593
+\TU/pcr/m/n/10 trieved><s_company>…</s_company></retrieved>
+ []
+
+
+Underfull \hbox (badness 7740) in paragraph at lines 571--593
+\TU/pcr/m/n/10 SROIE-tag spans using two new special tokens
+ []
+
+
+Underfull \hbox (badness 1590) in paragraph at lines 571--593
+\TU/pcr/m/n/10 (<retrieved>, </retrieved>) added to the tokenizer
+ []
+
+
+Underfull \hbox (badness 1521) in paragraph at lines 571--593
+\TU/pcr/m/n/10 same prefix is fed to HuggingFace’s generate() via
+ []
+
+[4]
+
+LaTeX Font Warning: Font shape `TU/ptm/b/n' undefined
+(Font)              using `TU/ptm/bx/n' instead on input line 621.
+
+
+LaTeX Font Warning: Font shape `TU/pcr/bx/n' undefined
+(Font)              using `TU/pcr/m/n' instead on input line 621.
+
+
+LaTeX Font Warning: Font shape `TU/ptm/b/n' undefined
+(Font)              using `TU/ptm/bx/n' instead on input line 636.
+
+
+LaTeX Font Warning: Font shape `TU/ptm/b/n' undefined
+(Font)              using `TU/ptm/bx/n' instead on input line 648.
+
+
+LaTeX Font Warning: Font shape `TU/ptm/b/n' undefined
+(Font)              using `TU/ptm/bx/n' instead on input line 660.
+
+
+LaTeX Font Warning: Font shape `TU/ptm/b/n' undefined
+(Font)              using `TU/ptm/bx/n' instead on input line 673.
+
+
+Underfull \vbox (badness 10000) has occurred while \output is active []
+
+
+
+LaTeX Font Warning: Font shape `TU/ptm/b/n' undefined
+(Font)              using `TU/ptm/bx/n' instead on input line 687.
+
+
+LaTeX Font Warning: Font shape `TU/ptm/b/n' undefined
+(Font)              using `TU/ptm/bx/n' instead on input line 701.
+
+
+LaTeX Font Warning: Font shape `TU/ptm/b/n' undefined
+(Font)              using `TU/ptm/bx/n' instead on input line 719.
+
+
+Underfull \hbox (badness 7558) in paragraph at lines 719--730
+[]\TU/pcr/bx/n/10 YOLO project-path collision (FileExistsError).
+ []
+
+
+LaTeX Font Warning: Font shape `TU/ptm/b/n' undefined
+(Font)              using `TU/ptm/bx/n' instead on input line 731.
+
+
+Underfull \hbox (badness 4353) in paragraph at lines 731--755
+[]\TU/pcr/bx/n/10 Stale generation_config on reload (evalF1$\OMS/cmsy/m/n/10 ^^
+Q$\TU/pcr/bx/n/10 0
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 731--755
+\TU/pcr/bx/n/10 with healthy eval_loss). Mechanism.
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 731--755
+\TU/pcr/bx/n/10 Seq2SeqTrainer-(predict_with_generate=True)
+ []
+
+
+Underfull \hbox (badness 2310) in paragraph at lines 731--755
+\TU/pcr/bx/n/10 receives a token stream with no recognisable
+ []
+
+
+Underfull \hbox (badness 2142) in paragraph at lines 731--755
+\TU/pcr/bx/n/10 field tags, and returns {}; per-field F1 is a
+ []
+
+
+Underfull \hbox (badness 1675) in paragraph at lines 731--755
+\TU/pcr/bx/n/10 while the loss curves looked textbook. Guard.
+ []
+
+
+Underfull \hbox (badness 2846) in paragraph at lines 731--755
+\TU/pcr/bx/n/10 from model.config into model.generation_config
+ []
+
+
+Underfull \hbox (badness 3826) in paragraph at lines 731--755
+\TU/pcr/bx/n/10 before the first trainer.evaluate(). The guard
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 731--755
+\TU/pcr/bx/n/10 is now symmetric across both DONUT
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 731--755
+\TU/pcr/bx/n/10 and TrOCR trainers: models/gen_config.py’s
+ []
+
+
+Underfull \hbox (badness 1939) in paragraph at lines 731--755
+\TU/pcr/bx/n/10 trip against the written generation_config.json,
+ []
+
+[5]
+
+LaTeX Font Warning: Font shape `TU/ptm/b/n' undefined
+(Font)              using `TU/ptm/bx/n' instead on input line 756.
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 756--771
+\TU/pcr/bx/n/10 on new-token runs). Mechanism. Setting
+ []
+
+
+Underfull \hbox (badness 7397) in paragraph at lines 756--771
+\TU/pcr/bx/n/10 tie_word_embeddings=False (the Bug 1 fix)
+ []
+
+
+LaTeX Font Warning: Font shape `TU/ptm/b/n' undefined
+(Font)              using `TU/ptm/bx/n' instead on input line 772.
+
+
+LaTeX Font Warning: Font shape `TU/ptm/b/n' undefined
+(Font)              using `TU/ptm/bx/n' instead on input line 787.
+
+
+Underfull \hbox (badness 3138) in paragraph at lines 787--802
+[]\TU/pcr/bx/n/10 Outer <s_sroie> wrapper flattening (per-field
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 787--802
+\TU/pcr/bx/n/10 F1=0 with healthy eval_loss). Mechanism.
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 787--802
+\TU/pcr/bx/n/10 Our training labels wrap each receipt in
+ []
+
+
+Underfull \hbox (badness 5274) in paragraph at lines 787--802
+\TU/pcr/bx/n/10 F1=0 while the cross-entropy loss descends
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 787--802
+\TU/pcr/bx/n/10 donut_parse._flatten_token2json recursively
+ []
+
+
+LaTeX Font Warning: Font shape `TU/ptm/b/n' undefined
+(Font)              using `TU/ptm/bx/n' instead on input line 803.
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 803--818
+[]\TU/pcr/bx/n/10 Warmup-steps-vs-ratio precedence (F1$\OMS/cmsy/m/n/10 ^^Y$\TU
+/pcr/bx/n/10 0.61).
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 803--818
+\TU/pcr/bx/n/10 Mechanism. Hugging Face’s Trainer consults
+ []
+
+
+Underfull \hbox (badness 1496) in paragraph at lines 803--818
+\TU/pcr/bx/n/10 Guard. donut_train.py forces warmup_steps=0
+ []
+
+
+Package hyperref Warning: Token not allowed in a PDF string (Unicode):
+(hyperref)                removing `math shift' on input line 827.
+
+
+Package hyperref Warning: Token not allowed in a PDF string (Unicode):
+(hyperref)                removing `\Delta' on input line 827.
+
+
+Package hyperref Warning: Token not allowed in a PDF string (Unicode):
+(hyperref)                removing `math shift' on input line 827.
+
+
+Overfull \hbox (69.25818pt too wide) in paragraph at lines 829--840
+[]\TU/pcr/bx/n/10 Table []I[] folds the per-bug F1 deltas seeded into results/b
+ug_timeline.json
+ []
+
+
+Underfull \vbox (badness 1406) has occurred while \output is active []
+
+ [6]
+
+LaTeX Font Warning: Font shape `TU/ptm/b/n' undefined
+(Font)              using `TU/ptm/bx/n' instead on input line 906.
+
+
+LaTeX Font Warning: Font shape `TU/ptm/b/n' undefined
+(Font)              using `TU/ptm/bx/n' instead on input line 914.
+
+
+LaTeX Font Warning: Font shape `TU/ptm/b/n' undefined
+(Font)              using `TU/ptm/bx/n' instead on input line 918.
+
+
+LaTeX Font Warning: Font shape `TU/ptm/b/n' undefined
+(Font)              using `TU/ptm/bx/n' instead on input line 922.
+
+
+Overfull \hbox (8.73975pt too wide) in paragraph at lines 922--929
+\TU/pcr/bx/n/10 Architecture: $\OT1/cmr/m/n/10 3$\TU/pcr/bx/n/10 -layer pre-nor
+m Transformer encoder, 8 heads,
+ []
+
+
+LaTeX Font Warning: Font shape `TU/ptm/b/n' undefined
+(Font)              using `TU/ptm/bx/n' instead on input line 968.
+
+
+LaTeX Font Warning: Font shape `TU/ptm/b/n' undefined
+(Font)              using `TU/ptm/bx/n' instead on input line 977.
+
+
+Overfull \hbox (12.12836pt too wide) in paragraph at lines 977--985
+[]\TU/pcr/bx/n/10 Reproducibility. Deterministic RNG seeding across Python,
+ []
+
+
+LaTeX Font Warning: Font shape `TU/ptm/b/n' undefined
+(Font)              using `TU/ptm/bx/n' instead on input line 986.
+
+
+LaTeX Font Warning: Font shape `TU/ptm/b/n' undefined
+(Font)              using `TU/ptm/bx/n' instead on input line 992.
+
+
+LaTeX Font Warning: Font shape `TU/ptm/b/n' undefined
+(Font)              using `TU/ptm/bx/n' instead on input line 1000.
+
+
+Overfull \hbox (2.28825pt too wide) in paragraph at lines 1046--1058
+\TU/pcr/bx/n/10 frame the contribution as matching DONUT at one-quarter
+ []
+
+[7]
+File: ..//fig_attention_heatmap.pdf Graphic file (type pdf)
+<use ..//fig_attention_heatmap.pdf>
+File: ..//fig_assigner_loss_curve.pdf Graphic file (type pdf)
+<use ..//fig_assigner_loss_curve.pdf>
+File: ..//fig_bug_timeline.pdf Graphic file (type pdf)
+<use ..//fig_bug_timeline.pdf>
+File: ..//fig_gpu_telemetry.pdf Graphic file (type pdf)
+<use ..//fig_gpu_telemetry.pdf>
+File: ..//fig_per_field_confusion.pdf Graphic file (type pdf)
+<use ..//fig_per_field_confusion.pdf>
+
+
+LaTeX Font Warning: Font shape `TU/ptm/b/n' undefined
+(Font)              using `TU/ptm/bx/n' instead on input line 1211.
+
+
+Overfull \hbox (80.38962pt too wide) in paragraph at lines 1210--1220
+\TU/pcr/bx/n/10 variant of this paper. Every number is sourced from runs/<run_i
+d>/metrics/
+ []
+
+
+Underfull \hbox (badness 6110) in paragraph at lines 1228--1228
+[]\TU/pcr/bx/n/10 TABLE VII: |Headline per-field F1 (%) on the
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 1228--1228
+\TU/pcr/bx/n/10 canonical SROIE Task-3 test set (347 images).
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 1228--1228
+\TU/pcr/bx/n/10 DONUT (end-to-end, $\OMS/cmsy/m/n/10 ^^Y$\TU/pcr/bx/n/10 260.78
+M parameters) vs.
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 1228--1228
+\TU/pcr/bx/n/10 the YOLO+TrOCR+Attention-Assigner pipeline
+ []
+
+
+LaTeX Font Warning: Font shape `TU/ptm/b/n' undefined
+(Font)              using `TU/ptm/bx/n' instead on input line 1239.
+
+
+LaTeX Font Warning: Font shape `TU/ptm/b/n' undefined
+(Font)              using `TU/ptm/bx/n' instead on input line 1239.
+
+
+LaTeX Font Warning: Font shape `TU/ptm/b/n' undefined
+(Font)              using `TU/ptm/bx/n' instead on input line 1239.
+
+File: ..//figures/fig_f1_grouped.pdf Graphic file (type pdf)
+<use ..//figures/fig_f1_grouped.pdf>
+File: ..//figures/fig_errors.pdf Graphic file (type pdf)
+<use ..//figures/fig_errors.pdf>
+File: ..//figures/fig_samples.pdf Graphic file (type pdf)
+<use ..//figures/fig_samples.pdf>
+
+LaTeX Warning: Float too large for page by 203.51389pt on input line 1442.
+
+[8] [9] [10
+
+] [11]
+File: ..//figures/fig_samples_full.pdf Graphic file (type pdf)
+<use ..//figures/fig_samples_full.pdf>
+
+
+LaTeX Warning: Float too large for page by 319.80469pt on input line 1466.
+
+
+Overfull \hbox (4.1783pt too wide) in paragraph at lines 1484--1490
+\TU/pcr/bx/n/10 DONUT” vs “this work — YOLO+TrOCR+Assigner” com-
+ []
+
+
+LaTeX Font Warning: Font shape `TU/ptm/b/n' undefined
+(Font)              using `TU/ptm/bx/n' instead on input line 1506.
+
+
+LaTeX Font Warning: Font shape `TU/ptm/b/n' undefined
+(Font)              using `TU/ptm/bx/n' instead on input line 1507.
+
+
+Underfull \hbox (badness 4084) in paragraph at lines 1515--1515
+[]|$[]$ \TU/ptm/bx/it/8 “this work — DONUT” is our SROIE Task-3 re-
+ []
+
+
+Overfull \hbox (103.83185pt too wide) in paragraph at lines 1502--1518
+ [][] 
+ []
+
+
+LaTeX Font Warning: Font shape `TU/ptm/b/n' undefined
+(Font)              using `TU/ptm/bx/n' instead on input line 1523.
+
+
+Overfull \hbox (1.4597pt too wide) in paragraph at lines 1523--1532
+\TU/pcr/bx/n/10 parameter assigner takes minutes versus hours for DONUT,
+ []
+
+
+LaTeX Font Warning: Font shape `TU/ptm/b/n' undefined
+(Font)              using `TU/ptm/bx/n' instead on input line 1533.
+
+
+LaTeX Font Warning: Font shape `TU/ptm/b/n' undefined
+(Font)              using `TU/ptm/bx/n' instead on input line 1547.
+
+[12
+
+
+
+] [13]
+Overfull \hbox (0.49709pt too wide) in paragraph at lines 1605--1608
+[]\TU/pcr/bx/n/10 No LayoutLMv2/v3, TILT, UDOP, StrucTexT, PICK,
+ []
+
+
+Overfull \hbox (2.48972pt too wide) in paragraph at lines 1638--1644
+\TU/pcr/bx/n/10 Southeast Asian merchants released under the ICDAR 2019
+ []
+
+
+Overfull \hbox (46.62975pt too wide) in paragraph at lines 1647--1667
+\TU/pcr/bx/n/10 (347 official held-out receipts), our focus (YOLO+TrOCR+Attenti
+on-
+ []
+
+
+LaTeX Font Warning: Font shape `TU/ptm/b/n' undefined
+(Font)              using `TU/ptm/bx/n' instead on input line 1668.
+
+
+Overfull \hbox (8.14699pt too wide) in paragraph at lines 1684--1687
+[]\TU/pcr/bx/n/10 Code, data, and checkpoints. Released under the project
+ []
+
+
+Overfull \hbox (0.7356pt too wide) in paragraph at lines 1684--1687
+\TU/pcr/bx/n/10 repository; split JSON is persisted to results/split.json
+ []
+
+
+Overfull \hbox (89.01698pt too wide) in paragraph at lines 1693--1696
+\TU/pcr/bx/n/10 12.x. Wall-clock and energy are logged to results/telemetry_<st
+age>.jsonl. 
+ []
+
+
+Overfull \hbox (17.62288pt too wide) in paragraph at lines 1725--1737
+[]$\OT1/cmr/m/n/10 ^^A$\TU/pcr/bx/n/10 F1 $\OT1/cmr/m/n/10 = \OMS/cmsy/m/n/10 ^
+^@\OT1/cmr/m/n/10 0\OML/cmm/m/it/10 :\OT1/cmr/m/n/10 0309$ \TU/pcr/bx/n/10 (DON
+UT minus pipeline). Paired-bootstrap
+ []
+
+
+Package hyperref Warning: Token not allowed in a PDF string (Unicode):
+(hyperref)                removing `\leavevmode@ifvmode' on input line 1738.
+
+
+Package hyperref Warning: Token not allowed in a PDF string (Unicode):
+(hyperref)                \kern 1.66702pt
+(hyperref)                removed on input line 1738.
+
+[14]
+Overfull \hbox (110.031pt too wide) in paragraph at lines 1822--1836
+ [][] 
+ []
+
+
+LaTeX Font Warning: Font shape `TU/ptm/b/n' undefined
+(Font)              using `TU/ptm/bx/n' instead on input line 1838.
+
+
+Underfull \hbox (badness 4886) in paragraph at lines 1847--1849
+[]\TU/pcr/bx/n/10 Open the folder runs/<run_id>/, select all,
+ []
+
+
+Underfull \hbox (badness 5175) in paragraph at lines 1847--1849
+\TU/pcr/bx/n/10 download. Or run make pack for a single
+ []
+
+(paper_filled.bbl
+Underfull \hbox (badness 2521) in paragraph at lines 117--120
+[]\TU/ptm/bx/it/8 R. Powalski, Ł. Borchmann, D. Jurkiewicz, T. Dwojak,
+ []
+
+)
+
+** Conference Paper **
+Before submitting the final camera ready copy, remember to:
+
+ 1. Manually equalize the lengths of two columns on the last page
+ of your paper;
+
+ 2. Ensure that any PostScript and/or PDF output post-processing
+ uses only Type 1 fonts and that every step in the generation
+ process uses the appropriate paper size.
+
+[15] [16
+
+] (paper_filled.aux)
+
+LaTeX Font Warning: Some font shapes were not available, defaults substituted.
+
+Package rerunfilecheck Info: File `paper_filled.out' has not changed.
+(rerunfilecheck)             Checksum: 8386E173533EF8AF43BB7B639AB16291;5329.
+ )
+Output written on paper_filled.xdv (16 pages, 634920 bytes).

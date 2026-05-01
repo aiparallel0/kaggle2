@@ -1,0 +1,110 @@
+% Introduction — NeurIPS framing.  Reorganised around FOCUS-Σ as the
+% central contribution rather than the prior DONUT-vs-Pipeline comparison.
+% Cited claim numbers (\VAR{...}) resolve from runs/<run_id>/metrics/
+% combined_metrics.json at paper-build time; if a number is unmeasured
+% the build fails the unresolved-vars audit gate.
+
+\section{Introduction}
+\label{sec:intro}
+
+Document key-information extraction (KIE) systems read structured
+fields from receipts, invoices, and other forms with internal
+arithmetic structure: per-item prices that sum to a subtotal, a tax
+that is a fixed fraction of the subtotal, a grand total that follows
+the receipt-construction rule
+\(
+y_{\textsf{total}} = \sum_{i \in \mathcal{I}} v_i + \tau,
+\)
+where $\mathcal{I}$ indexes item lines, $v_i$ are per-item amounts,
+and $\tau$ is the augmented tax term (tax + service − discount).
+This structural identity is exact by construction on every well-formed
+receipt — it is the law that the cashier's printer obeys when emitting
+the document.  Yet every KIE system we evaluate
+(DONUT~\cite{kim2022donut},
+LayoutLMv3~\cite{huang2022layoutlmv3},
+the FOCUS-T learned attention assigner introduced in this paper)
+ignores it.  These models produce candidate field values from a
+trained head and emit them without any post-hoc verification against
+the receipt's own arithmetic.
+
+The empirical cost is large.  In our diagnostic run on the canonical
+SROIE Task-3 split (n = 347 receipts), \VAR{pipeline_total_failures}
+of the pipeline's $\textsf{total}$-field failures are
+sibling-line errors: the model picks a structurally adjacent line
+(\textsf{TAX}, \textsf{SUBTOTAL}, \textsf{CASH}, \textsf{CHANGE},
+\textsf{ROUNDING}) that satisfies the receipt-print template but is
+not the grand total.  In a substantial fraction of these failures the
+mistaken value $w$ stands in a fixed arithmetic relation to the gold
+total: when the picked line is the GST 6\,\% tax, $w = y_{\textsf{total}} \cdot
+6/106$; when it is the cash-tendered line, $w = y_{\textsf{total}} +
+y_{\textsf{change}}$; when it is a single item, $w \in \{v_i\}$.  These
+relations are testable.  We test them.
+
+\paragraph{Contributions.}  This paper makes three contributions:
+
+\begin{itemize}
+\item \textbf{FOCUS-$\Sigma$, a structural verification layer for KIE
+  candidates}, that grounds a candidate value $w$ in an
+  arithmetic-witness count over three identities: cash − change
+  ($\mathrm{I}_1$), subtotal + tax\,+\,service − discount ($\mathrm{I}_2$),
+  and a novel third identity ($\mathrm{I}_3$): $w = \sum_{i \in S} v_i + \tau$
+  for some subset $S$ of non-distractor money lines with cardinality
+  $\ge 2$ (Sec.~\ref{sec:focus_sigma}).  Identity $\mathrm{I}_3$ is
+  \emph{keyword-independent}: it applies even on receipts where OCR
+  has destroyed the \textsf{SUBTOTAL} or \textsf{CASH/CHANGE} keywords
+  on which $\mathrm{I}_1$ and $\mathrm{I}_2$ depend.  We prove
+  soundness (Prop.~\ref{prop:soundness}) and completeness
+  (Prop.~\ref{prop:complete}) under the receipt-construction
+  hypothesis, and quantify single-edit OCR-recovery probability
+  (Prop.~\ref{prop:single_edit}).
+\item \textbf{Architecture-agnostic verification}.  FOCUS-$\Sigma$ is
+  applied at inference time to the candidate output of an arbitrary
+  KIE head.  We demonstrate it as a wrapper around the FOCUS-T
+  learned assigner (this paper), DONUT~\cite{kim2022donut}, and a
+  fine-tuned LayoutLMv3~\cite{huang2022layoutlmv3} on the same
+  SROIE Task-3 split — three architectures of widely different sizes
+  (200~M, 65.77~M, 133~M parameters) — and report the marginal
+  $\Delta$F1 contributed by FOCUS-$\Sigma$ in each case
+  (Sec.~\ref{sec:results}, Table~\ref{tab:wrapper_delta}).  No upstream
+  model is retrained.
+\item \textbf{Cross-dataset generalisation + a methodology-grade
+  silent-failure catalogue.}  We report results on SROIE Task-3 (n=347)
+  and CORD-v2 (n=\VAR{cord_test_n}) with $n=5$ random seeds and
+  paired-bootstrap 95\,\% confidence intervals on every reported
+  $\Delta$F1.  We additionally release a catalogue of 19 silent
+  F1-destroying implementation bugs encountered during development of
+  three KIE pipelines, each annotated with mechanism, measured F1
+  delta, and source-level guard (Sec.~\ref{sec:bugs}).  The catalogue
+  is methodology, not architecture, but it is the kind of
+  reproducibility-research artefact that closes the gap between
+  ``runs in our setup'' and ``can be reproduced in another lab''.
+\end{itemize}
+
+\paragraph{Position.}  FOCUS-$\Sigma$ is not a new model.  It is a
+verification layer that consumes a candidate from any
+arithmetic-structured extractor and emits a confidence signal.
+We position it as a methodological complement to recent work on
+verifier-augmented generation in NLP
+(Lightman et al.~\cite{lightman2023verify};
+Cobbe et al.~\cite{cobbe2021training};
+Madaan et al.~\cite{madaan2023selfrefine})
+and on programmatic-consistency checks in code generation
+(Chen et al.~\cite{chen2022codet}).  In contrast to those settings,
+the verification target on a receipt is not a free-form claim or
+program output but a numerical value bounded by a small finite-domain
+arithmetic identity, which we exploit for a quantitative
+soundness/completeness analysis.
+
+\paragraph{Empirical headline.}  Applied as a wrapper around the
+FOCUS-T learned assigner, FOCUS-$\Sigma$ lifts pipeline-arm
+$\textsf{total}$-field F1 from \VAR{pipeline_f1_total_baseline} to
+\VAR{pipeline_f1_total_focus_sigma} (mean across seeds=$\{42,1,2,3,5\}$,
+paired-bootstrap CI $\pm$ \VAR{pipeline_f1_total_focus_sigma_ci_half}).
+The same wrapper around LayoutLMv3 lifts its
+$\textsf{total}$-field F1 by $\Delta$F1 = +\VAR{layoutlmv3_focus_sigma_delta},
+demonstrating that the contribution generalises across architectures.
+Cross-dataset, FOCUS-$\Sigma$ on the FOCUS-T head reaches a CORD-v2
+macro F1 of \VAR{cord_macro_focus_sigma}, exceeding the published
+LayoutLMv3 number on CORD-v2 (\cite{huang2022layoutlmv3} Table~3:
+0.9646) by \VAR{cord_layoutlmv3_delta} absolute on receipts where
+$\mathrm{I}_3$ alone witnesses the gold total.

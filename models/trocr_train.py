@@ -164,6 +164,15 @@ def train_trocr(config: ExpConfig, crops: list[Crop]) -> str:
         greater_is_better=True,
         predict_with_generate=True,
         seed=config.seed,
+        # GPU-utilisation fix: telemetry on run 20260430T125211Z showed
+        # TrOCR sat at 3.6% mean GPU util for 104 minutes — the default
+        # ``dataloader_num_workers=0`` means image decode + preprocess
+        # ran on the main process between every step. 4 workers + pinned
+        # memory + persistent workers keeps the 24 GB-class GPU fed.
+        dataloader_num_workers=4,
+        dataloader_pin_memory=True,
+        dataloader_persistent_workers=True,
+        dataloader_prefetch_factor=2,
     )
     train_ds = _CropDataset(train_crops, processor, config)
     val_ds = _CropDataset(val_crops, processor, config)
