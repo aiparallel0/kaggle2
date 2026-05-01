@@ -192,3 +192,72 @@ def test_focus_sigma_empty_classification() -> None:
     """Empty input → empty target set, witness count 0."""
     assert subset_sum_target_cents([]) == frozenset()
     assert total_witness_count(10.0, []) == 0
+
+
+# -----------------------------------------------------------------------
+# FOCUS-Σ OCR-drift recovery (consensus._ocr_drift_match_in_set + the
+# _refine_total Identity-3 path). Uses _refine_total so the gates
+# (TOTAL keyword, no SUBTOTAL keyword, target_set non-empty) are exercised.
+# -----------------------------------------------------------------------
+
+from models.consensus import _ocr_drift_match_in_set, _refine_total  # noqa: E402
+
+
+def test_focus_sigma_ocr_drift_helper_largest_match() -> None:
+    """When multiple 1-edit neighbours land in the target set, prefer
+    the LARGER value — on SROIE, grand-total ≥ partial-sum almost always.
+    """
+    assert _ocr_drift_match_in_set(820, frozenset({800, 850})) == 850
+    assert _ocr_drift_match_in_set(860, frozenset({660, 880})) == 880
+    assert _ocr_drift_match_in_set(10980, frozenset({10880, 16980})) == 16980
+
+
+def test_focus_sigma_ocr_drift_helper_leading_zero_rejected() -> None:
+    """A 1-edit candidate that produces a leading zero is not a real OCR
+    substitution (digit was lost, not substituted).  Reject it.
+    """
+    # 148 → "048" only via pos-0 1→0 substitution; reject.
+    assert _ocr_drift_match_in_set(148, frozenset({48})) is None
+
+
+def test_focus_sigma_ocr_drift_helper_no_match() -> None:
+    assert _ocr_drift_match_in_set(999, frozenset({100, 200, 300})) is None
+    assert _ocr_drift_match_in_set(0, frozenset({500})) is None
+
+
+def test_focus_sigma_ocr_drift_recovers_no_subtotal_receipt() -> None:
+    """No SUBTOTAL keyword (I₂ silent), TOTAL line OCR'd 1 digit off
+    the items sum.  Identity-3 OCR-drift substitutes the items-sum target.
+    """
+    texts = ["ITEM A 5.00", "ITEM B 3.00", "ITEM C 0.50", "TOTAL 8.20"]
+    bb = [[0, i * 0.1, 1, (i + 1) * 0.1] for i in range(len(texts))]
+    assert _refine_total("8.20", texts, bb, None) == "8.50"
+
+
+def test_focus_sigma_ocr_drift_with_tax_aug() -> None:
+    """tax_aug != 0 disambiguates: I₃ targets are items+tax, so the
+    1-edit substitution lands on the grand-total magnitude directly.
+    """
+    texts = ["ITEM A 5.00", "ITEM B 3.00", "TAX 0.40", "TOTAL 8.20"]
+    bb = [[0, i * 0.1, 1, (i + 1) * 0.1] for i in range(len(texts))]
+    assert _refine_total("8.20", texts, bb, None) == "8.40"
+
+
+def test_focus_sigma_ocr_drift_silent_on_subtotal_neighbour() -> None:
+    """When the SUBTOTAL keyword is in the line's neighbourhood, the
+    FOCUS-Σ OCR-drift path is gated off (don't substitute against a
+    subtotal line that happens to be 1 digit off).  Returns the
+    legacy-path value or the original learned input.
+    """
+    texts = [
+        "ITEM A 5.00", "ITEM B 3.00",
+        "SUBTOTAL 8.00",
+        "TOTAL 8.20",  # 1 edit from 8.50, but legacy I₂ already resolves
+    ]
+    bb = [[0, i * 0.1, 1, (i + 1) * 0.1] for i in range(len(texts))]
+    out = _refine_total("8.20", texts, bb, None)
+    # I₂ target = subtotal + tax = 8.00 + 0 = 8.00; existing
+    # ARITHMETIC-FIRST PATH may emit "8.00".  Either way, the FOCUS-Σ
+    # path itself does not steer the value to 8.50 because the
+    # subtotal-neighbour gate fires.
+    assert out in {"8.20", "8.00"}, f"unexpected refinement: {out!r}"

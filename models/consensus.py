@@ -278,11 +278,13 @@ def _score_money(
                 val, arithmetic_targets or [], subset_sum_cents,
             )
             if wit >= 3:
-                s += 8.0
+                s += 12.0  # FOCUS-Σ proof tier (all three identities agree)
             elif wit == 2:
-                s += 6.0
+                s += 8.0   # consensus tier (any two agree — was +6)
             elif wit == 1:
-                s += 3.0
+                s += 4.0   # single witness (was +3) — slightly more
+                # decisive against unwitnessed noise lines that happen
+                # to share a positional or attention rank.
     return s
 
 
@@ -376,6 +378,50 @@ def _ocr_drift_distance(a: str, b: str) -> int:
             cur[j] = min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + cost)
         prev = cur
     return prev[n]
+
+
+def _ocr_drift_match_in_set(
+    value_cents: int, target_set: frozenset[int],
+) -> int | None:
+    """Return any target in ``target_set`` reachable from ``value_cents``
+    by a single decimal-digit substitution, else ``None``.
+
+    FOCUS-Σ companion to :func:`_ocr_drift_distance`: where the legacy
+    helper measures distance between two specific money strings, this
+    one searches a precomputed *set* of plausible targets (the I₃
+    subset-sum cents-set) for any 1-edit neighbour of ``value_cents``.
+    Bounded: scans ``len(str(value_cents)) × 9`` candidates per call,
+    so a 7-digit money value tries 63 substitutions — O(1) for SROIE.
+    Used by the FOCUS-Σ ARITHMETIC-FIRST PATH to substitute the
+    arithmetic-validated value when an OCR-corrupted total line is one
+    digit off from a valid items+tax_aug sum.
+    """
+    s = str(value_cents)
+    best: int | None = None
+    for i, ch in enumerate(s):
+        if not ch.isdigit():
+            continue
+        for d in "0123456789":
+            if d == ch:
+                continue
+            cand_str = s[:i] + d + s[i + 1:]
+            if cand_str.startswith("0") and len(cand_str) > 1:
+                # Reject leading-zero candidates so "048" is not parsed
+                # back as 48 — not a real 1-edit OCR substitution.
+                continue
+            try:
+                cand = int(cand_str)
+            except ValueError:
+                continue
+            if cand in target_set and (best is None or cand > best):
+                # Prefer the *larger* match: on SROIE grand totals
+                # almost always exceed any sub-sum (subtotal, partial
+                # item-aggregate), so when 820 has both 800 (5+3) and
+                # 850 (5+3+0.50) as 1-edit neighbours the right
+                # substitution is 850 = sum-of-all-items.  Equal-cents
+                # ties are broken to the first-seen.
+                best = cand
+    return best
 
 
 def _attach_sign(value: str, source_line: str) -> str:
@@ -526,6 +572,41 @@ def _refine_total(
             # the arithmetic target AND its context is TOTAL-positive.
             if _TOTAL_STRONG.search(nbr) or _TOTAL_WEAK.search(nbr):
                 return tgt_str
+    # FOCUS-Σ ARITHMETIC-FIRST PATH (Identity 3):
+    # When I₁/I₂ produced no targets but I₃ has reachable subset-sum
+    # values, look for a TOTAL-keyword'd line whose digits are within
+    # one OCR substitution of *any* I₃ target.  Catches the digit-error
+    # regime (``8.50`` vs OCR ``8.20``, ``6.60`` vs OCR ``8.60``,
+    # ``169.80`` vs OCR ``109.80``) on receipts where SUBTOTAL/CASH
+    # keywords were OCR-lost.  Conservative gates: require TOTAL keyword
+    # on the line, exclude SUBTOTAL/CHANGE neighbours and negative
+    # totals, and emit only when the line is *not* already a literal
+    # subset-sum match (else the score path handles it).
+    if not targets and subset_sum_cents:
+        for i in money_idxs:
+            line_match = _MONEY_RE.search(repaired[i])
+            if line_match is None:
+                continue
+            line_val = re.sub(
+                r"^(RM|USD|SGD|MYR|\$)\s*", "", line_match.group(0).strip(),
+                flags=re.IGNORECASE,
+            )
+            try:
+                line_cents = int(round(float(line_val.replace(",", "")) * 100))
+            except ValueError:
+                continue
+            if line_cents in subset_sum_cents:
+                continue  # exact match — score-path witness boost handles it
+            nbr = " ".join(repaired[max(0, i - 1): i + 2])
+            if _SUBTOTAL_KW_RE.search(nbr):
+                continue
+            if _TOTAL_NEGATIVE.search(repaired[i]):
+                continue
+            if not (_TOTAL_STRONG.search(nbr) or _TOTAL_WEAK.search(nbr)):
+                continue
+            match_cents = _ocr_drift_match_in_set(line_cents, subset_sum_cents)
+            if match_cents is not None:
+                return f"{match_cents / 100:.2f}"
     if not _MONEY_RE.fullmatch(learned_clean):
         # Learned value isn't a usable money string; take the scored
         # pick unconditionally (fall back to learned if no positive
