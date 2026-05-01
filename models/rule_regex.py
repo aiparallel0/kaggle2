@@ -25,7 +25,20 @@ _TOTAL_NEGATIVE = re.compile(
     r"\b(sub\s*-?\s*total|subtotal|sub|round(?:ing|ed)?|change|"
     r"cash(?:\s+tendered)?|tendered|tunai|kembalian|kembali|baki|"
     r"balance|credit|debit|card|visa|master(?:card)?|paid|payment|discount|"
-    r"service|charge|tax\s+(?:only|\d)|gst\s+\d|sst\s+\d|qty|item|no\.)\b", re.IGNORECASE)
+    r"service|charge|tax|gst|sst|vat|cukai|qty|item|no\.)\b", re.IGNORECASE)
+# NOTE: bare ``tax|gst|sst|vat|cukai`` are intentionally in the demoter
+# now (PR ``focus-total-tax-demote``).  Earlier the regex only matched
+# ``tax\s+\d`` / ``gst\s+\d`` / ``sst\s+\d``, leaving lines that read
+# simply ``TAX 6.17`` or ``GST 0.30`` without a digit immediately after
+# the keyword.  The empirical failure tendency on run 20260430T125211Z
+# showed 26 of 97 pipeline ``total`` losses (27%) are EXACTLY the
+# GST 6%/106 tax line being picked instead of the grand total
+# (pred ≈ gold × 6/106 — including ``848.00`` → ``48.00`` which we
+# previously misclassified as a leading-digit drop).  The bare-keyword
+# match adds the missing distractor signal so the same-line ``-4.0``
+# / neighbourhood ``-1.5`` penalties in :func:`models.consensus._score_money`
+# fire on every tax / gst / sst / vat / cukai line, not only the
+# numbered variants.
 _TOTAL_STRONG = re.compile(
     r"\b(grand\s*total|amount\s*(?:due|payable)|nett?\s*total|total\s*(?:due|amt|amount))\b", re.IGNORECASE)
 _TOTAL_WEAK = re.compile(r"\btotal\b|\bamount\b", re.IGNORECASE)
