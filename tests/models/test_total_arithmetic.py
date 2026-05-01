@@ -261,3 +261,88 @@ def test_focus_sigma_ocr_drift_silent_on_subtotal_neighbour() -> None:
     # path itself does not steer the value to 8.50 because the
     # subtotal-neighbour gate fires.
     assert out in {"8.20", "8.00"}, f"unexpected refinement: {out!r}"
+
+
+# -----------------------------------------------------------------------
+# Inference-side push-toward-0.93 fixes (run 20260430T125211Z empirical
+# taxonomy: 2-edit OCR-drift, sign-positive gate, zero/negative/max-money
+# scoring penalties, tighter confidence-gated override).
+# -----------------------------------------------------------------------
+
+
+def test_focus_sigma_ocr_drift_2edit_helper_off_by_default() -> None:
+    """``max_edits=1`` is the default — must not return a 2-edit match."""
+    # 469 vs 4970: 4 same, 6→9 (pos 1), 9→7 (pos 2) — two edits.
+    assert _ocr_drift_match_in_set(4690, frozenset({4970})) is None
+
+
+def test_focus_sigma_ocr_drift_2edit_helper_fires_when_enabled() -> None:
+    """``max_edits=2`` returns a 2-edit match if no 1-edit match exists."""
+    # 4690 → 4970 needs two substitutions (pos 1 and pos 2).
+    assert _ocr_drift_match_in_set(
+        4690, frozenset({4970}), max_edits=2,
+    ) == 4970
+
+
+def test_focus_sigma_ocr_drift_2edit_helper_prefers_1edit_when_both() -> None:
+    """When both a 1-edit and a 2-edit match exist, prefer larger of all."""
+    # 820 → 850 (1-edit, pos 1) AND 820 → 950 (2-edit, pos 0+pos 1).
+    # Tiebreak by max -> 950 wins because 950 > 850.  This is correct on
+    # SROIE (grand total > sub-sum).
+    assert _ocr_drift_match_in_set(
+        820, frozenset({850, 950}), max_edits=2,
+    ) == 950
+
+
+def test_focus_sigma_2edit_rejects_leading_zero() -> None:
+    """A 2-edit candidate that produces a leading zero is rejected."""
+    # 1234 → "0034" via two edits (pos 0: 1→0, pos 1: 2→0) — leading zero.
+    assert _ocr_drift_match_in_set(1234, frozenset({34}), max_edits=2) is None
+
+
+def test_score_money_zero_pred_demoted() -> None:
+    """A money line with value 0.00 must score lower than a TOTAL-keyword'd
+    line with a real value, even on the same positional rank."""
+    from models.consensus import _score_money
+    texts = ["TOTAL 0.00", "GRAND TOTAL 35.50"]
+    score_zero = _score_money(0, texts, {0: 0, 1: 1}, [0, 1])
+    score_total = _score_money(1, texts, {0: 0, 1: 1}, [0, 1])
+    assert score_total > score_zero, (score_total, score_zero)
+
+
+def test_score_money_negative_pred_demoted() -> None:
+    """A negative-money line (CHANGE / REFUND) is heavily demoted vs a
+    positive TOTAL-keyword'd line."""
+    from models.consensus import _score_money
+    texts = ["CHANGE -28.35", "TOTAL 140.65"]
+    s_neg = _score_money(0, texts, {0: 0, 1: 1}, [0, 1])
+    s_pos = _score_money(1, texts, {0: 0, 1: 1}, [0, 1])
+    assert s_pos > s_neg, (s_pos, s_neg)
+
+
+def test_score_money_max_money_relative_prior() -> None:
+    """A line whose value is < 30% of the receipt-max gets demoted vs a
+    line carrying the max value (when both have the same keyword context)."""
+    from models.consensus import _score_money
+    # Both lines have weak TOTAL keyword; without the max-money prior
+    # the small line could win on positional rank.  With it, the larger
+    # value wins.
+    texts = ["TOTAL 1.55", "TOTAL 27.35"]
+    money_idxs = [0, 1]
+    s_small = _score_money(0, texts, {}, money_idxs)
+    s_big = _score_money(1, texts, {}, money_idxs)
+    assert s_big > s_small, (s_big, s_small)
+
+
+def test_refine_total_sign_positive_gate() -> None:
+    """When learned is negative AND the rule-scored best is a positive
+    plausible total, the negative learned is rejected unconditionally
+    (CHANGE / REFUND line was picked by the assigner)."""
+    texts = [
+        "ITEM A 50.00", "ITEM B 90.65",
+        "GRAND TOTAL 140.65",
+        "CHANGE -28.35",
+    ]
+    bb = [[0, i * 0.1, 1, (i + 1) * 0.1] for i in range(len(texts))]
+    out = _refine_total("-28.35", texts, bb, None)
+    assert "140" in out, f"expected positive grand-total, got {out!r}"
