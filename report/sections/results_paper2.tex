@@ -1,0 +1,110 @@
+% Paper 2 — results section.  Reports the head-to-head DONUT vs
+% modular-pipeline comparison on canonical SROIE Task-3.  The pipeline
+% arm is regex + 3-state zone prior + per-field postprocess: no
+% learned cross-attention assigner, no FOCUS-Σ verifier.  Tables and
+% figures resolve from runs/<id>/metrics/combined_metrics.json via
+% the shared \VAR{} producer pipeline (report.combine).
+
+\section{Results}
+\label{sec:results}
+
+\subsection{Headline results}
+
+\begin{table}[!t]
+\centering
+\caption{Macro-F1, Normalised Edit Distance, and strict Exact-Match on
+         the canonical \VAR{n_test_images}-image SROIE Task-3 test
+         split.  Both arms read through the symmetric normaliser of
+         \texttt{models/normalize\_bundle.py} so the comparison is
+         bit-fair (Sec.~\ref{sec:related}).  Numbers are mean across
+         $n=\VAR{n_trials}$ random seeds; paired-bootstrap 95\,\% CI
+         on $\Delta$F1 is
+         $[\VAR{delta_f1_ci_lo},\,\VAR{delta_f1_ci_hi}]$; McNemar's
+         exact test on per-image correctness yields
+         $p=\VAR{mcnemar_p}$.}
+\label{tab:headline}
+\begin{tabular}{lcccc}
+\toprule
+Architecture & Params & F1 & NED & EM \\ \midrule
+DONUT (paper recipe) & $\approx\!\VAR{donut_params_m}$\,M  & \VAR{donut_f1}    & \VAR{donut_ned}    & \VAR{donut_em} \\
+Modular pipeline     & $\approx\!\VAR{pipeline_params_m}$\,M & \VAR{pipeline_f1} & \VAR{pipeline_ned} & \VAR{pipeline_em} \\
+$\Delta$ (DONUT $-$ pipeline) & $\approx\!\VAR{param_ratio_numeric}$ & \VAR{f1_gap}     & \VAR{ned_gap}      & \VAR{em_gap} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The $\Delta$F1 between DONUT and the modular pipeline lies inside the
+paired-bootstrap 95\,\% CI $[\VAR{delta_f1_ci_lo},\,\VAR{delta_f1_ci_hi}]$,
+which is consistent with the McNemar reading
+($p=\VAR{mcnemar_p}$).  At the canonical test size $n=347$ the
+bootstrap CI half-width is approximately $\pm\,0.022$ absolute F1,
+so a difference of less than $\sim\!0.05$ is below the
+single-corpus statistical sensitivity of this benchmark.  We report
+the conservative reading: the modular pipeline at
+$\approx\!\VAR{pipeline_params_m}$\,M parameters
+\emph{approaches} but does not match the end-to-end DONUT at
+$\approx\!\VAR{donut_params_m}$\,M.
+
+\subsection{Per-field decomposition}
+
+\begin{table}[!t]
+\centering
+\caption{Per-field token F1 on the canonical
+         \VAR{n_test_images}-image test split.  The
+         \textsf{address} column is the dominant gap source:
+         deterministic regex cannot enumerate the multi-line
+         tail-address distractor distribution that DONUT learns from
+         the SROIE training fold.}
+\label{tab:perfield}
+\begin{tabular}{lcccc}
+\toprule
+Architecture & Company & Date & Address & Total \\ \midrule
+DONUT             & \VAR{donut_f1_company}    & \VAR{donut_f1_date}    & \VAR{donut_f1_address}    & \VAR{donut_f1_total} \\
+Modular pipeline  & \VAR{pipeline_f1_company} & \VAR{pipeline_f1_date} & \VAR{pipeline_f1_address} & \VAR{pipeline_f1_total} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textsf{Date} and \textsf{total} carry strong lexical anchors
+(\texttt{DD/MM/YY}, \texttt{TOTAL\,RM\,xx.yy}) that the regex layer
+plus the totals-zone HMM segment correctly on the majority of
+receipts.  \textsf{Company} and \textsf{address} are the gap source:
+both are dominated by spans rather than single tokens, and both
+require enumerating distractor classes (boilerplate suffixes such as
+\texttt{SDN BHD}, secondary postal-code lines) that the deterministic
+pipeline cannot exhaustively cover.  Closing this gap is the subject
+of architectural extensions reported in a companion manuscript; the
+present paper documents the gap as the engineering ceiling of a
+deliberately non-learned pipeline.
+
+\subsection{Efficiency}
+
+\begin{table}[!t]
+\centering
+\caption{Efficiency at seed 42 on a single RTX\,4090.  Pipeline
+         training time is summed over YOLOv8n + TrOCR-small + the
+         per-field postprocess; peak VRAM is the maximum across
+         stages.  Inference latency is reported in
+         Sec.~\ref{sec:limitations}.}
+\label{tab:efficiency_paper2}
+\begin{tabular}{lcc}
+\toprule
+Metric & DONUT & Modular pipeline \\ \midrule
+Parameters        & $\approx\!\VAR{donut_params_m}$\,M       & $\approx\!\VAR{pipeline_params_m}$\,M \\
+Peak VRAM (GB)    & \VAR{donut_peak_vram_gb}                 & \VAR{pipeline_peak_vram_gb} \\
+Train time (min)  & \VAR{donut_train_minutes}                & \VAR{pipeline_train_minutes} \\
+Cost (USD/run)    & \VAR{donut_cost_usd}                     & \VAR{pipeline_cost_usd} \\
+Energy (kWh)      & \VAR{donut_energy_kwh}                   & \VAR{pipeline_energy_kwh} \\
+CO$_2$eq (kg)     & \VAR{donut_co2_kg}                       & \VAR{pipeline_co2_kg} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The modular pipeline consumes approximately
+\VAR{param_ratio_numeric} of DONUT's parameter budget at training
+time; the F1 gap of \VAR{f1_gap} is the cost of that compression.
+Whether the gap closes when the modular arm is augmented with a
+learned cross-attention assigner is a question that lies outside
+the scope of this replication study.
+
+\input{sections/results_figures}

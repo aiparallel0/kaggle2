@@ -1,0 +1,94 @@
+% Paper 2 — base TrOCR+DONUT system on canonical SROIE Task-3.
+%
+% Thesis: a deliberately-modular detect→read→assign pipeline using only
+% regex + zone-prior + per-field postprocess approaches the
+% paper-recipe DONUT baseline at one quarter of the parameters.
+% No learned cross-attention assigner, no FOCUS-Σ verifier — those
+% architectural extensions belong to Paper 3, evaluated on the same
+% test split for direct comparison.
+%
+% IEEE conference format — submission-ready for IJDAR / IEEE Access /
+% ICDAR DAS workshop.  Single column.  All numbers are pulled from
+% runs/<run_id>/metrics/ via the report.inject \VAR{} mechanism;
+% report.combine + report.wrapper_delta supply the producer pipeline.
+\documentclass[conference]{IEEEtran}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{hyperref}
+\usepackage{url}
+\usepackage{booktabs}
+\usepackage{amsfonts}
+\usepackage{amsmath,amssymb}
+\usepackage{microtype}
+\usepackage{xcolor}
+\usepackage{graphicx}
+\usepackage{multirow}
+
+\title{End-to-End vs.\ Modular Receipt Key-Information Extraction:\\
+       A Replication Study with a Silent-Failure Catalogue\\
+       on Canonical SROIE Task-3}
+
+\author{Anonymous Authors\\Anonymous Affiliation\\
+        \texttt{anonymous@example.com}}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+We replicate two established receipt key-information extraction (KIE)
+architectures on the canonical ICDAR-2019 SROIE Task-3 test split
+($n=347$): an end-to-end document understanding transformer (DONUT)
+fine-tuned under the original recipe of Kim et al.\ 2022, and a
+deliberately-modular detect-then-read-then-assign pipeline
+(YOLOv8\,+\,TrOCR\,+\,regex with a 3-state header/items/totals zone
+prior).  At $\approx\!\VAR{donut_params_m}$\,M parameters the
+end-to-end DONUT reaches \VAR{donut_f1} macro-F1; at
+$\approx\!\VAR{pipeline_params_m}$\,M parameters the modular pipeline
+reaches \VAR{pipeline_f1}.  The contribution is methodological rather
+than architectural: we document fourteen silent F1-destroying
+implementation bugs encountered during reproduction
+(Sec.~\ref{sec:bugs}), each with a measured-or-mechanistically-bounded
+F1 delta and a source-level guard, and we publish the full
+SHA-256-pinned reproducibility manifest under a NeurIPS-2024 checklist
+so an independent lab can reproduce the table from a clean
+\texttt{git clone}.  The paper does not introduce learned cross-attention
+assignment, structural verification, or new datasets; those extensions
+are the subject of a companion paper.
+\end{abstract}
+
+\input{sections/intro_paper2}
+
+\input{sections/related}
+
+\input{sections/problem}
+
+\input{sections/method_pipeline}
+
+\input{sections/experiments}
+
+\input{sections/results_paper2}
+
+\input{sections/discussion}
+
+\input{sections/limitations}
+
+\input{sections/broader_impact}
+
+\input{sections/conclusion}
+
+\bibliographystyle{IEEEtran}
+\bibliography{references}
+
+\appendix
+
+\input{sections/appendix}
+
+\input{sections/bugs}
+
+\section*{Reproducibility Checklist}
+\label{sec:repro_checklist}
+\input{sections/repro_checklist}
+
+\end{document}

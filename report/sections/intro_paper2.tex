@@ -1,0 +1,84 @@
+% Paper 2 — introduction.  Frames the modular pipeline as a deliberately
+% non-learned engineering reference against the end-to-end DONUT
+% baseline.  The companion paper (Paper 3) extends the modular arm with
+% a learned cross-attention assigner and a structural verifier; that
+% reference is one sentence here and does not bleed into the
+% contributions list.
+
+\section{Introduction}
+\label{sec:intro}
+
+Receipt key-information extraction (KIE) has converged on two
+architectural families.  End-to-end models such as
+DONUT~\cite{kim2022donut} produce structured output autoregressively
+from the page image at the cost of $\sim\!260$\,M parameters and a
+multi-hour fine-tune on a single benchmark.  Modular pipelines such as
+PICK~\cite{yu2020pick} retain a detect-then-read-then-assign
+decomposition that is cheaper to train but historically loses several
+F1 points to the end-to-end family.  This paper asks a narrower
+question: \emph{at the canonical SROIE Task-3 evaluation, how close
+does the modular pipeline come to the end-to-end model when both arms
+are reproduced under their respective original recipes and assigned
+identical OCR features?}
+
+We instantiate the modular pipeline as YOLOv8n line
+detection~\cite{jocher2023yolov8}, TrOCR-small text
+recognition~\cite{li2023trocr}, regex-based field assignment with a
+small 3-state header / items / totals hidden Markov zone prior, and
+deterministic per-field post-processing.  We deliberately exclude any
+learned cross-attention assignment head and any structural verifier
+on candidate values: the goal is to establish the engineering
+ceiling of a non-learned modular pipeline, not to set state of the
+art.  The end-to-end arm is DONUT fine-tuned for 30 epochs at
+$1280\times 960$ resolution with the original
+\texttt{train\_sroie.yaml} hyperparameters
+(\texttt{lr}~$=$~3$\mathrm{e}{-5}$, $\texttt{warmup\_steps}=300$,
+batch~size~1, beam~$=$~1).  Both arms read OCR text through the
+identical normaliser of \texttt{models/normalize\_bundle.py} so the
+comparison is bit-fair (Sec.~\ref{sec:related}).
+
+\paragraph{Contributions.}  This paper makes two contributions:
+
+\begin{itemize}
+\item \textbf{A faithful replication study} of end-to-end vs modular
+  receipt KIE on the canonical SROIE Task-3 split ($n=347$), with
+  paper-recipe DONUT and a regex-and-zone-prior pipeline at
+  $\approx\!\VAR{pipeline_params_m}$\,M parameters
+  (Tab.~\ref{tab:headline}).  Numbers are reported across $n=5$
+  random seeds with paired-bootstrap 95\,\% confidence intervals and
+  McNemar's exact test on per-image correctness.
+\item \textbf{A catalogue of fourteen silent F1-destroying
+  implementation bugs} encountered during reproduction
+  (Sec.~\ref{sec:bugs}), each annotated with mechanism, measured F1
+  impact, and source-level guard.  Several bugs would degrade DONUT
+  to F1\,$<\!0.50$ without producing an error log
+  (Bugs~1, 2, 4, 9 in particular); the catalogue functions as a
+  regression-test register for any future SROIE-Task-3 reproduction.
+\end{itemize}
+
+\paragraph{What this paper does not claim.}  The modular arm in this
+paper is \emph{not} an attempt to set a new SROIE-Task-3 record; it
+is the engineering baseline against which architectural extensions
+should be measured.  Adding a learned cross-attention assigner, a
+structural arithmetic verifier, or other neural components is the
+subject of a companion paper that uses the same canonical test split
+and reports its results against the same DONUT reference.  We
+deliberately keep those extensions out of this manuscript so the
+replication boundary stays clean.
+
+\paragraph{Empirical headline.}  On the canonical SROIE Task-3 split,
+DONUT under the paper recipe reaches \VAR{donut_f1} macro-F1 (mean
+across $n=\VAR{n_trials}$ seeds, paired-bootstrap CI
+$[\VAR{donut_bootstrap_ci_lo},\,\VAR{donut_bootstrap_ci_hi}]$).
+The modular pipeline reaches \VAR{pipeline_f1}
+(\VAR{pipeline_bootstrap_ci_lo},\,\VAR{pipeline_bootstrap_ci_hi}) at
+$\approx\!\VAR{pipeline_params_m}$\,M parameters
+($\sim\!\VAR{param_ratio_phrase}$ of DONUT's parameter count).  The
+paired McNemar exact test on per-image correctness yields
+$p=\VAR{mcnemar_p}$.  Per-field decomposition
+(Tab.~\ref{tab:perfield}) shows DONUT dominating on \textsf{address}
+(long, multi-line spans) and the modular pipeline retaining parity
+on \textsf{date} and \textsf{total} (where regex anchors are
+strong); the F1 gap concentrates on \textsf{company} and
+\textsf{address}, where deterministic rules cannot enumerate the
+full distractor set.
