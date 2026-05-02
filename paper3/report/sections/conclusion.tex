@@ -1,0 +1,30 @@
+\section{Conclusion}
+\label{sec:conclusion}
+
+We presented \textbf{SVKIE} (Structure-Verified Document KIE), a
+multi-prior framework for document key-information extraction in
+which five orthogonal structural priors (arithmetic, spatial,
+visual, lexical, epistemic) are each encoded by a dedicated module
+and a unifying verification layer (FOCUS-$\Sigma$) enforces
+consistency across priors via three arithmetic identities.  We
+proved soundness, completeness under perfect OCR, and a
+single-edit OCR-recovery probability bound; we showed that
+$\mathrm{I}_3$ — the structural subset-sum identity — is
+keyword-independent and applies on the full set of receipts
+satisfying the itemisation hypothesis.
+
+Empirically, the framework lifts \textsf{total}-field F1 by
+$+\VAR{ablation_row3_delta_point}$ over a single-prior (lexical-only)
+baseline and is architecture-agnostic: applied as a wrapper around
+DONUT, LayoutLMv3-base, and our in-house FOCUS-T head, every
+upstream architecture sees a positive wrapper-$\Delta$
+(Tab.~\ref{tab:wrapper_delta}).
+
+The principal contribution is methodological.  The framework
+reformulates document KIE as constraint satisfaction over multiple
+structural priors, makes each prior concrete and modular, and
+provides a verifier whose correctness properties are provable.
+Future work extends the framework to invoices, expense reports, and
+scientific tables; replaces the rule-based verifier with a learnable
+constraint satisfaction module; and explores compression strategies
+for deployment in resource-constrained settings.

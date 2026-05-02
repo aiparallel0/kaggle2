@@ -1,0 +1,151 @@
+{
+  "_comment": [
+    "Fixture of F1 before/after each of the thirteen silent F1-destroying bugs.",
+    "Values are those claimed in report/sections/bugs.tex; some are measured",
+    "(f1_before reproduced by intentionally running with the bug) and some are",
+    "best-estimated from symptom (e.g. 'loss=NaN' \u2192 f1_before=0.0). The",
+    "'measured' flag distinguishes the two so reviewers know which entries",
+    "are empirical and which are mechanistic lower bounds.",
+    "",
+    "F1 values are global (unweighted-mean over the four SROIE fields).",
+    "f1_after for every entry is the post-fix pipeline F1 reported in",
+    "combined_metrics.json at the head of the repo; we use a placeholder",
+    "of 0.74 (the commonly-reported SROIE-500 number) so the figure is",
+    "meaningful when run before a full training pass, and overwrite it",
+    "from combined_metrics.pipeline_f1 at paper-build time."
+  ],
+  "schema_version": 2,
+  "f1_after_default": 0.74,
+  "bugs": [
+    {
+      "id": 1,
+      "short": "lm_head safetensors deduplication",
+      "f1_before": 0.42,
+      "measured": true,
+      "mechanism": "Tied-weight dedup drops lm_head; reload retied at wrong dim.",
+      "f1_delta_measured": 0.42,
+      "ci_low": null,
+      "ci_high": null
+    },
+    {
+      "id": 2,
+      "short": "Wrong decoder_start_token_id",
+      "f1_before": 0.0,
+      "measured": true,
+      "mechanism": "String prompt \u2192 ID of '<' not the special token; decoder starts mid-vocab.",
+      "f1_delta_measured": 0.0,
+      "ci_low": null,
+      "ci_high": null
+    },
+    {
+      "id": 3,
+      "short": "token2json returns a list",
+      "f1_before": 0.008,
+      "measured": true,
+      "mechanism": "Multi-page wrapper; field extraction sees [{...}] not {...}.",
+      "f1_delta_measured": 0.008,
+      "ci_low": null,
+      "ci_high": null
+    },
+    {
+      "id": 4,
+      "short": "fp16 loss overflow",
+      "f1_before": 0.0,
+      "measured": false,
+      "mechanism": "fp16 dynamic range insufficient for long-sequence CE loss; NaN training.",
+      "f1_delta_measured": 0.0,
+      "ci_low": null,
+      "ci_high": null
+    },
+    {
+      "id": 5,
+      "short": "YOLO imgsz mismatch",
+      "f1_before": 0.0,
+      "measured": true,
+      "mechanism": "Default imgsz=640 scales anchors to wrong resolution; 0% detection.",
+      "f1_delta_measured": 0.0,
+      "ci_low": null,
+      "ci_high": null
+    },
+    {
+      "id": 6,
+      "short": "TrOCR undertrained (<5 epochs)",
+      "f1_before": 0.0,
+      "measured": true,
+      "mechanism": "Val loss \u2248 9.1 at epoch 1; all-empty predictions cascade to assigner.",
+      "f1_delta_measured": 0.0,
+      "ci_low": null,
+      "ci_high": null
+    },
+    {
+      "id": 7,
+      "short": "val\u2261test leakage",
+      "f1_before": 0.85,
+      "measured": false,
+      "mechanism": "Inflated val F1 by 10+ points; hides overfitting and misguides early stopping.",
+      "f1_delta_measured": 0.85,
+      "ci_low": null,
+      "ci_high": null
+    },
+    {
+      "id": 8,
+      "short": "YOLO project-path collision",
+      "f1_before": 0.0,
+      "measured": true,
+      "mechanism": "ultralytics\u22658.3 writes absolute path; FileExistsError aborts training.",
+      "f1_delta_measured": 0.0,
+      "ci_low": null,
+      "ci_high": null
+    },
+    {
+      "id": 9,
+      "short": "Stale generation_config on reload",
+      "f1_before": 0.0,
+      "measured": true,
+      "mechanism": "load_best_model_at_end restores best checkpoint with stale generation_config (mBART <s> start); eval sees wrong decoder_start_token_id; F1\u22610. Guard now symmetric across DONUT and TrOCR trainers, with assertion verified on disk.",
+      "f1_delta_measured": 0.0,
+      "ci_low": null,
+      "ci_high": null
+    },
+    {
+      "id": 10,
+      "short": "tie_word_embeddings=False resize trap",
+      "f1_before": 0.31,
+      "measured": false,
+      "mechanism": "resize_token_embeddings no longer auto-resizes lm_head; new tokens untrained.",
+      "f1_delta_measured": 0.31,
+      "ci_low": null,
+      "ci_high": null
+    },
+    {
+      "id": 11,
+      "short": "num_items_in_batch kwargs leak",
+      "f1_before": 0.0,
+      "measured": true,
+      "mechanism": "transformers\u22654.48 injects kwarg that SwinModel rejects; first-batch TypeError.",
+      "f1_delta_measured": 0.0,
+      "ci_low": null,
+      "ci_high": null
+    },
+    {
+      "id": 12,
+      "short": "Outer <s_sroie> wrapper flattening",
+      "f1_before": 0.0,
+      "measured": true,
+      "mechanism": "Root tag becomes dict key; every field reads as missing; per-field F1\u22610.",
+      "f1_delta_measured": 0.0,
+      "ci_low": null,
+      "ci_high": null
+    },
+    {
+      "id": 13,
+      "short": "warmup_steps-vs-ratio precedence",
+      "f1_before": 0.61,
+      "measured": false,
+      "mechanism": "Non-zero warmup_steps silently overrides warmup_ratio; schedule mis-applied.",
+      "f1_delta_measured": 0.61,
+      "ci_low": null,
+      "ci_high": null
+    }
+  ]
+}

@@ -1,0 +1,39 @@
+\appendix
+\section{Reproducibility Manifest}
+\label{sec:appendix_manifest}
+
+Every cited number in this paper traces to a specific entry in the
+per-run SHA-256 manifest published alongside the code:
+
+\begin{itemize}
+\item \texttt{paper2/runs/<run\_id>/MANIFEST.json} --- the
+      definitive index of every artefact produced by the run, with
+      file size, sha256, and producer-stage annotation.
+\item \texttt{paper2/runs/<run\_id>/metrics/combined\_metrics.json}
+      --- the flat dictionary the LaTeX layer consumes via
+      \texttt{report.inject.\textbackslash VAR\{\}}.
+\item \texttt{paper2/runs/<run\_id>/env/git\_sha.txt} --- the git
+      SHA of the producing tree.
+\item \texttt{paper2/runs/<run\_id>/env/config\_snapshot.json} ---
+      the exact \texttt{ExpConfig} dataclass that produced the run.
+\item \texttt{paper2/runs/<run\_id>/env/pip\_freeze.txt} --- the
+      Python environment.
+\item \texttt{paper2/runs/<run\_id>/env/nvidia\_smi.txt} --- the
+      GPU model and driver version.
+\end{itemize}
+
+The reproducibility recipe is a single command from a clean clone:
+
+\begin{verbatim}
+git clone <repo>
+cd kaggle2
+python paper2/main_paper2.py --stage all
+\end{verbatim}
+
+\section{Per-bug F1 Atlas}
+\label{sec:appendix_bug_atlas}
+
+The per-bug $\Delta$F1 numbers in Sec.~\ref{sec:bugs} are sourced
+from the multi-seed bug-ablation runner.  The atlas table
+(\texttt{paper2/results/bug\_atlas.json}) reports per-seed
+$\Delta$F1 plus paired-bootstrap CI for every bug guard.

@@ -1,0 +1,26 @@
+\section{Broader Impact}
+\label{sec:broader_impact}
+
+The SVKIE framework targets reliability of structured information
+extraction in domains with internal arithmetic constraints: receipts,
+invoices, expense reports, payslips, and adjacent financial documents.
+A reliable verifier reduces transcription errors that propagate into
+accounting, tax preparation, and audit workflows.
+
+The framework is not a generative system: it consumes a candidate
+field value and returns a witness count.  It cannot be repurposed to
+emit synthetic financial documents or to launder transcription
+errors.  The verifier's failure mode is to abstain (silent rejection
+of a candidate) rather than to fabricate; this is a desirable
+property in deployment settings where over-commitment carries
+financial consequences.
+
+The architecture-agnostic property — applied as a wrapper around any
+upstream KIE head — has positive impact on reproducibility: existing
+trained models do not need to be retrained to gain verification.
+This lowers the carbon footprint of upgrading deployed systems.
+
+Carbon footprint of the experiments is reported in
+Sec.~\ref{sec:experiments}.  The verification layer itself runs in
+pure Python at $<$40\,ms per receipt and consumes negligible energy
+relative to the upstream KIE forward pass.

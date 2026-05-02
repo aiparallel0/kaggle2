@@ -1,0 +1,72 @@
+\section{Experiments}
+\label{sec:experiments}
+
+\subsection{Data}
+
+The training pool is the SROIE 626-image train fold, partitioned
+$500/63/63$ (train / val / internal-test) by
+\texttt{data/sroie.py}; the persisted split lives in
+\texttt{results/split.json} and is reloaded across runs to prevent
+val/test drift (Bug~7 in Sec.~\ref{sec:bugs}).  All evaluation is
+on the canonical ICDAR-2019 SROIE Task-3 test set ($n=347$),
+fetched on first run from \texttt{rrc.cvc.uab.es} with sha256
+verification (\texttt{data/sroie\_canonical.py}).
+
+Token-level F1 numbers are macro-averaged uniformly over the
+four-field schema (\textsf{company}, \textsf{date},
+\textsf{address}, \textsf{total}).
+
+\subsection{Training setup}
+
+\paragraph{DONUT.}  The DONUT arm follows the original
+\texttt{train\_sroie.yaml} recipe~\cite{kim2022donut} verbatim:
+30 epochs, image size $1280\times960$, learning rate
+$3\mathrm{e}{-5}$ uniform across encoder and decoder, $300$ warmup
+steps, batch size 1, gradient clipping at $1.0$, no label smoothing,
+greedy decoding (beam$=$1).  bf16 on Ampere+ GPUs; fp16 with
+gradient clip on older hardware.
+
+\paragraph{YOLOv8n.}  Trained for 50 epochs at $1024\times 1024$ on
+weak-supervision boxes derived from SROIE GT-OCR transcripts.
+
+\paragraph{TrOCR-small-printed.}  Fine-tuned for 12 epochs on SROIE
+crops with a 6-pixel pad on each bbox.  Decoding via greedy with
+maximum new tokens $64$.
+
+\paragraph{Zone-prior HMM.}  Three states with monotone forward-only
+transitions, fit by EM on the SROIE train fold; persisted to
+\texttt{results/zone\_prior.json}.  The training is CPU-only and
+takes seconds.
+
+\subsection{Metrics and statistical protocol}
+
+We report whitespace-token F1 averaged over the four fields,
+per-field token F1, Normalised Edit Distance (NED), and strict
+exact-match across all four fields (EM) over the
+$n=\VAR{n_test_images}$-image canonical Task-3 split.  Statistical
+uncertainty is reported as a paired-bootstrap 95\,\% CI on per-image
+correctness ($B=\VAR{bootstrap_n_iter}$ resamples by default).
+McNemar's exact test is run on per-image correctness for DONUT vs.\
+the modular pipeline and reported as a two-tailed $p$-value.
+
+Headline numbers are reported across $n=\VAR{n_trials}$ random seeds
+(\VAR{seeds_used}) with the harness in
+\texttt{scripts/run\_5seed\_sweep.sh}.
+
+\subsection{Hardware and reproducibility}
+
+RTX\,4090 on vast.ai (24\,GB VRAM), CUDA 12.x.  Per-stage GPU
+utilisation, peak VRAM, wall-clock time, energy (kWh), and
+CO\textsubscript{2}eq (kg) are sampled at 5\,s intervals via
+\texttt{nvidia-smi}\,+\,\texttt{psutil} and persisted to
+\texttt{paper2/runs/<id>/telemetry\_*.jsonl}; per-run cost in USD is
+recorded in \texttt{paper2/runs/<id>/cost\_*.json}.  Carbon intensity
+is set to $0.4$\,kg\,CO\textsubscript{2}/kWh~\cite{strubell2019energy}.
+
+Deterministic RNG seeding across Python, NumPy, and PyTorch with
+CUDNN determinism enabled (\texttt{core/seed.py}); DataLoader workers
+use a seeded \texttt{worker\_init\_fn} and per-worker
+\texttt{torch.Generator}.  Every run writes a SHA-256 manifest
+(\texttt{paper2/runs/<id>/MANIFEST.json}), git SHA, and a
+\texttt{config\_snapshot.json} of the exact \texttt{ExpConfig} used.
+The full reproducibility checklist is in Appendix~\ref{sec:repro_checklist}.

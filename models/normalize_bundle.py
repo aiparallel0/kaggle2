@@ -47,7 +47,7 @@ __all__ = [
 
 def _normalize_address_pipeline(value: str) -> str:
     """Compose legacy postcode-repair with FOCUS punctuation pass (Bug 18)."""
-    return normalize_address_focus(normalize_address(value))
+    return str(normalize_address_focus(normalize_address(value)))
 
 
 def _normalize_company_pipeline(value: str) -> str:
@@ -58,7 +58,7 @@ def _normalize_company_pipeline(value: str) -> str:
     ``"SDN BHD"``).  Applied symmetrically to both arms of the
     pipeline-eval bundle by :func:`normalize_bundle`.
     """
-    return normalize_company_focus(normalize_company(value))
+    return str(normalize_company_focus(normalize_company(value)))
 
 
 FIELD_NORMALISERS_PIPELINE: dict[str, Callable[[str], str]] = {

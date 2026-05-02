@@ -1,0 +1,82 @@
+% Paper 2 — End-to-End vs. Modular Receipt KIE: Replication Study with Bug Catalogue.
+%
+% IEEE Access conference format.  All section paths are relative to
+% paper2/report/sections/ — the Paper 2 system is self-contained and
+% does not share any LaTeX section file with the sibling Paper 3
+% template (paper3/report/template_paper3.tex).
+\documentclass[conference]{IEEEtran}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{hyperref}
+\usepackage{url}
+\usepackage{booktabs}
+\usepackage{amsfonts}
+\usepackage{amsmath,amssymb}
+\usepackage{microtype}
+\usepackage{xcolor}
+\usepackage{graphicx}
+\usepackage{multirow}
+
+\title{End-to-End vs.\ Modular Receipt Key-Information Extraction:\\
+       A Replication Study with a Silent-Failure Catalogue\\
+       on Canonical SROIE Task-3}
+
+\author{Anonymous Authors\\Anonymous Affiliation\\
+        \texttt{anonymous@example.com}}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+We replicate two established receipt key-information extraction (KIE)
+architectures on the canonical ICDAR-2019 SROIE Task-3 test split
+($n=347$): an end-to-end document understanding transformer (DONUT)
+fine-tuned under the original recipe of Kim et al.\ 2022, and a
+deliberately-modular detect-then-read-then-assign pipeline
+(YOLOv8\,+\,TrOCR\,+\,regex with a 3-state header/items/totals zone
+prior).  At $\approx\!\VAR{donut_params_m}$\,M parameters the
+end-to-end DONUT reaches \VAR{donut_f1} macro-F1; at
+$\approx\!\VAR{pipeline_params_m}$\,M parameters the modular pipeline
+reaches \VAR{pipeline_f1}.  The contribution is methodological: we
+document fourteen silent F1-destroying implementation pitfalls
+encountered during reproduction (Sec.~\ref{sec:bugs}), each with a
+measured F1 delta and a source-level guard.  The paper does not
+introduce learned cross-attention assignment or any structural
+verification layer: the modular arm is deliberately non-learned to
+establish the engineering ceiling of a regex-and-zone-prior pipeline.
+\end{abstract}
+
+\input{sections/intro}
+
+\input{sections/related}
+
+\input{sections/problem}
+
+\input{sections/method}
+
+\input{sections/experiments}
+
+\input{sections/results}
+
+\input{sections/discussion}
+
+\input{sections/limitations}
+
+\input{sections/broader_impact}
+
+\input{sections/conclusion}
+
+\bibliographystyle{IEEEtran}
+\bibliography{references}
+
+\input{sections/appendix}
+
+\input{sections/bugs}
+
+\section*{Reproducibility Checklist}
+\label{sec:repro_checklist}
+\input{sections/repro_checklist}
+
+\end{document}

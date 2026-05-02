@@ -1,0 +1,72 @@
+\section{The SVKIE Framework}
+\label{sec:method}
+
+\subsection{Five structural priors, five modules}
+
+SVKIE encodes each of the five structural priors enumerated in
+Sec.~\ref{sec:problem} as a distinct module:
+
+\begin{description}
+\item[Arithmetic prior --- FOCUS-$\Sigma$ verifier]
+  (\texttt{paper3/models/total\_arithmetic\_paper3.py}) checks each
+  candidate \textsf{total} value against three arithmetic
+  identities: $\mathrm{I}_1$ \textsf{cash}\,$-$\,\textsf{change};
+  $\mathrm{I}_2$ \textsf{subtotal}\,$+$\,$\tau$; $\mathrm{I}_3$
+  $\sum_{i \in S} v_i + \tau$ for some subset $S \subseteq
+  \mathcal{I}$ with cardinality $\geq 2$.  $\mathrm{I}_3$ is
+  keyword-independent: applies on every receipt satisfying the
+  itemisation hypothesis (Sec.~\ref{sec:svkie_theory}).
+\item[Spatial prior --- zone-prior HMM + GAT]
+  (\texttt{paper3/models/zone\_prior\_paper2.py} ---
+  the zone HMM is shared substrate ---
+  plus \texttt{paper3/models/focus\_gat\_paper3.py}) decodes a
+  3-state header / items / totals posterior over OCR lines and
+  augments it with a graph-attention head over a kNN graph of bbox
+  centres ($k=6$).  Together they encode line-adjacency and
+  vertical-zone structure as soft priors over field assignment.
+\item[Visual prior --- frozen-CNN head]
+  (\texttt{paper3/models/focus\_cnn\_paper3.py}) extracts a
+  $512$-dim feature per line bbox crop via an ImageNet-frozen
+  ResNet-18 and projects it to the assigner's hidden space through
+  a small trainable linear layer ($\sim$50K parameters).
+\item[Lexical prior --- cross-attention assigner]
+  (\texttt{paper3/models/focus\_attention\_paper3.py}) is a
+  learned cross-attention head over per-line text features and
+  rule-derived priors; $\sim$400K trainable parameters.  Carries
+  both keyword-anchor and learned-context signals.
+\item[Epistemic prior --- confidence-gated cascade]
+  (\texttt{paper3/models/consensus\_paper3.py}) routes each field
+  candidate through the verifier and falls back to a rule-based
+  pick when the verifier abstains and the assigner's softmax
+  confidence is below threshold.
+\end{description}
+
+\subsection{The three-headed neural ensemble}
+
+The lexical, spatial-graph, and visual priors are encoded as three
+parallel field-assignment heads ($H_1$, $H_2$, $H_3$) and fused by a
+small learned gating MLP
+(\texttt{paper3/models/focus\_ensemble\_paper3.py}) that consumes
+each head's per-field top-prob plus the receipt's zone-prior
+summary $(p_{\textsf{header}}, p_{\textsf{items}}, p_{\textsf{totals}})$
+and emits a softmax over the three heads per field.  The gate has
+$\sim$3K trainable parameters; the underlying heads keep their own
+parameter counts.
+
+The fused softmax is the input to the FOCUS-$\Sigma$ verifier, which
+is the unifying layer that couples all five priors: arithmetic
+identities check the candidate; spatial / visual / lexical priors
+voted for the candidate; epistemic prior decides whether to commit
+or fall through.
+
+\subsection{Architecture-agnostic deployment}
+
+SVKIE is applied at inference time as a wrapper around any upstream
+KIE head.  We demonstrate the wrapper on three architectures:
+DONUT~\cite{kim2022donut} ($\sim$260\,M params),
+LayoutLMv3-base~\cite{huang2022layoutlmv3} ($\sim$133\,M params),
+and the in-house FOCUS-T head ($\sim$66\,M params).  No upstream
+weights are updated under the SVKIE wrapping.
+
+The verifier's per-receipt overhead is bounded above by $35$\,ms in
+pure Python (Sec.~\ref{sec:svkie_theory}).

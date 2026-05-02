@@ -1,0 +1,102 @@
+% Paper 3 — SVKIE: Structure-Verified Document KIE with FOCUS-Σ.
+%
+% Submission template for ICDAR main track.  Single-column IEEE
+% conference format (switch to LNCS/Springer if redirecting to DAS).
+% All numbers are pulled at build time from
+% paper3/runs/<run_id>/metrics/ via the report.inject \VAR{} mechanism.
+\documentclass[conference]{IEEEtran}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{hyperref}
+\usepackage{url}
+\usepackage{booktabs}
+\usepackage{amsfonts}
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage{microtype}
+\usepackage{xcolor}
+\usepackage{graphicx}
+\usepackage{tikz}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\usepackage{dsfont}
+\usepackage{bbm}
+\usepackage{enumitem}
+\usepackage{multirow}
+\usetikzlibrary{arrows.meta,positioning,fit,backgrounds,calc,shadows,shapes.geometric}
+
+\newtheorem{proposition}{Proposition}
+\newtheorem{theorem}{Theorem}
+
+\title{SVKIE: Structure-Verified Document Key-Information Extraction\\
+       with Multi-Prior Neural Ensembles and FOCUS-$\Sigma$ Verification}
+
+\author{Anonymous Authors\\Anonymous Affiliation\\
+        \texttt{anonymous@example.com}}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+Document key-information extraction (KIE) systems on receipt
+benchmarks plateau at $\mathrm{F}_1 \approx 0.83$--$0.86$ across
+architectural families.  We argue that the plateau is structural:
+modern systems exploit some of the priors a receipt obeys but never
+all of them.  We introduce \textbf{SVKIE} (Structure-Verified KIE), a
+framework in which five orthogonal structural priors --- arithmetic,
+spatial, visual, lexical, and epistemic --- are each encoded as a
+distinct module and a unifying verification layer
+(\textbf{FOCUS-$\Sigma$}) enforces consistency across priors via three
+arithmetic identities.  We prove soundness, completeness, and a
+single-edit OCR-recovery probability bound for the verifier; we show
+that the structural identity $\mathrm{I}_3$ is keyword-independent and
+applies on every receipt satisfying the itemisation hypothesis.  The
+framework is architecture-agnostic: applied as an inference-time
+wrapper around DONUT, LayoutLMv3-base, and an in-house FOCUS-T head,
+it produces a positive wrapper-$\Delta$F1 on every upstream
+architecture without any retraining.  On the canonical SROIE Task-3
+test set ($n=347$), the FOCUS-T arm under the full SVKIE wrapper
+reaches \VAR{pipeline_f1_focus_sigma} macro-F1, an absolute
+$+\VAR{ablation_row3_delta_point}$ over the corresponding
+single-prior baseline.  Cross-dataset generalisation is demonstrated
+on CORD-v2 ($n=\VAR{cord_test_n}$).  We release the framework
+implementation and the full SHA-256-pinned reproducibility manifest.
+\end{abstract}
+
+\input{sections/intro}
+
+\input{sections/related}
+
+\input{sections/problem}
+
+\input{sections/method}
+
+\input{sections/figure_architecture}
+
+\input{sections/svkie_theory}
+
+\input{sections/experiments}
+
+\input{sections/results}
+
+\input{sections/discussion}
+
+\input{sections/limitations}
+
+\input{sections/broader_impact}
+
+\input{sections/conclusion}
+
+\bibliographystyle{IEEEtran}
+\bibliography{references}
+
+\input{sections/appendix}
+
+\input{sections/bugs}
+
+\section*{Reproducibility Checklist}
+\label{sec:repro_checklist}
+\input{sections/repro_checklist}
+
+\end{document}

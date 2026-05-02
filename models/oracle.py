@@ -61,7 +61,7 @@ def _call_llm(image_b64: str, mime: str, api: str) -> dict[str, str]:
     """Call Anthropic or OpenAI; raises EvalError on SDK failure."""
     if api == "openai":
         try:
-            import openai  # type: ignore[import-not-found]
+            import openai
         except ImportError as e:
             raise EvalError("openai SDK not installed") from e
         resp = openai.OpenAI().chat.completions.create(model="gpt-4o", max_tokens=512,
@@ -70,7 +70,7 @@ def _call_llm(image_b64: str, mime: str, api: str) -> dict[str, str]:
         text = resp.choices[0].message.content or ""
     else:
         try:
-            import anthropic  # type: ignore[import-not-found]
+            import anthropic
         except ImportError as e:
             raise EvalError("anthropic SDK not installed") from e
         resp = anthropic.Anthropic().messages.create(model="claude-3-5-sonnet-20241022", max_tokens=512,
