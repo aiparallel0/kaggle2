@@ -1,0 +1,28 @@
+\section{Conclusion}
+\label{sec:conclusion}
+
+We presented a faithful reproduction of end-to-end DONUT and a
+deliberately non-learned modular YOLOv8\,+\,TrOCR\,+\,regex pipeline
+on the canonical SROIE Task-3 split.  Under the original Kim et al.\
+2022 training recipe, DONUT reaches \VAR{donut_f1} macro-F1 at
+$\sim$260\,M parameters; the modular pipeline reaches
+\VAR{pipeline_f1} macro-F1 at $\sim$67\,M parameters.  The gap
+concentrates on the \textsf{company} and \textsf{address} fields,
+where regex enumeration cannot exhaustively cover the distractor
+distribution.
+
+The paper's principal methodological contribution is the catalogue of
+fourteen silent F1-destroying implementation bugs encountered during
+faithful reproduction (Sec.~\ref{sec:bugs}), each with a measured
+F1 impact and a source-level guard.  The catalogue functions as a
+regression-test register against which independent reproductions of
+this study or adjacent ones can confirm that the silent failure modes
+are guarded.  We release the full SHA-256-pinned reproducibility
+manifest and the per-bug guards under the licence accompanying the
+code.
+
+The boundary this paper does not cross is the one between
+deterministic and learned field assignment.  Closing the remaining
+F1 gap by introducing a learned cross-attention head, a structural
+arithmetic verifier, or any other neural component is outside the
+scope of this replication study.

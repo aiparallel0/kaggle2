@@ -1,0 +1,40 @@
+\section{Limitations}
+\label{sec:limitations}
+
+\paragraph{Domain.}  The framework's structural priors are designed
+for receipts and invoices with explicit per-item arithmetic.  Domains
+without internal arithmetic structure (free-text forms, scanned
+articles) cannot directly use the FOCUS-$\Sigma$ verifier; the spatial,
+visual, lexical, and epistemic priors transfer but the arithmetic
+prior degenerates.  Cross-domain evaluation on FUNSD~\cite{jaume2019funsd}
+and Kleister~\cite{stanislawek2021kleister} is left as future work.
+
+\paragraph{Itemisation hypothesis.}  Identity $\mathrm{I}_3$ assumes
+the receipt obeys the printed item-sum-plus-tax rule.  Receipts with
+bundling discounts ($\sim$2\,\% of CORD), rounding adjustments
+($\sim$1.1\,\% of SROIE), and implicit service charges ($\sim$0.3\,\%
+of CORD) violate the hypothesis.  On these the verifier abstains
+silently and the cascade falls through to the lexical-prior baseline;
+no claim of correctness is made on the violation set.
+
+\paragraph{Multi-seed coverage.}  Headline numbers reported across
+$n=5$ seeds with paired-bootstrap CIs.  Larger $n$ would tighten
+the CI half-width but is bounded by GPU budget.
+
+\paragraph{No new training data.}  The framework's neural components
+(CNN visual head, GAT graph head, ensemble gate) are trained only on
+the SROIE training fold; no external pre-training or augmentation is
+introduced.  The visual head's ResNet-18 backbone is ImageNet-frozen,
+which is a fixed pre-training choice not subject to ablation here.
+
+\paragraph{Framework name.}  SVKIE is the name we adopt for the
+framework in this paper.  The codebase historically uses the name
+\emph{FOCUS} for the broader suite from which SVKIE was distilled;
+we keep the FOCUS-$\Sigma$ designation for the verifier component to
+avoid breaking citation continuity with the engineering substrate.
+
+\paragraph{Inference latency.}  We report the verification-layer
+overhead ($<$40\,ms / receipt) but do not report end-to-end inference
+latency distributions for production deployment scenarios.  The
+verification layer is bounded above by the bounded subset-sum DP
+cost (Sec.~\ref{sec:svkie_theory}).

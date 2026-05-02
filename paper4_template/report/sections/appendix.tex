@@ -1,0 +1,51 @@
+\appendix
+
+\section{Reproducibility Manifest}
+\label{sec:appendix_manifest}
+
+Every cited number in this paper traces to a specific entry in the
+per-run SHA-256 manifest published alongside the code:
+
+\begin{itemize}
+\item \texttt{paper3/runs/<run\_id>/MANIFEST.json} --- the index
+      of every artefact produced by the run.
+\item \texttt{paper3/runs/<run\_id>/metrics/combined\_metrics.json}
+      --- the flat dictionary the LaTeX layer consumes via
+      \texttt{report.inject.\textbackslash VAR\{\}}.
+\item \texttt{paper3/runs/<run\_id>/metrics/wrapper\_delta\_metrics.json}
+      --- the wrapper-$\Delta$ matrix populated by
+      \texttt{paper3/report/wrapper\_delta\_paper3.py}.
+\item \texttt{paper3/runs/<run\_id>/metrics/ablation\_focus\_sigma.json}
+      --- the per-component ablation grid.
+\item \texttt{paper3/runs/<run\_id>/env/git\_sha.txt},
+      \texttt{config\_snapshot.json}, \texttt{pip\_freeze.txt},
+      \texttt{nvidia\_smi.txt} --- the producing tree's git SHA,
+      live config, Python environment, and GPU model.
+\end{itemize}
+
+The reproducibility recipe is a single command from a clean clone:
+
+\begin{verbatim}
+git clone <repo>
+cd kaggle2
+python paper3/main_paper3.py --stage all
+\end{verbatim}
+
+\section{CORD-v2 schema mapping}
+\label{app:cord_schema}
+
+We map CORD-v2's 30-field schema to the SROIE four-field schema as
+follows:
+
+\begin{itemize}
+\item \textsf{company} $\leftarrow$ CORD's \texttt{menu.nm}'s
+      header rows + \texttt{sub\_total.subtotal\_price}'s parent
+      block (vendor name, when present).
+\item \textsf{date} $\leftarrow$ CORD's \texttt{date}.
+\item \textsf{address} $\leftarrow$ CORD's \texttt{address}.
+\item \textsf{total} $\leftarrow$ CORD's \texttt{total.total\_price}.
+\end{itemize}
+
+CORD receipts that lack any of these four fields in the gold
+schema are dropped from the evaluation; this affects
+\VAR{cord_dropped_n} of \VAR{cord_total_n} receipts.

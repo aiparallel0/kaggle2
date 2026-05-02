@@ -1,0 +1,35 @@
+\section{Discussion}
+\label{sec:discussion}
+
+The headline finding is that the SVKIE multi-prior framework lifts
+\textsf{total}-field F1 substantially over a single-prior (lexical-
+only) baseline across three upstream architectures and two receipt
+corpora.  The lift is not attributable to any single component:
+the per-component ablation (Tab.~\ref{tab:ablation_neurips}) shows
+each prior contributes a distinct, complementary increment.
+
+The most important architectural property is the verifier's
+keyword-independence.  Identity $\mathrm{I}_3$ — the structural
+subset-sum identity — fires on every receipt satisfying the
+itemisation hypothesis regardless of which summary keywords the
+printer chose to emit.  This generalises the keyword-anchored
+verifiers used in commercial systems (Microsoft Form Recogniser,
+AWS Textract) which fail silently when OCR corrupts
+\textsf{SUBTOTAL} or \textsf{CASH}.
+
+The architecture-agnostic claim is empirically supported by the
+wrapper-$\Delta$ matrix (Tab.~\ref{tab:wrapper_delta}).  The
+verifier produces measurable F1 lift when applied to DONUT,
+LayoutLMv3, and the in-house FOCUS-T head, demonstrating that the
+framework is not specific to a single backbone.  This is the
+property that makes SVKIE a methodology contribution rather than a
+single-system optimisation.
+
+The boundary at which the framework is silent is the receipt-
+construction-hypothesis violation set: bundling discounts, rounding
+adjustments, implicit service charges (Sec.~\ref{sec:svkie_theory}).
+On these receipts $\mathrm{I}_3$ correctly abstains and the
+framework gracefully degrades to the lexical-prior baseline.  We
+view graceful abstention as a desirable property of a verifier:
+silently committing the wrong value would be worse than no
+verification at all.

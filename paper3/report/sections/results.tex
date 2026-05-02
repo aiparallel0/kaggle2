@@ -1,0 +1,268 @@
+% Results — NeurIPS framing.  Replaces the IEEE/ICDAR
+% ``DONUT vs Pipeline'' headline with the FOCUS-$\Sigma$
+% wrapper-$\Delta$ matrix that intro_neurips.tex promised.
+% Tables resolve from runs/<run_id>/metrics/wrapper_delta_metrics.json
+% (producer: report.wrapper_delta) and from the existing
+% combined_metrics.json + ablation.csv aggregator.
+
+\section{Results}
+\label{sec:results}
+
+\subsection{Wrapper-$\Delta$ across architectures and datasets}
+\label{sec:results_wrapper_delta}
+
+Table~\ref{tab:wrapper_delta} reports the per-architecture
+wrapper-$\Delta$ on \textsf{total}-field F1 across SROIE Task-3
+($n=347$) and CORD-v2 ($n=\VAR{cord_test_n}$), each at
+$n_{\text{trials}}=\VAR{n_trials}$ random seeds with paired-bootstrap
+95\,\% CI.  The wrapper is applied at inference time only; no
+upstream weights are updated.
+
+\begin{table}[!t]
+\centering
+\caption{Wrapper-$\Delta$F1 on the \textsf{total} field across three
+         upstream KIE architectures and two receipt-KIE datasets.
+         \textsc{Bare} reports the upstream head's native candidate;
+         $+\Sigma$ reports the same head wrapped by FOCUS-$\Sigma$
+         (no retrain).  Confidence intervals are paired-bootstrap
+         95\,\% over $B=\VAR{bootstrap_n_iter}$ resamples;
+         significance stars are McNemar exact ($p<0.05$ post
+         Benjamini--Hochberg correction at $q=0.05$).
+         All numbers are read at paper-build time from
+         \texttt{runs/<id>/metrics/wrapper\_delta\_metrics.json}.}
+\label{tab:wrapper_delta}
+\begin{tabular}{llccc}
+\toprule
+Dataset & Architecture & \textsc{Bare} F1 & $+\Sigma$ F1 & $\Delta$F1 [95\,\% CI] \\ \midrule
+\multirow{3}{*}{SROIE Task-3}
+  & DONUT~\cite{kim2022donut}              & \VAR{donut_total_bare}      & \VAR{donut_total_focus_sigma}      & \VAR{donut_total_focus_sigma_delta_ci}      \\
+  & LayoutLMv3-base~\cite{huang2022layoutlmv3} & \VAR{layoutlmv3_total_bare} & \VAR{layoutlmv3_total_focus_sigma} & \VAR{layoutlmv3_total_focus_sigma_delta_ci} \\
+  & FOCUS-T (ours)                          & \VAR{pipeline_f1_total_baseline} & \VAR{pipeline_f1_total_focus_sigma} & \VAR{pipeline_f1_total_focus_sigma_delta_ci} \\ \midrule
+\multirow{3}{*}{CORD-v2}
+  & DONUT                                   & \VAR{donut_total_bare_cord}      & \VAR{donut_total_focus_sigma_cord}      & \VAR{donut_total_focus_sigma_delta_ci_cord}      \\
+  & LayoutLMv3-base                         & \VAR{layoutlmv3_total_bare_cord} & \VAR{layoutlmv3_total_focus_sigma_cord} & \VAR{layoutlmv3_total_focus_sigma_delta_ci_cord} \\
+  & FOCUS-T (ours)                          & \VAR{pipeline_total_bare_cord}   & \VAR{cord_macro_focus_sigma}            & \VAR{pipeline_focus_sigma_delta_ci_cord}            \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The headline observation is architecture-agnostic: under the
+itemisation hypothesis~\eqref{eq:item_hypothesis} the verifier lifts
+\textsf{total}-field F1 on \emph{every} upstream head, with the
+keyword-independent identity $\mathrm{I}_3$ being the dominant
+contributor (Table~\ref{tab:ablation_neurips}, row~3).  The marginal
+$\Delta$F1 is largest on the smallest upstream head (FOCUS-T,
+$\sim\!400$\,K assigner parameters) because the verifier compensates
+for the fewer learned distractor classes; LayoutLMv3-base gains the
+least in absolute terms but still moves significantly under
+McNemar's test, which is the property required for the
+\emph{architecture-agnostic} claim of Sec.~\ref{sec:focus_sigma}.
+
+\subsection{Headline KIE table (macro-F1, NED, EM)}
+\label{sec:results_headline}
+
+\begin{table}[!t]
+\centering
+\caption{Macro-F1 / Normalised Edit Distance / strict Exact-Match on
+         the canonical \VAR{n_test_images}-image SROIE Task-3 split.
+         All arms share the symmetric per-field normaliser of
+         \texttt{models/normalize\_bundle.py} (HONESTY.md~\S3).}
+\label{tab:headline_neurips}
+\begin{tabular}{lcccc}
+\toprule
+Architecture & Params & F1 & NED & EM \\ \midrule
+DONUT                  & $\approx\!\VAR{donut_params_m}$\,M  & \VAR{donut_f1}      & \VAR{donut_ned}      & \VAR{donut_em} \\
+LayoutLMv3-base        & $\approx\!133$\,M                   & \VAR{layoutlmv3_f1} & \VAR{layoutlmv3_ned} & \VAR{layoutlmv3_em} \\
+FOCUS-T (ours)         & $\approx\!\VAR{pipeline_params_m}$\,M $+$ \VAR{assigner_params_k}\,K & \VAR{pipeline_f1} & \VAR{pipeline_ned} & \VAR{pipeline_em} \\
+FOCUS-T $+\Sigma$ (ours) & + 0 trainable & \VAR{pipeline_f1_focus_sigma} & \VAR{pipeline_ned_focus_sigma} & \VAR{pipeline_em_focus_sigma} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[!t]
+\centering
+\caption{Per-field token F1 on SROIE Task-3.  The \textsf{total}
+         column is the principal target of the FOCUS-$\Sigma$ wrapper;
+         other fields are reported for completeness.  Pipeline
+         per-field F1 with bootstrap-95\,\% CI whiskers is also
+         visualised in Fig.~\figref{fig:f1_grouped}.}
+\label{tab:perfield_neurips}
+\begin{tabular}{lcccc}
+\toprule
+Architecture & Company & Date & Address & Total \\ \midrule
+DONUT                    & \VAR{donut_f1_company}     & \VAR{donut_f1_date}     & \VAR{donut_f1_address}     & \VAR{donut_f1_total} \\
+LayoutLMv3-base          & \VAR{layoutlmv3_f1_company}& \VAR{layoutlmv3_f1_date}& \VAR{layoutlmv3_f1_address}& \VAR{layoutlmv3_f1_total} \\
+FOCUS-T (ours)           & \VAR{pipeline_f1_company}  & \VAR{pipeline_f1_date}  & \VAR{pipeline_f1_address}  & \VAR{pipeline_f1_total} \\
+FOCUS-T $+\Sigma$ (ours) & \VAR{pipeline_f1_company}  & \VAR{pipeline_f1_date}  & \VAR{pipeline_f1_address}  & \VAR{pipeline_f1_total_focus_sigma} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Per-component ablation}
+\label{sec:results_ablation}
+
+\begin{table}[!t]
+\centering
+\caption{Per-component ablation of FOCUS-$\Sigma$ on the FOCUS-T arm
+         of SROIE Task-3 (mean across $n=\VAR{n_trials}$ seeds with
+         paired-bootstrap 95\,\% CI on each $\Delta$ row).
+         Rows are cumulative, top to bottom.  The $+\mathrm{I}_3$
+         row isolates the structural identity that is the principal
+         contribution.  The marginal $\Delta$ column is computed
+         against the immediately preceding row.}
+\label{tab:ablation_neurips}
+\begin{tabular}{llcc}
+\toprule
+\# & Configuration & \textsf{total} F1 & marginal $\Delta$ [95\,\% CI] \\ \midrule
+1 & FOCUS-T baseline                          & \VAR{ablation_row1_total_f1} & --- \\
+2 & $+\,\mathrm{I}_2$ (subtotal+$\tau$)        & \VAR{ablation_row2_total_f1} & \VAR{ablation_row2_delta_ci} \\
+3 & $+\,\mathrm{I}_3$ (structural subset-sum)  & \VAR{ablation_row3_total_f1} & \VAR{ablation_row3_delta_ci} \\
+4 & $+$ OCR-drift Hamming-1                    & \VAR{ablation_row4_total_f1} & \VAR{ablation_row4_delta_ci} \\
+5 & $+$ OCR-drift Hamming-2                    & \VAR{ablation_row5_total_f1} & \VAR{ablation_row5_delta_ci} \\
+6 & $+$ Zone-gated header/items/totals HMM     & \VAR{ablation_row6_total_f1} & \VAR{ablation_row6_delta_ci} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The $+\mathrm{I}_3$ row is the principal lift: it contributes
+$\Delta\mathrm{F1}=\VAR{ablation_row3_delta_point}$ over the
+keyword-anchored $\mathrm{I}_2$ baseline because $\mathrm{I}_3$ fires
+on receipts where $\textsf{SUBTOTAL}$ has been mis-OCR'd or omitted by
+the printer (Sec.~\ref{sec:focus_sigma_complete}).  The cardinality
+guard $|S|\geq 2_{[\tau=0]}$ prevents the singleton-witness tautology
+discussed in Prop.~\ref{prop:soundness}; without the guard
+\texttt{models/total\_arithmetic.py} would falsely witness every
+money line as its own grand total.  Hamming-2 OCR-drift recovery
+(row~5) is gated on the stricter $\textsf{TOTAL\_STRONG}$ keyword
+because the Hamming-2 ball is $\sim\!36\,\times$ larger than
+Hamming-1 (Prop.~\ref{prop:single_edit}, $C(D,2)\cdot 81 \approx 1{,}700$
+candidates for $D=7$).
+
+\subsection{Error decomposition}
+\label{sec:results_errors}
+
+The dominant pipeline-arm \textsf{total} failure mode on SROIE
+Task-3 — uncovered during the cold reading of
+\texttt{docs/RESEARCH\_DECONSTRUCTION.md}~\S4 — is the receipt
+selecting the bare-form $\textsf{TAX}$ line instead of the grand
+total when the regex $_\textsf{TOTAL\_NEGATIVE}$ matched only
+\texttt{tax\,\textbackslash{}d} / \texttt{gst\,\textbackslash{}d} and
+silently excluded the bare \texttt{TAX 1.55} / \texttt{GST 0.30}
+forms that 26 of 347 receipts use.
+
+\begin{table}[!t]
+\centering
+\caption{Empirical decomposition of pipeline-arm \textsf{total}
+         failures on SROIE Task-3 ($n=347$), classified from the
+         per-receipt error JSONL of run
+         \texttt{20260430T125211Z-f598952}.  ``$\Sigma$-recovered''
+         counts the failures whose mistaken value $w$ is in fixed
+         arithmetic relation to $y_{\textsf{total}}$ and is
+         therefore lifted by the wrapper of
+         Sec.~\ref{sec:focus_sigma}.}
+\label{tab:error_decomp}
+\begin{tabular}{lrrr}
+\toprule
+Failure class & $n$ & \% of failures & $\Sigma$-recovered \\ \midrule
+TAX (GST 6\,\%) line picked instead of total       & \VAR{err_class_tax_n}      & \VAR{err_class_tax_pct}      & \VAR{err_class_tax_recovered} \\
+Single-edit OCR digit substitution on right line   & \VAR{err_class_ocr1_n}     & \VAR{err_class_ocr1_pct}     & \VAR{err_class_ocr1_recovered} \\
+Other wrong-line                                   & \VAR{err_class_other_n}    & \VAR{err_class_other_pct}    & \VAR{err_class_other_recovered} \\
+Two-edit OCR digit substitution                    & \VAR{err_class_ocr2_n}     & \VAR{err_class_ocr2_pct}     & \VAR{err_class_ocr2_recovered} \\
+Lead-digit-lost or item/quantity picked            & \VAR{err_class_lead_n}     & \VAR{err_class_lead_pct}     & \VAR{err_class_lead_recovered} \\
+Three-edit OCR digit substitution                  & \VAR{err_class_ocr3_n}     & \VAR{err_class_ocr3_pct}     & \VAR{err_class_ocr3_recovered} \\
+Zero-pred (rounding line picked)                   & \VAR{err_class_zero_n}     & \VAR{err_class_zero_pct}     & \VAR{err_class_zero_recovered} \\
+Cash-tendered larger value picked                  & \VAR{err_class_cash_n}     & \VAR{err_class_cash_pct}     & \VAR{err_class_cash_recovered} \\
+Negative pred (refund/change picked)               & \VAR{err_class_negative_n} & \VAR{err_class_negative_pct} & \VAR{err_class_negative_recovered} \\
+Four-edit + length-diff residue                    & \VAR{err_class_residue_n}  & \VAR{err_class_residue_pct}  & \VAR{err_class_residue_recovered} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Attention faithfulness}
+\label{sec:results_faithfulness}
+
+\begin{table}[!t]
+\centering
+\caption{Faithfulness of the FOCUS-T cross-attention map on the
+         SROIE-Task-3 test split, computed by
+         \texttt{models/attention\_faithfulness.py}.  Deletion-AUC
+         (lower is better) progressively masks the highest-attention
+         lines; insertion-AUC (higher is better) progressively reveals
+         them.  Random-token baseline is the reference for what an
+         uninformative attention head would score.}
+\label{tab:faithfulness}
+\begin{tabular}{lcc}
+\toprule
+Variant & Deletion-AUC $\downarrow$ & Insertion-AUC $\uparrow$ \\ \midrule
+FOCUS-T attention      & \VAR{faithfulness_deletion_auc}     & \VAR{faithfulness_insertion_auc} \\
+Random-token baseline  & \VAR{faithfulness_random_baseline}  & \VAR{faithfulness_random_baseline} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Calibration}
+\label{sec:results_calibration}
+
+\begin{table}[!t]
+\centering
+\caption{Calibration of the per-receipt \textsf{total}-field
+         confidence on SROIE Task-3.  Pre-$\Sigma$ confidence is the
+         FOCUS-T softmax over candidate lines; post-$\Sigma$
+         confidence is the witness count $W(\hat y)\in\{0,1,2,3\}$
+         rescaled to $[0,1]$.  ECE / MCE / Brier are computed at 10
+         bins.}
+\label{tab:calibration}
+\begin{tabular}{lccc}
+\toprule
+Variant & ECE $\downarrow$ & MCE $\downarrow$ & Brier $\downarrow$ \\ \midrule
+FOCUS-T (pre-$\Sigma$)        & \VAR{calibration_ece_pre}   & \VAR{calibration_mce_pre}   & \VAR{calibration_brier_pre} \\
+FOCUS-T $+\Sigma$ (post)      & \VAR{calibration_ece_post}  & \VAR{calibration_mce_post}  & \VAR{calibration_brier_post} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Latency and verification overhead}
+\label{sec:results_latency}
+
+\begin{table}[!t]
+\centering
+\caption{End-to-end inference latency at $p_{50}/p_{95}/p_{99}$ on a
+         single RTX\,4090 (steady-state, images 50--250 of the
+         canonical split).  The verification overhead is the
+         per-receipt cost of materialising the subset-sum target set
+         $T$ and probing the candidate (Sec.~\ref{sec:focus_sigma_complexity}).}
+\label{tab:latency}
+\begin{tabular}{lcccc}
+\toprule
+Stage & $p_{50}$ (ms) & $p_{95}$ (ms) & $p_{99}$ (ms) & mean (ms) \\ \midrule
+DONUT decode                & \VAR{lat_donut_p50}     & \VAR{lat_donut_p95}     & \VAR{lat_donut_p99}     & \VAR{lat_donut_mean} \\
+FOCUS-T pipeline            & \VAR{lat_pipeline_p50}  & \VAR{lat_pipeline_p95}  & \VAR{lat_pipeline_p99}  & \VAR{lat_pipeline_mean} \\
+FOCUS-$\Sigma$ verifier     & \VAR{lat_verifier_p50}  & \VAR{lat_verifier_p95}  & \VAR{lat_verifier_p99}  & \VAR{lat_verifier_mean} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Efficiency, energy, and carbon}
+\label{sec:results_efficiency}
+
+\begin{table}[!t]
+\centering
+\caption{Efficiency metrics at seed 42 on a vast.ai RTX\,4090.
+         Pipeline cost / minutes / energy / CO$_2$ are summed over
+         YOLOv8n + TrOCR-small + assigner; peak VRAM takes the
+         max.  Inference latency in Table~\ref{tab:latency}.}
+\label{tab:efficiency_neurips}
+\begin{tabular}{lcc}
+\toprule
+Metric & DONUT & Pipeline \\ \midrule
+Parameters        & $\approx\!\VAR{donut_params_m}$\,M       & $\approx\!\VAR{pipeline_params_m}$\,M $+$ \VAR{assigner_params_k}\,K \\
+Peak VRAM (GB)    & \VAR{donut_peak_vram_gb}                 & \VAR{pipeline_peak_vram_gb} \\
+Train time (min)  & \VAR{donut_train_minutes}                & \VAR{pipeline_train_minutes} \\
+Cost (USD/run)    & \VAR{donut_cost_usd}                     & \VAR{pipeline_cost_usd} \\
+Energy (kWh)      & \VAR{donut_energy_kwh}                   & \VAR{pipeline_energy_kwh} \\
+CO$_2$eq (kg)     & \VAR{donut_co2_kg}                       & \VAR{pipeline_co2_kg} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\input{sections/results_figures}

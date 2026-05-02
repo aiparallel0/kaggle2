@@ -1,0 +1,33 @@
+\section{Limitations}
+\label{sec:limitations}
+
+\paragraph{Single-corpus evaluation.}  All numbers are reported on
+canonical SROIE Task-3 ($n=347$, single vendor type, single language).
+Generalisation to CORD-v2~\cite{park2019cord} (Korean restaurant
+receipts) or WildReceipt~\cite{sun2021wildreceipt} (in-the-wild
+imaging) is not measured.
+
+\paragraph{Test-set statistical power.}  The 347-image canonical test
+set yields a paired-bootstrap 95\,\% CI half-width of $\pm 0.022$
+absolute F1.  Differences below this band are below the corpus's
+single-seed sensitivity; we report multi-seed means to widen the
+empirical envelope.
+
+\paragraph{Inference latency.}  We do not report inference latency
+distributions ($p_{50}$, $p_{95}$, $p_{99}$) for either arm; the
+training-time efficiency table is reported but cold-start and
+steady-state per-image timing is deferred to an instrumentation
+follow-up.
+
+\paragraph{Engineering ceiling, not state of the art.}  The modular
+arm in this paper is a deliberately non-learned reference.  The
+remaining F1 gap to DONUT can be closed by adding learned components
+(cross-attention assigners, structural verifiers, ensemble heads),
+which lie outside the scope of this replication study.
+
+\paragraph{Bug catalogue completeness.}  The 14-bug catalogue is the
+list of silent failure modes \emph{we encountered} during this
+reproduction.  It is not a proof of completeness — additional silent
+failure modes likely exist in adjacent recipes (different DONUT
+backbone variants, different OCR engines).  We publish the catalogue
+as a regression-test register, not as a completeness claim.

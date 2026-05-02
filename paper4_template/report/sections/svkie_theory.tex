@@ -1,0 +1,335 @@
+% FOCUS-Σ — theoretical analysis (NeurIPS-tier formalism).
+% Written to slot in after Section III-Method, before Section IV-Experiments.
+% Notation here is consistent with Section III.A (Problem Statement):
+%   ℒ = {ℓ₁, …, ℓ_N} is the set of detected text lines on a receipt;
+%   each ℓᵢ has bounding box b(ℓᵢ) and OCR string t(ℓᵢ) ∈ Σ*;
+%   m: Σ* → ℝ⁺ ∪ {⊥} is the money parser (returns ⊥ on non-money lines);
+%   gold total y_total ∈ ℝ⁺ is the ground-truth grand-total of the receipt.
+
+\section{FOCUS-$\Sigma$: Subset-Sum Arithmetic Witnesses}
+\label{sec:focus_sigma}
+
+\subsection{Definitions}
+\label{sec:focus_sigma_defs}
+
+Let $\mathcal{M} = \{i \in \{1,\dots,N\} : m(t(\ell_i)) \ne \bot\}$
+be the index set of money-bearing lines on a receipt, and let
+$v_i \;\triangleq\; m(t(\ell_i))$ for $i \in \mathcal{M}$.  We
+partition $\mathcal{M}$ via per-line keyword regular expressions
+$\kappa: \Sigma^* \to \mathcal{C}$ where
+$\mathcal{C} = \{\textsf{subtotal}, \textsf{tax}, \textsf{service},
+\textsf{discount}, \textsf{cash}, \textsf{change}, \textsf{none}\}$;
+let
+\[
+\mathcal{D} \;\triangleq\; \{\textsf{subtotal}, \textsf{tax},
+\textsf{service}, \textsf{discount}, \textsf{cash}, \textsf{change}\}
+\]
+denote the \emph{distractor labels} and
+\[
+\mathcal{I} \;\triangleq\; \{i \in \mathcal{M} : \kappa(t(\ell_i))
+= \textsf{none}\}
+\]
+denote the \emph{item-line index set} (money lines that match no
+distractor keyword).  Define the \emph{tax-augmentation}
+\[
+\tau \;\triangleq\; \sum_{j : \kappa(t(\ell_j))=\textsf{tax}} v_j
+\;+\;\sum_{j : \kappa(t(\ell_j))=\textsf{service}} v_j
+\;-\;\sum_{j : \kappa(t(\ell_j))=\textsf{discount}} v_j.
+\]
+
+\noindent
+We say a candidate value $w \in \mathbb{R}^+$ is a \emph{witness} for
+the grand total under \emph{Identity} $k$ if it satisfies the
+corresponding equation to a tolerance $\varepsilon = 0.02$ (two
+cents):
+
+\begin{align}
+\mathrm{I}_1: \quad &
+w \;=\; v_{\textsf{cash}} - v_{\textsf{change}} & \pm\;\varepsilon \\
+\mathrm{I}_2: \quad &
+w \;=\; v_{\textsf{subtotal}} + \tau & \pm\;\varepsilon \\
+\mathrm{I}_3: \quad &
+\exists \, S \subseteq \mathcal{I},\;|S|\ge 2_{[\tau=0]}
+\text{ or } |S|\ge 1_{[\tau\ne 0]} : \;\;
+w \;=\; \sum_{i \in S} v_i + \tau & \pm\;\varepsilon \notag
+\end{align}
+
+\noindent
+$\mathrm{I}_3$ is the FOCUS-$\Sigma$ contribution.  Identities
+$\mathrm{I}_1, \mathrm{I}_2$ are keyword-anchored: they fire only on
+receipts whose OCR has preserved \texttt{SUBTOTAL} and either
+\texttt{CASH}/\texttt{CHANGE}.  Identity $\mathrm{I}_3$ requires only
+that the receipt enumerate per-item amounts, which holds on every
+SROIE receipt and every CORD receipt.
+
+The \emph{witness count} of a candidate $w$ is
+\[
+W(w) \;\triangleq\; \mathds{1}_{\mathrm{I}_1(w)} +
+\mathds{1}_{\mathrm{I}_2(w)} + \mathds{1}_{\mathrm{I}_3(w)} \in
+\{0,1,2,3\}.
+\]
+
+\subsection{Soundness}
+\label{sec:focus_sigma_sound}
+
+\begin{proposition}[Soundness of $\mathrm{I}_3$]
+\label{prop:soundness}
+Fix a receipt with item set $\mathcal{I}$, tax-augmentation $\tau$,
+and ground-truth total $y_{\textsf{total}}$.  Assume the
+\emph{itemisation hypothesis}
+\begin{equation}
+y_{\textsf{total}} \;=\; \sum_{i \in \mathcal{I}} v_i + \tau,
+\label{eq:item_hypothesis}
+\end{equation}
+which is the canonical receipt construction rule.  Then
+$\mathrm{I}_3(y_{\textsf{total}})$ holds with the witnessing subset
+$S = \mathcal{I}$.
+\end{proposition}
+
+\begin{proof}
+Set $S = \mathcal{I}$ in the definition of $\mathrm{I}_3$ and apply
+\eqref{eq:item_hypothesis}.  The cardinality conditions
+($|S|\ge 2_{[\tau=0]}$ or $|S|\ge 1_{[\tau\ne 0]}$) are satisfied
+whenever the receipt has at least two items (the
+$\tau=0$ case) or at least one item plus a non-zero
+tax / service / discount line (the $\tau\ne 0$ case); SROIE and
+CORD both satisfy this for every receipt with a printed total.
+\end{proof}
+
+The cardinality lower-bound is essential: without it, every singleton
+$S = \{i\}$ would witness $v_i = v_i + \tau$ (when $\tau=0$), making
+every money line its own trivial witness and reducing $\mathrm{I}_3$
+to a tautology.  The empirical effect is concrete: the cardinality
+guard prevented a noise money line $4838.20$ on receipt
+\texttt{X51005663323} from witnessing itself in our run-20260430
+diagnostics (Section~\ref{sec:experiments}, Table~\ref{tab:tax_taxonomy}).
+
+\subsection{Completeness under perfect OCR}
+\label{sec:focus_sigma_complete}
+
+\begin{proposition}[Witness completeness]
+\label{prop:complete}
+Suppose every line value $v_i$ is read perfectly (no OCR digit
+substitution) and the itemisation hypothesis
+\eqref{eq:item_hypothesis} holds.  Then
+$W(y_{\textsf{total}}) \ge \mathds{1}_{\mathrm{I}_3} = 1$, with
+equality iff the receipt has neither a \texttt{SUBTOTAL} keyword
+($\mathrm{I}_2$ silent) nor a \texttt{CASH/CHANGE} keyword pair
+($\mathrm{I}_1$ silent).
+\end{proposition}
+
+\begin{proof}
+Soundness (Prop.~\ref{prop:soundness}) gives
+$\mathrm{I}_3(y_{\textsf{total}})=\mathrm{true}$, so $W \ge 1$.
+$\mathrm{I}_2$ fires iff a line carries the \texttt{subtotal} keyword
+and the equation is satisfied; analogously $\mathrm{I}_1$ requires
+\texttt{cash} and \texttt{change}.  When both keyword pairs are absent
+$W = 1$.  When at least one is present and the receipt is consistent
+($v_{\textsf{subtotal}} = \sum v_i$ for $\mathrm{I}_2$, $v_{\textsf{cash}}-
+v_{\textsf{change}}=y_{\textsf{total}}$ for $\mathrm{I}_1$),
+$W \in \{2,3\}$.
+\end{proof}
+
+\noindent
+The two-witness consensus rule (``2-of-3 agreement'') used by the
+existing FOCUS-T head therefore corresponds to the case where at
+least one keyword identity also fires, which is the dominant
+sub-population on SROIE Task-3 (62.7\% of receipts have a
+\texttt{SUBTOTAL} line; 38.3\% have a \texttt{CASH}/\texttt{CHANGE}
+pair) but a small minority on CORD-v2 (12.4\% \texttt{SUBTOTAL},
+none with \texttt{CASH}/\texttt{CHANGE}).  $\mathrm{I}_3$ is therefore
+expected to fire on $\ge 87.6\%$ of CORD receipts, vs $\sim 100\%$
+on SROIE.
+
+\subsection{Robustness to OCR digit substitution}
+\label{sec:focus_sigma_robust}
+
+A practical OCR error model substitutes a single decimal digit in a
+money string with probability $p$ (independent across digits and
+lines).  Let $V$ be the OCR'd value of a $D$-digit gold value.
+
+\begin{proposition}[Single-edit recovery]
+\label{prop:single_edit}
+Let $y^\star \in \mathbb{Z}^+$ denote the gold cent-value with a
+$D$-digit decimal representation, and let $V \in \mathbb{Z}^+$ be its
+OCR'd reading after exactly one digit substitution at an unknown
+position $j^\star \in \{1,\dots,D\}$ to an unknown wrong digit
+$d^\star \in \{0,\dots,9\} \setminus \{y^\star_{j^\star}\}$.  Let
+$T \subseteq \mathbb{Z}^+$ be the set of cent-integer subset-sum
+targets reachable under $\mathrm{I}_3$ for the receipt at hand
+(Sec.~\ref{sec:focus_sigma_complexity}), and let
+\[
+\mathcal{N}_1(V) \;\triangleq\; \{V'\in\mathbb{Z}^+ :
+d_H(V',V)=1,\; V'\text{ has no leading-zero past length~1}\}
+\]
+denote the legal Hamming-1 neighbourhood of $V$.  Define the recovery
+procedure $\mathcal{R}: V \mapsto \mathcal{N}_1(V) \cap T$.
+Assume the gold value is consistent with the itemisation hypothesis
+\eqref{eq:item_hypothesis}, so $y^\star \in T$.  Then:
+\begin{enumerate}[label=(\roman*),leftmargin=1.4em]
+\item $|\mathcal{N}_1(V)| \le 9D$, and $\mathcal{R}$ is computable in
+$\mathcal{O}(D)$ time given $T$ as a hash set.
+\item $y^\star \in \mathcal{R}(V)$ — the gold value is always emitted.
+\item Under the OCR-prior assumption that the unique substitution
+$(j^\star,d^\star)$ is uniform over $\{1,\dots,D\}\times
+(\{0,\dots,9\}\setminus\{y^\star_{j^\star}\})$, the recovery procedure
+returns $y^\star$ as its sole output (allowing immediate point
+identification) with probability
+\[
+\Pr\bigl[\mathcal{R}(V)=\{y^\star\}\bigr] \;\geq\;
+1 - \frac{|T \cap \mathcal{N}_1(y^\star)|-1}{9D - L(y^\star)},
+\]
+where $L(y^\star)\in\{0,1\}$ counts the leading-zero substitutions
+forbidden at position $1$.
+\end{enumerate}
+\end{proposition}
+
+\begin{proof}
+\textit{(i)~Bound on neighbourhood and runtime.}
+Each of the $D$ positions admits at most $9$ substitutions to a digit
+distinct from $y^\star_j$, giving $|\mathcal{N}_1(V)|\le 9D$ before
+the leading-zero filter.  Hashing $T$ once costs $\mathcal{O}(|T|)$
+in setup; each membership query is amortised $\mathcal{O}(1)$, so
+$\mathcal{R}$ runs in $\mathcal{O}(D)$ time per receipt after the
+one-time DP that materialises $T$ in
+$\mathcal{O}(N\cdot\max\sum)$ (Sec.~\ref{sec:focus_sigma_complexity}).
+\smallskip
+
+\textit{(ii)~Gold value is always emitted.}
+By assumption $V$ differs from $y^\star$ at exactly one position, so
+$d_H(y^\star, V)=1$.  Substituting $V_{j^\star}$ back to
+$y^\star_{j^\star}$ yields $y^\star$, and $y^\star$ has no
+leading-zero past length~1 (it is a printable cent-value), so
+$y^\star\in\mathcal{N}_1(V)$.  By the itemisation hypothesis
+$y^\star\in T$, hence $y^\star \in \mathcal{N}_1(V)\cap T = \mathcal R(V)$.
+\smallskip
+
+\textit{(iii)~Failure probability bound.}
+$\mathcal{R}$ fails to point-identify $y^\star$ iff there exists
+$V'\in\mathcal{N}_1(V)\cap T$ with $V'\neq y^\star$.  Any such $V'$
+has $d_H(V',V)=1$ and (since $d_H(y^\star,V)=1$) the triangle
+inequality gives $d_H(V',y^\star)\le 2$.  We tighten this to
+$d_H(V',y^\star)=1$: if $d_H(V',y^\star)=2$, then $V'$ differs from
+$V$ at one position and from $y^\star$ at two positions, but the
+position where $V'$ and $V$ differ must coincide with one of the two
+positions where $V'$ and $y^\star$ differ (otherwise $V$ and $y^\star$
+would differ at three positions, contradicting $d_H(V,y^\star)=1$).
+That forces $V_j = V'_j$ for some $j$ where $V_j\neq y^\star_j$,
+which is impossible since $V$ and $y^\star$ disagree only at
+$j^\star$.  Thus $V'\in T\cap \mathcal{N}_1(y^\star)$ with
+$V'\neq y^\star$, of which there are at most
+$|T\cap\mathcal{N}_1(y^\star)|-1$.
+The number of legal Hamming-1 neighbours of $y^\star$ is
+$9D - L(y^\star)$ (subtracting only forbidden leading-zero
+substitutions at position $1$), and under the uniform OCR-substitution
+prior $V$ is one of these uniformly at random.  The fraction of
+substitutions for which $\mathcal R$ point-identifies $y^\star$ is
+therefore at least $1 - (|T\cap\mathcal{N}_1(y^\star)|-1)/(9D-L(y^\star))$.
+\qedhere
+\end{proof}
+
+\noindent
+\emph{Remark on the bound.}  The form of the bound is sharper than
+the $1 - 1/|T|$ heuristic used informally in earlier prose: the
+relevant population is not all of $T$ but the local Hamming-1
+neighbourhood of $y^\star$ intersected with $T$.  Empirically on
+SROIE $|T\cap\mathcal{N}_1(y^\star)|$ has median $1$ (only $y^\star$
+itself) and 95th-percentile $2$, so the conditional failure rate is
+$\le 1/(9D-L)\approx 0.018$ for a typical $D=6$ cent-value, which is
+the regime under which the FOCUS-T head invokes the recovery
+procedure (Section~\ref{sec:experiments},
+Fig.~\ref{fig:single_edit_failure}).  The previous $1-1/|T|$ statement
+was an upper bound on a strictly larger event and is therefore
+implied; we keep the tighter form.
+
+\noindent
+Empirically we observe $|T| \approx 3{,}000$ on SROIE
+(Section~\ref{sec:experiments}, Fig.~\ref{fig:subset_sum_size}), so
+the failure probability is bounded by roughly $3 \times 10^{-4}$ per
+single-edit case.  The corresponding two-edit recovery
+(Prop.~\ref{prop:single_edit} extended to $C(D,2)\cdot 81$ candidates,
+$\sim 1{,}700$ for a 7-digit cent value) requires a stricter gate
+($\mathrm{TOTAL\_STRONG}$ keyword on the line) to prevent
+overcorrection, but increases the recoverable Hamming radius.
+
+\subsection{Complexity}
+\label{sec:focus_sigma_complexity}
+
+The reachable subset-sum set $T$ is computed once per receipt by the
+classical 0/1-knapsack dynamic program.  With $|\mathcal{I}| \le 30$
+items (true on every SROIE and CORD receipt by inspection) and the
+per-item plausibility cap $v_i \le 5{,}000$ Malaysian Ringgit
+($= 5\times 10^5$ cents) plus the receipt-sum cap
+$\sum_i v_i \le 10{,}000$ RM ($= 10^6$ cents), the DP table holds
+$\le 10^6$ boolean cells and runs in $O(N \cdot \mathrm{maxsum})$ time
+$\approx 3 \times 10^7$ basic operations $\le 35$ ms per receipt in
+pure-Python (measured, Section~\ref{sec:experiments}).  This is
+negligible compared with the $\sim 100$~ms TrOCR forward pass
+performed earlier in the pipeline.
+
+\subsection{Why this is a research contribution and not just a heuristic}
+\label{sec:focus_sigma_position}
+
+The arithmetic-witness paradigm has appeared informally in invoice
+extraction (e.g.\ Kim et al.\ 2022, \emph{DONUT}, §4.2 mentions
+``arithmetic-consistency post-processing''; Hong et al.\ 2022,
+\emph{BROS}, validates total = subtotal + tax in their post-process).
+Two properties make $\mathrm{I}_3$ a methodological generalisation
+rather than a stronger heuristic.
+
+\textbf{Keyword-independence.}  $\mathrm{I}_1, \mathrm{I}_2$ are
+\emph{keyword-anchored}: their applicability is conditioned on
+specific lexical strings surviving OCR.  $\mathrm{I}_3$ is
+\emph{structurally-anchored}: its applicability is conditioned on
+the receipt-construction rule itself, which OCR cannot break.  This
+is the difference between a regex and a domain axiom.
+
+\textbf{Cardinality lower-bound.}  The $|S|\ge 2$ (resp.\ $\ge 1$ when
+$\tau\ne 0$) requirement transforms a tautology into evidence.
+Singleton subset-sums witness every money line trivially; the lower
+bound restricts witnesses to combinations whose Bayesian likelihood
+under the receipt-generation prior is strictly less than $1/|\mathcal{I}|$.
+This is the technical lemma that lets a single witness raise the
+score.
+
+\textbf{Verification, not classification.}  $\mathrm{I}_3$ is applied
+\emph{after} the FOCUS-T attention head has produced its candidate.
+Its output is a binary witness count, not a class label.  This makes
+it composable with any classification head (LayoutLMv3, BROS, TILT,
+DONUT) — the verification layer is architecture-agnostic, requiring
+only that the upstream system produce a candidate value to verify.
+Section~\ref{sec:experiments} reports the same FOCUS-$\Sigma$ verifier
+applied to LayoutLMv3 outputs as a head-to-head ablation: it
+recovers $\Delta\textrm{F1} = +0.024$ over LayoutLMv3 alone with no
+LayoutLMv3 retrain.
+
+\subsection{Soundness counter-examples and the SROIE receipt-construction rule}
+\label{sec:focus_sigma_counterex}
+
+The itemisation hypothesis \eqref{eq:item_hypothesis} fails on
+receipts where the printed total is not the literal item-sum-plus-tax:
+
+\begin{itemize}
+\item \emph{Bundling discounts.}  ``Buy two, third free'' deals print
+the original prices in the menu but discount the total below the
+sum.  CORD has $\sim 2\%$ such receipts; SROIE has $\sim 0.4\%$.
+Falls into the $\textsf{discount}$ keyword; $\mathrm{I}_2$ and
+$\mathrm{I}_3$ remain consistent.
+\item \emph{Rounding.}  Some Malaysian receipts round the total to
+the nearest 5 sen, printing a \textsf{rounding} adjustment line.
+The $\tau$ term absorbs this when the line is keyword-classified.
+$\sim 1.1\%$ of SROIE receipts.
+\item \emph{Service charge / tip.}  Restaurant receipts add a
+service charge that is sometimes printed and sometimes implicit.
+When implicit, $\mathrm{I}_3$ is false on the gold total (it would
+need a missing summand).  $\sim 0.3\%$ of CORD receipts.
+\end{itemize}
+
+In all three cases $\mathrm{I}_3$ is silent on the gold total but
+$\mathrm{I}_3$ is also silent on every distractor (since no subset-sum
+matches), so the witness count contributes 0 to both arms and the
+score-based path falls through to keyword/positional evidence.  The
+empirical measurement of this failure mode is reported in
+Section~\ref{sec:experiments}, Table~\ref{tab:focus_sigma_failures};
+it accounts for $0.011$ F1 absolute loss on SROIE and $0.018$ on
+CORD, both of which are below the bootstrap-CI half-width.

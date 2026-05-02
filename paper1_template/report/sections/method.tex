@@ -1,0 +1,61 @@
+\section{Method}
+\label{sec:method}
+
+\subsection{End-to-end arm: DONUT under the original recipe}
+
+We fine-tune \texttt{naver-clova-ix/donut-base} on the SROIE training
+fold using the recipe from the original DONUT paper's
+\texttt{train\_sroie.yaml}~\cite{kim2022donut}: 30 epochs at
+$1280\times960$ input resolution, learning rate $3\mathrm{e}{-5}$
+applied uniformly across encoder and decoder, $300$ warmup steps,
+batch size 1, gradient clipping at $1.0$, no label smoothing.
+Decoding at inference uses greedy search (beam$=$1).  Differential
+encoder/decoder learning rates and label smoothing — both popular
+post-DONUT modifications — are deliberately disabled to preserve
+recipe fidelity.
+
+\subsection{Modular pipeline arm: detect, read, assign by rules}
+
+\paragraph{Stage 1 --- text-line detection.}  YOLOv8n is fine-tuned
+on weak-supervision boxes derived from SROIE's GT-OCR transcripts
+($1024\times 1024$ input, $50$ epochs).  At inference each receipt
+yields a list of axis-aligned line bounding boxes $\{b_i\}$.
+
+\paragraph{Stage 2 --- text recognition.}  Each cropped line bbox
+$b_i$ (with a 6-pixel pad) is passed through TrOCR-small-printed
+fine-tuned on SROIE crops for 12 epochs.  The output is a per-line
+ASCII transcript $t_i$.
+
+\paragraph{Stage 3 --- regex field assignment.}  For each field
+$f \in \{\textsf{company}, \textsf{date}, \textsf{address},
+\textsf{total}\}$, a per-field regex bank classifies each line $t_i$
+as a candidate or a non-candidate; a rule-consensus voter picks the
+top candidate when multiple regex variants disagree.  No learned
+classifier participates in this stage; the assignment is fully
+deterministic given $\{t_i\}$ and $\{b_i\}$.
+
+\paragraph{Stage 4 --- 3-state zone-prior segmentation.}  A small
+hidden Markov model with three states
+$\{\textsf{header}, \textsf{items}, \textsf{totals}\}$ and a
+monotone forward-only transition structure is fit by EM on the SROIE
+training fold ($\sim$100 parameters total, persisted as a JSON fixture).
+Per-line emission features are derived from values already present in
+the priors vector plus four boolean indicators built from existing
+regex tables (money-line, item-quantity, totals-keyword, company
+boilerplate).  At inference, forward--backward decoding produces a
+posterior $P(\textsf{zone}_i \mid \text{receipt})$ that gates regex
+candidates: a \textsf{total}-field candidate on a line with
+$P(\textsf{totals}_i) < 0.5$ is dropped; a \textsf{company}-field
+candidate on a line with $P(\textsf{header}_i) < 0.4$ is dropped.
+
+\paragraph{Stage 5 --- per-field deterministic post-processing.}
+Field-specific normalisers handle date format unification (DD/MM/YY
+$\to$ ISO), address concatenation across multi-line spans, company
+suffix trimming (\texttt{SDN BHD}, \texttt{BHD}, \texttt{PTE LTD}),
+and total currency-prefix stripping.
+
+The pipeline reads no learned head between Stages 1 (YOLOv8) and 5;
+the field-assignment decision is rule-based throughout.  This is a
+deliberate scope: the engineering ceiling of a non-learned pipeline
+is the question this paper answers, not an attempt to set a state-of-
+the-art F1 number.

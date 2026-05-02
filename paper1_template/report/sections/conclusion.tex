@@ -1,0 +1,31 @@
+\section{Conclusion}
+\label{sec:conclusion}
+
+We presented a controlled study of training-set composition for
+DONUT on canonical SROIE Task-3.  Holding the architecture and the
+training recipe fixed at the original Kim et al.\ 2022 specification,
+we showed that joint training across SROIE\,+\,CORD-v2\,+\,WildReceipt
+lifts SROIE Task-3 macro-F1 to \VAR{donut_f1}, an absolute lift of
+$+\VAR{multidataset_delta}$ over the SROIE-only baseline.
+
+The lift is decomposable into three additive contributions: schema
+diversity (CORD-v2), imaging-condition diversity (WildReceipt), and
+target-domain alignment (SROIE itself).  Each contribution was
+quantified separately in Tab.~\ref{tab:headline}; the cumulative
+effect exceeds the F1 deltas reported by several recent
+architectural modifications on the same benchmark.
+
+The principal methodological contribution is the publication of a
+training-data manifest with per-image SHA-256 hashes and per-image
+schema mappings.  An independent lab can reproduce the multi-dataset
+fold from the public corpora at exact image-level granularity,
+including the relabelling decisions that translate CORD's 30-field
+schema and WildReceipt's product-receipt schema into SROIE's
+four-field target.
+
+The boundary this paper does not cross is the architectural one:
+whether the data-axis lift transfers to LayoutLMv3, BROS, or
+modular detect-then-read pipelines is not measured here.  We expect
+the lift to transfer in proportion to each architecture's
+sensitivity to training-distribution diversity, but the prediction
+is empirical and the test belongs in a follow-up.

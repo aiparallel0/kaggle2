@@ -50,6 +50,7 @@ from report.missing import (
     assert_no_rulebased_in_advanced,
 )
 from report.pdflatex import compile_paper_pdf
+from report.wrapper_delta import merge_wrapper_delta
 
 log = logging.getLogger("kaggle2")
 
@@ -190,6 +191,13 @@ def stage_paper(config: ExpConfig) -> None:
     merge_ablation_report(config, metrics)
     merge_foundation_metrics(config, metrics)
     merge_rag_metrics(config, metrics)
+    # NeurIPS-variant wrapper-Δ producer.  Reads
+    # runs/<id>/metrics/wrapper_delta_metrics.json (and the ablation /
+    # error-decomposition / faithfulness / calibration / latency
+    # sidecars) and forwards their flat scalars to \VAR{} keys.  When
+    # any sidecar is absent the corresponding keys remain unresolved
+    # and surface in unresolved_vars.json (no synthetic numbers).
+    merge_wrapper_delta(config, metrics)
     # v4 — surface each stage's own best epoch (YOLO, TrOCR, assigner)
     # so the training table no longer prints ``\\textit{n/a}`` for
     # those cells.  Idempotent / best-effort.

@@ -1,0 +1,31 @@
+\section{Discussion}
+\label{sec:discussion}
+
+The headline finding is that an end-to-end transformer at
+$\sim$260\,M parameters and a deliberately non-learned modular
+pipeline at $\sim$67\,M parameters land within a few F1 points of
+each other on canonical SROIE Task-3 when the end-to-end arm is
+trained under its original recipe.  The remaining gap concentrates
+on \textsf{company} and \textsf{address}, where free-text spans
+exceed the enumeration capacity of regex-based assignment and
+boilerplate distractors are not exhaustively listed in any
+hand-written rule set.  \textsf{Date} and \textsf{total} stay close
+to parity because their lexical anchors (\texttt{DD/MM/YY},
+\texttt{TOTAL\,RM\,xx.yy}) are deterministic enough for regex
+extraction to succeed on the dominant receipt-print template.
+
+The 14-bug catalogue (Sec.~\ref{sec:bugs}) is a methodology
+contribution in its own right: each bug is a silent F1-destroying
+failure mode that produces no error log and would not be caught by
+any test the original DONUT or YOLO-pipeline release ships with.
+Several would degrade DONUT to F1$<$0.5 or pipeline F1 to 0
+without any operator-visible warning (Bugs 1, 2, 4, 9 in
+particular).  The catalogue is published as a regression-test
+register so an independent lab reproducing this paper can confirm
+that none of the 14 are silently active in their own build.
+
+The deliberate non-learned scope of the modular arm is the boundary
+this paper does not cross.  Whether a learned cross-attention head
+or a structural-arithmetic verification layer would close the
+remaining \textsf{company} and \textsf{address} gap is an open
+question that this work does not answer.

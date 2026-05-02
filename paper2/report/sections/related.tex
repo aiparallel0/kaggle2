@@ -1,0 +1,44 @@
+\section{Related Work}
+\label{sec:related}
+
+\paragraph{End-to-end document understanding.}
+Generative document understanding has converged on encoder--decoder
+transformers that consume the page image and emit structured output.
+DONUT~\cite{kim2022donut} couples a Swin~\cite{liu2021swin} encoder
+with a BART~\cite{lewis2020bart} decoder; Pix2Struct~\cite{lee2023pix2struct}
+and Dessurt~\cite{davis2022dessurt} take similar approaches.  Each
+trades transparency of the field-assignment step for end-to-end
+optimisation.  Our DONUT arm follows the original SROIE recipe
+exactly~\cite{kim2022donut}.
+
+\paragraph{Modular detect-then-read pipelines.}
+The classic detect-then-read paradigm separates text-line detection
+(YOLOv8~\cite{jocher2023yolov8}, DBNet~\cite{liao2020dbnet},
+Tesseract~\cite{smith2007tesseract}) from text recognition
+(TrOCR~\cite{li2023trocr}, PaddleOCR~\cite{paddleocr}).  Field
+assignment historically falls to either a learned head
+(PICK~\cite{yu2020pick}) or a deterministic regex-and-spatial-rules
+component.  We evaluate the latter as the engineering reference.
+
+\paragraph{Receipt and form benchmarks.}
+SROIE~\cite{huang2019icdar} (626 receipts, 4 fields) is the standard
+single-vendor benchmark.  CORD~\cite{park2019cord} extends to Korean
+restaurant receipts with a richer schema; WildReceipt~\cite{sun2021wildreceipt}
+extends to in-the-wild imaging.  Form benchmarks adjacent to receipts
+include FUNSD~\cite{jaume2019funsd}, RVL-CDIP~\cite{harley2015rvlcdip},
+DocVQA~\cite{mathew2021docvqa}, and Kleister~\cite{stanislawek2021kleister}.
+We evaluate on canonical SROIE Task-3 only.
+
+\paragraph{Replication and methodology in document AI.}
+A growing literature documents the gap between published numbers
+and reproducible numbers in document AI.  Our 14-bug catalogue
+(Sec.~\ref{sec:bugs}) sits in this lineage as a per-bug-mechanism
+record of what silently breaks during reproduction of a published
+recipe.  The reproducibility methodology mirrors NeurIPS-2024
+checklist conventions.
+
+\paragraph{Carbon and energy reporting.}
+We report per-stage GPU energy (kWh) and CO\textsubscript{2}eq (kg)
+following Strubell et al.~\cite{strubell2019energy} as a routine
+methodological practice; emission accounting is not a contribution
+of this paper.

@@ -1,0 +1,68 @@
+\section{Introduction}
+\label{sec:intro}
+
+Document key-information extraction (KIE) systems trade three
+deployment-relevant resources: F1 accuracy, on-device memory
+footprint (MB), and inference latency (ms).  Recent work on
+structure-verified KIE~\cite{kim2022donut,huang2022layoutlmv3}
+attains higher F1 by adding upstream parameters: end-to-end DONUT
+holds $\sim$260\,M parameters at FP32 ($\sim$1\,044\,MB);
+LayoutLMv3-base holds $\sim$133\,M ($\sim$532\,MB).  Both exceed the
+memory footprint of deliberately-non-learned modular pipelines that
+sit at $\sim$67\,M parameters ($\sim$268\,MB) but report 4--6 F1
+points below the verified end-to-end systems.
+
+\paragraph{The crossover question.}  Can parameter-efficient
+compression --- int8 / int4
+quantization~\cite{frantar2023optq,dettmers2023qlora}, structured
+pruning~\cite{ma2023llmpruner}, half-depth
+distillation~\cite{hinton2015distilling} --- place a
+structurally-verified end-to-end system at the same memory
+footprint as the modular pipeline \emph{without} F1 collapse?
+
+We define \textbf{compression crossover} precisely:
+
+\begin{quote}
+\textit{A compression cell crosses iff
+ (effective-memory $\leq$ pipeline-baseline-MB) AND
+ (mean F1 across $n=5$ seeds $\geq$ pipeline-F1 $-$ bootstrap
+ CI half-width).}
+\end{quote}
+
+This binary criterion makes the empirical question falsifiable:
+each compression cell either crosses or does not; the paper
+records the outcome regardless of direction.
+
+\paragraph{The structural-verification advantage.}  The SVKIE
+verifier (FOCUS-$\Sigma$) is a rule-based bounded subset-sum DP, not
+a neural network.  It is therefore unaffected by quantization or
+pruning of the upstream backbone.  This decouples the verification
+guarantee from the compression target: the verifier provides a
+graceful-degradation mechanism when compression hurts the upstream
+candidate by allowing the system to fall back to the rule-based
+path.  We hypothesise that this regularisation effect is what makes
+crossover achievable.
+
+\paragraph{Contributions.}  This paper contributes:
+
+\begin{itemize}
+\item A formal definition of compression crossover for verified
+  document KIE that makes the empirical question falsifiable.
+\item A working repository (Pruna-OSS integration + Pareto-frontier
+  evaluation harness) that compresses the SVKIE upstream backbone
+  through a 6-cell sweep (int8, int4, structured-25\%,
+  structured-50\%, half-depth distillation, int8\,+\,prune-25\%).
+\item A theoretical argument for why the rule-based verifier acts as
+  a compression-aware regulariser: silently rejecting a degraded
+  candidate is preferable to silently committing the wrong value.
+\item Pareto plots of macro-F1 vs.\ on-device memory footprint
+  (MB) on canonical SROIE Task-3 and CORD-v2 \emph{(empirical
+  results pending; framed as future work)}.
+\end{itemize}
+
+\paragraph{Why memory footprint, not parameter count.}
+Quantization changes bytes-per-parameter, not parameter count.  An
+int8-quantized DONUT still has 260\,M parameters but occupies
+260\,MB rather than 1\,044\,MB.  Plotting parameter count for
+compressed models would be a category error; we plot effective
+memory footprint and report parameter count as a secondary column.

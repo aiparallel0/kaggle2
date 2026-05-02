@@ -1,0 +1,47 @@
+\section{Problem Statement}
+\label{sec:problem}
+
+We formalise document key-information extraction (KIE) as a
+constraint-satisfaction problem over multiple structural priors.
+A receipt is an image $I$ that decodes to a list of detected text
+lines $\mathcal{L} = \{\ell_1, \dots, \ell_N\}$ with bounding boxes
+$\{b_i\}$ and OCR strings $\{t_i\}$.  Field extraction returns a
+structured record
+$\hat{y} = (\hat{y}_{\textsf{company}}, \hat{y}_{\textsf{date}},
+\hat{y}_{\textsf{address}}, \hat{y}_{\textsf{total}})$
+constructed by a per-field assignment function
+$a_f: \mathcal{L} \to \Sigma^*$.
+
+Receipts are not arbitrary documents.  They obey five structural
+constraints simultaneously:
+
+\begin{itemize}
+\item \textbf{Arithmetic structure.}  The receipt-construction rule
+      $y_{\textsf{total}} = \sum_{i \in \mathcal{I}} v_i + \tau$
+      where $\mathcal{I}$ indexes item lines, $v_i$ are per-item
+      amounts, and $\tau$ is augmented tax (tax + service
+      $-$ discount).
+\item \textbf{Spatial structure.}  Lines partition vertically into
+      monotone zones $\textsf{header} \to \textsf{items} \to
+      \textsf{totals}$ that respect the printer's emission order.
+\item \textbf{Visual structure.}  Font weight, ink density, and
+      printed separators carry deterministic field-salience signals
+      independent of OCR.
+\item \textbf{Lexical structure.}  Per-field keyword anchors
+      (\textsf{TOTAL}, \textsf{SUBTOTAL}, \textsf{RM}, currency
+      symbols) are deterministic structural cues whenever OCR
+      preserves them.
+\item \textbf{Epistemic structure.}  Per-field uncertainty varies;
+      over-committing the wrong prior on a hard receipt is harmful.
+\end{itemize}
+
+Modern KIE systems exploit subsets of these priors implicitly
+through their architectural choices but rarely all five jointly.
+We propose a framework that encodes each prior as a separate
+module and unifies them through a verification layer.
+
+The metric is whitespace-token F1 averaged uniformly over the
+four-field schema, reported across $n=5$ random seeds with
+paired-bootstrap 95\,\% confidence intervals on $\Delta$F1 and
+McNemar's exact test on per-image correctness with
+Benjamini--Hochberg correction at $q=0.05$.

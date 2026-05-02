@@ -1,116 +1,152 @@
-# AGENTS.md — Agent Guide for kaggle2
+# AGENTS.md — kaggle2 two-tree repository
 
-Single source of truth for coding agents (Copilot coding agent, Codex, Cursor,
-Aider, Claude Code, etc.).
+The repository hosts **two independent papers** (`paper2/` and
+`paper3/`) plus shared infrastructure (`core/`, `data/`, top-level
+`models/`).  Coding agents working in this repository should pick the
+correct tree for the work they are doing and never cross paper
+boundaries unintentionally.
 
----
+## TL;DR for any agent opening this repo
 
-## TL;DR
+1. **Decide which paper your task belongs to.**  If your task is
+   about regex assignment, zone-prior HMM, the 14-bug catalogue, or
+   the IEEE Access replication study, you are in **paper2/**.  If
+   your task is about FOCUS-T cross-attention, FOCUS-Σ verification,
+   the GAT/CNN ensemble, the SVKIE multi-prior framework, or the
+   ICDAR-main submission, you are in **paper3/**.  If your task is
+   about DONUT/YOLO/TrOCR base trainers, dataset loaders, or RNG
+   seeding, you are in shared substrate (`core/`, `data/`, top-level
+   `models/`).
 
-- **≤166 LOC per file** in `core/`, `data/`, `models/`, `report/`, `stages/`,
-  `main.py`. Blank lines + docstrings count.
-- **2-in/1-out typed contracts**: every public function takes at most two args
-  (typed input + typed config), returns one typed value. Use `core/types.py`.
-- **`make check` is the test suite** (`mypy --strict` + `ruff` + import smoke).
-- **Never write to `results/`** (fixtures-only). All outputs go under
-  `runs/<run_id>/` via `core/runlayout.resolve_layout`.
-- **Small, surgical diffs.** The whole pipeline fits in a context window.
+2. **Never let one paper import from the other.**  `paper2/*` may not
+   `import paper3.*` and vice versa.  This is the bifurcation
+   contract; violating it makes the two papers indefensible at
+   submission time.
 
----
+3. **Never reintroduce shared LaTeX sections.**  The two papers have
+   disjoint section files (`paper2/report/sections/intro.tex`,
+   `paper3/report/sections/intro.tex`, etc.).  If a shared paragraph
+   needs to exist, it lives in two paper-specific copies, written
+   from scratch in each.
+
+4. **Each paper has its own config.**  `paper2/configs/default.json`
+   has all FOCUS-T / FOCUS-Σ / GAT flags set to False;
+   `paper3/configs/default.json` has them all set to True.  Never
+   mix.  Use the per-tree config loaders
+   (`paper2/config_paper2.py::load_paper2_config` and
+   `paper3/config_paper3.py::load_paper3_config`) which enforce the
+   correct flag invariants in code.
+
+5. **Each paper writes to its own runs directory.**  Paper 2 writes
+   to `paper2/runs/<id>/`; Paper 3 writes to `paper3/runs/<id>/`.
+   The `runs_legacy/` directory contains pre-bifurcation artefacts
+   and is read-only.
 
 ## Repo map
 
 ```
-core/         config schema, types (Receipt, Metrics, ExpConfig), errors,
-              shared metrics, seed, runlayout, manifest, env_snapshot
-data/         SROIE download, split (persisted to results/split.json), crops
-models/       donut_train, donut_eval, yolo_train, trocr_train, focus_train,
-              focus_inference, eval_pipeline, consensus, oracle, gen_config
-report/       LaTeX template injection, figure emitters, combine
-stages/       Orchestrator targets: train.py, eval.py, paper.py
-              Invoked via --stage train | eval | eval_rule_gtocr | paper | all
-tests/        pytest suite organized in focus/, data/, paper/ subdirs
-app/          FastAPI demo server (drag-and-drop UI)
-deploy/       systemd + nginx config for production
-main.py       CLI orchestrator
+core/         shared dataclasses (Receipt, Metrics, ExpConfig),
+              RNG seeding, manifest writer, base metrics, base config
+data/         shared SROIE downloader + dataset loaders + crops cache
+models/       shared base trainers: DONUT, YOLO, TrOCR + normalisers
+              + detect/oracle/miss-tracker (called by both papers)
+stages/       shared stage orchestrators (called by both papers'
+              main entry points; dispatch by config flags)
+paper2/       Paper 2 — IEEE Access replication study
+              ├── config_paper2.py    Paper 2 config loader
+              ├── main_paper2.py      Paper 2 entry point
+              ├── configs/            Paper 2 config presets
+              ├── models/             Paper 2-specific code
+              │     (rule_*_paper2, zone_prior_paper2,
+              │      postprocess_*_paper2, total_post_paper2,
+              │      date_post_paper2)
+              ├── stages/             Paper 2-specific orchestrators (deferred)
+              ├── report/
+              │   ├── template_paper2.tex
+              │   ├── references.bib
+              │   └── sections/       13 disjoint LaTeX sections
+              ├── tests/              Paper 2 tests
+              ├── results/            Paper 2 fixtures
+              ├── docs/               Paper 2 docs
+              └── runs/               Paper 2 runs
+paper3/       Paper 3 — ICDAR main: SVKIE framework
+              ├── config_paper3.py    Paper 3 config loader
+              ├── main_paper3.py      Paper 3 entry point
+              ├── configs/            Paper 3 config presets
+              ├── models/             Paper 3-specific code
+              │     (focus_*_paper3, total_arithmetic_paper3,
+              │      consensus_paper3, corrections_paper3,
+              │      attention_faithfulness_paper3,
+              │      layoutlmv3_eval_paper3, etc.)
+              ├── stages/             Paper 3-specific orchestrators (deferred)
+              ├── report/
+              │   ├── template_paper3.tex
+              │   ├── references.bib
+              │   ├── wrapper_delta_paper3.py
+              │   ├── paper_f1_gap_paper3.py
+              │   └── sections/       14 disjoint LaTeX sections
+              │                       (incl. svkie_theory.tex,
+              │                        figure_architecture.tex)
+              ├── tests/              Paper 3 tests
+              ├── results/            Paper 3 fixtures
+              ├── docs/               Paper 3 docs
+              └── runs/               Paper 3 runs
+runs_legacy/  pre-bifurcation runs, read-only
+app/          FastAPI demo (paper-neutral, deployed at image-to-text.fit)
+deploy/       nginx + systemd config (paper-neutral)
 ```
-
----
 
 ## Hard invariants
 
-1. **Per-file LOC cap.** ≤166 lines in `core/`, `data/`, `models/`, `report/`,
-   `stages/`, `main.py`.
+1. **Disjoint imports.**  No `paper2.*` import inside `paper3/*`
+   files; no `paper3.*` import inside `paper2/*` files.
+2. **Disjoint LaTeX.**  No `\input{paper3/...}` inside
+   `paper2/report/template_paper2.tex` and vice versa.
+3. **Disjoint runs.**  Each paper writes only under its own
+   `runs/<id>/` subtree.
+4. **`runs_legacy/` is read-only.**  Never write new artefacts there.
+5. **Shared substrate stays paper-neutral.**  `core/`, `data/`, and
+   the top-level `models/donut_*`, `models/yolo_*`, `models/trocr_*`,
+   `models/normalize*`, `models/gen_config`, `models/miss_tracker`,
+   `models/oracle`, `models/detect` files do not reference Paper 2 or
+   Paper 3 by name in their docstrings or comments.
 
-2. **2-in/1-out contracts.** Every public function takes ≤2 args (typed input +
-   typed config) and returns one typed value. Use `core/types.py` types.
+## What is currently deferred
 
-3. **mypy-as-test.** `make check` runs `mypy --strict`. A type error is a build
-   failure. Don't add `# type: ignore` without a one-line justification.
+Per the post-bifurcation status in `README.md`:
 
-4. **`results/` is fixtures-only.** All outputs go to `runs/<run_id>/` via
-   `core/runlayout.resolve_layout`. Never hard-code paths under `runs/`.
+- Top-level `models/eval_pipeline.py` and `stages/{train,eval,paper}.py`
+  still dispatch by config flags (FOCUS on/off) rather than living in
+  per-paper trees.  They should be split into
+  `paper2/models/eval_pipeline_paper2.py` /
+  `paper3/models/eval_pipeline_paper3.py` and similarly for stages.
+- Tests are not yet split into `paper2/tests/` and `paper3/tests/`.
+- `make check` does not currently pass post-bifurcation because the
+  moved paper-specific files retain imports from their pre-move paths.
 
-5. **Every Bug-N guard in `docs/bugs.md` must still fire.** Do not remove or
-   relax guards; reroute when callers are renamed.
+These are mechanical fixes scheduled for the next refactor session.
 
-6. **Reproducibility.** Call `core.seed.seed_everything(config.seed)` at every
-   entrypoint. DataLoaders must use seeded `worker_init_fn` + `torch.Generator`.
-
-7. **Split persistence.** 500/63/63 split is persisted to `results/split.json`.
-   Never regenerate during eval.
-
-8. **No silent placeholders.** Every `\VAR{}` key must have a producer listed in
-   `docs/TRACKING.md`.
-
----
-
-## How to verify a change
+## Verifying a change
 
 ```bash
-make check    # ruff + mypy --strict + import smoke (≤60 s, no GPU)
-make test     # pytest: split persistence, metrics, configs (no GPU)
-python main.py --stage eval_rule_gtocr   # CPU-only F1 smoke, no HF Hub
-make all      # full train + eval + paper; GPU required (≈75 min on RTX 4090)
+# Paper 2 paper compile (will work once stages are split):
+python paper2/main_paper2.py --stage paper
+
+# Paper 3 paper compile (will work once stages are split):
+python paper3/main_paper3.py --stage paper
+
+# Shared substrate sanity (current top-level make check; broken
+# post-bifurcation, fix queued):
+make check
 ```
-
-- **`make check` and `make test` required before any PR.**
-- **`make all` only for F1-affecting changes** (trainer, config, eval, pipeline).
-
----
-
-## Editing guidance
-
-- **Small, surgical diffs.** No large refactors that don't change behaviour.
-- **Trainer ↔ eval parity.** Update matching eval when modifying a trainer.
-- **Config changes need 3 touch-points:** `configs/default.json`, `core/config.py`,
-  `README.md` Configuration table.
-- **New metrics need 4 touch-points:** producer, aggregator, `\VAR{}` template,
-  `docs/TRACKING.md`.
-- **New dependencies:** add to `requirements.txt` AND `pyproject.toml`.
-
----
 
 ## What agents should NOT do
 
-- Add new top-level directories.
-- Split a module "for readability" if under 166 LOC.
-- Add ML framework abstractions (trainer wrappers, config frameworks).
-- Commit anything under `runs/`, `data/sroie_cache/`, or weights.
-- Modify `results/bug_timeline.json`.
-- Introduce unresolved `\VAR{}` keys.
-
----
-
-## Where to look first
-
-| Path | Purpose |
-|---|---|
-| `main.py` | CLI orchestrator |
-| `core/config.py` | Config schema, validation, guards |
-| `core/types.py` | Typed dataclasses |
-| `stages/train.py` | Training orchestration |
-| `stages/eval.py` | Evaluation, McNemar test |
-| `models/donut_train.py` | DONUT fine-tuning; Bug guards |
-| `models/consensus.py` | Inference-side strategies |
-| `docs/TRACKING.md` | Metric producer matrix |
+- Add new files at the top level outside `core/`, `data/`, top-level
+  `models/`, `stages/`, `app/`, `deploy/`, `docs/`, `scripts/`, `tests/`.
+- Cross-import between `paper2/` and `paper3/`.
+- Reintroduce shared LaTeX sections under `paper2/report/sections/` or
+  `paper3/report/sections/`.
+- Modify files under `runs_legacy/`.
+- Reintroduce the deleted top-level `report/` directory or
+  `paper_fixed.tex`.

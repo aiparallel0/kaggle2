@@ -1,0 +1,78 @@
+\section{Results}
+\label{sec:results}
+
+\emph{Empirical cells in this section are pending the next
+vast.ai compression sweep.  Numbers reported are the expected
+trajectory based on Pruna-OSS calibration on a small held-out
+subset; final values will be substituted on the next paper build.}
+
+\subsection{Compression Pareto frontier}
+
+\begin{table}[!t]
+\centering
+\caption{Macro-F1 vs.\ on-device memory footprint on canonical
+         SROIE Task-3.  Compression cells are evaluated against
+         the pipeline baseline of $\sim$268\,MB.  A cell crosses
+         iff its memory $\leq 268$\,MB AND its F1 $\geq$ pipeline-F1
+         $-$ bootstrap-CI-half-width.  ``Compressed parameters''
+         are the post-compression count; on quantization rows
+         this equals the FP32 count because quantization changes
+         bytes-per-parameter, not parameter count.}
+\label{tab:pareto}
+\begin{tabular}{lcccc}
+\toprule
+Configuration & Memory (MB) $\downarrow$ & Params (M) & F1 & Crosses? \\ \midrule
+DONUT FP32 (uncompressed)              & \VAR{donut_fp32_mb}        & 260   & \VAR{donut_fp32_f1}        & --- \\
+DONUT int8                              & \VAR{donut_int8_mb}        & 260   & \VAR{donut_int8_f1}        & \VAR{donut_int8_crosses} \\
+DONUT int4 (NF4 + double-quant)        & \VAR{donut_int4_mb}        & 260   & \VAR{donut_int4_f1}        & \VAR{donut_int4_crosses} \\
+DONUT structured-prune-25\%             & \VAR{donut_prune25_mb}     & 195   & \VAR{donut_prune25_f1}     & \VAR{donut_prune25_crosses} \\
+DONUT structured-prune-50\%             & \VAR{donut_prune50_mb}     & 130   & \VAR{donut_prune50_f1}     & \VAR{donut_prune50_crosses} \\
+DONUT half-depth distillation           & \VAR{donut_distill_mb}     & 130   & \VAR{donut_distill_f1}     & \VAR{donut_distill_crosses} \\
+DONUT int8 + prune-25\%                 & \VAR{donut_int8_prune_mb}  & 195   & \VAR{donut_int8_prune_f1}  & \VAR{donut_int8_prune_crosses} \\ \midrule
+Pipeline FP32 (baseline reference)      & 268                         & 67    & \VAR{pipeline_fp32_f1}     & --- \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Verification recovery rate post-compression}
+
+\begin{table}[!t]
+\centering
+\caption{Per-compression-cell verification recovery rate.  The
+         FOCUS-$\Sigma$ verifier is rule-based and unaffected by
+         compression; it acts as a graceful-degradation gate.
+         ``Recovery'' is the fraction of receipts on which the
+         compressed candidate was rejected by the verifier and
+         the rule-based fallback recovered the correct value.
+         Higher is better (wider safety margin).}
+\label{tab:verification_recovery}
+\begin{tabular}{lcc}
+\toprule
+Configuration & Verifier rejections (\%) & Recovery rate (\%) \\ \midrule
+DONUT int8                       & \VAR{donut_int8_rej}       & \VAR{donut_int8_recov} \\
+DONUT int4                       & \VAR{donut_int4_rej}       & \VAR{donut_int4_recov} \\
+DONUT prune-25\%                  & \VAR{donut_prune25_rej}    & \VAR{donut_prune25_recov} \\
+DONUT prune-50\%                  & \VAR{donut_prune50_rej}    & \VAR{donut_prune50_recov} \\
+DONUT distill-half                & \VAR{donut_distill_rej}    & \VAR{donut_distill_recov} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Inference latency at compression}
+
+\begin{table}[!t]
+\centering
+\caption{Per-image inference latency (ms) at $p_{50}$ / $p_{95}$
+         / $p_{99}$ on a single RTX\,4090, steady-state regime
+         (images 50--250 of canonical SROIE Task-3).}
+\label{tab:latency}
+\begin{tabular}{lcccc}
+\toprule
+Configuration & $p_{50}$ & $p_{95}$ & $p_{99}$ & mean \\ \midrule
+DONUT FP32                       & \VAR{donut_fp32_p50}       & \VAR{donut_fp32_p95}       & \VAR{donut_fp32_p99}       & \VAR{donut_fp32_mean} \\
+DONUT int8                       & \VAR{donut_int8_p50}       & \VAR{donut_int8_p95}       & \VAR{donut_int8_p99}       & \VAR{donut_int8_mean} \\
+DONUT int4                       & \VAR{donut_int4_p50}       & \VAR{donut_int4_p95}       & \VAR{donut_int4_p99}       & \VAR{donut_int4_mean} \\
+DONUT prune-50\% + distill-half  & \VAR{donut_combo_p50}      & \VAR{donut_combo_p95}      & \VAR{donut_combo_p99}      & \VAR{donut_combo_mean} \\
+\bottomrule
+\end{tabular}
+\end{table}

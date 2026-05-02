@@ -1,0 +1,30 @@
+\section{Problem Statement}
+\label{sec:problem}
+
+Receipt key-information extraction (KIE) takes a scanned receipt
+image $I$ and returns a structured record
+$\hat{y} = (\hat{y}_{\textsf{company}}, \hat{y}_{\textsf{date}},
+\hat{y}_{\textsf{address}}, \hat{y}_{\textsf{total}})$ of four
+free-text field values.  We evaluate against the canonical
+ICDAR-2019 SROIE Task-3 test split~\cite{huang2019icdar} of $n=347$
+Malaysian retail receipts.
+
+The two classes of system we compare differ in how the field
+assignment is made.  An end-to-end model
+(DONUT~\cite{kim2022donut}) decodes the structured output
+autoregressively from the image; a modular pipeline
+($\textsf{detect} \to \textsf{read} \to \textsf{assign}$) detects
+text-line bounding boxes (YOLOv8~\cite{jocher2023yolov8}), reads each
+line (TrOCR~\cite{li2023trocr}), and assigns lines to fields by
+deterministic regular expressions plus a small generative segmentation
+prior over the receipt's vertical structure.
+
+The metric is whitespace-token F1 averaged uniformly over the four
+fields ($F_1^{\text{macro}}$), reported alongside Normalised Edit
+Distance (NED) and strict Exact Match (EM).  Statistical uncertainty
+is quantified by paired-bootstrap 95\,\% confidence intervals over
+per-image correctness vectors and McNemar's exact test on per-image
+all-fields-correct outcomes.  All inputs are normalised through the
+symmetric per-field map of \texttt{models/normalize\_bundle.py} so the
+two arms see the same canonical form for each prediction and ground-
+truth pair.
