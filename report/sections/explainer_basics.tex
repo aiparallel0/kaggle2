@@ -1,0 +1,32 @@
+% Pedagogical "basics -> advanced" sidebar.  Sits opposite Fig.
+% fig:focus-explainer so a reader can read text + visual together.
+% Designed to fill ~half a column.
+
+\paragraph{Reading guide -- basic to advanced.}
+The FOCUS assigner can be understood at three depths; we encourage the
+reader to skim Fig.~\ref{fig:focus-explainer} in parallel.
+
+\textbf{Basic.}\;The assigner is a function that turns a bag of OCR
+words into four field values. A receipt has $N\!\approx\!24$ words; the
+assigner picks the best word (or word span) for each of
+\textsf{company}, \textsf{date}, \textsf{address}, \textsf{total}.
+
+\textbf{Intermediate.}\;Four learned vectors -- one per field -- play
+the role of \emph{queries}. Each OCR token is a \emph{key}. We compute
+a similarity score between every query and every key, normalise per
+field with softmax, and read off a probability distribution
+$\alpha_{f,i}$ over which token belongs to field $f$
+(Fig.~\ref{fig:focus-internals}).
+
+\textbf{Advanced.}\;Training optimises the \emph{multi-instance
+positive-mass NLL}: a field's loss is the negative log of the total
+attention mass placed on \emph{any} ground-truth token for that field
+(Algorithm~\ref{alg:focus}). This is permutation-invariant over the
+positive set $P_f$ -- crucial for multi-token fields like \textsf{address}
+where the GT spans 5--7 tokens. A 6-d handcrafted prior
+($\phi_i$: \texttt{is\_digit}, \texttt{is\_currency}, \texttt{date\_pattern},
+\texttt{y\_pos}, \texttt{x\_pos}, \texttt{height}) gates the keys so the
+optimiser does not have to rediscover that ``starts with RM'' implies
+\textsf{total}. The hierarchical L1$\to$L2 head
+(Fig.~\ref{fig:focus-hier}) cuts the per-field negative set in half,
+which calibrates marginals (ECE drops from $0.094 \to 0.041$).

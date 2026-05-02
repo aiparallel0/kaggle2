@@ -1,0 +1,168 @@
+% TikZ algorithmic diagrams for the FOCUS assigner paper.
+% This file is included by paper_visual.tex; figures are sized for
+% IEEEtran two-column layout (column width = 3.5in).
+%
+% Required tikzlibraries: arrows.meta, positioning, fit, backgrounds,
+% shapes.geometric, calc, decorations.pathreplacing.
+
+% ---------------------------------------------------------------------------
+% Diagram 1 - FOCUS pipeline overview (image -> detect -> read -> assign).
+% ---------------------------------------------------------------------------
+\begin{figure*}[t]
+\centering
+\begin{tikzpicture}[
+  font=\footnotesize,
+  every node/.style={align=center},
+  stage/.style={draw,rounded corners=2pt,minimum width=1.7cm,
+                minimum height=0.9cm,fill=blue!8,line width=0.4pt},
+  hot/.style={draw,rounded corners=2pt,minimum width=1.7cm,
+              minimum height=0.9cm,fill=orange!25,line width=0.6pt},
+  art/.style={draw,dashed,rounded corners=2pt,minimum width=1.5cm,
+              minimum height=0.55cm,fill=gray!8,font=\scriptsize},
+  arr/.style={-Stealth,thick}
+]
+% --- top row: stages ---
+\node[stage] (img)   {Receipt\\image};
+\node[stage,right=0.5cm of img] (yolo)   {YOLOv8\\detector};
+\node[stage,right=0.5cm of yolo] (crop)  {Crop\\$N{=}24$ lines};
+\node[stage,right=0.5cm of crop] (trocr) {TrOCR\\read each crop};
+\node[hot,  right=0.5cm of trocr] (asg)  {\textbf{FOCUS}\\assigner};
+\node[stage,right=0.5cm of asg]   (out)  {4 field\\values};
+\foreach \a/\b in {img/yolo,yolo/crop,crop/trocr,trocr/asg,asg/out}
+  \draw[arr] (\a) -- (\b);
+% --- bottom row: artefacts under each stage ---
+\node[art, below=0.6cm of yolo]  (a1) {bbox $\times N$};
+\node[art, below=0.6cm of trocr] (a2) {token $t_i$\\bbox $b_i$};
+\node[art, below=0.6cm of asg]   (a3) {$\alpha_{f,i}\!\in\![0,1]$};
+\node[art, below=0.6cm of out]   (a4) {company,\\date,\\address,\\total};
+\draw[arr,gray] (yolo) -- (a1);
+\draw[arr,gray] (trocr) -- (a2);
+\draw[arr,gray] (asg)  -- (a3);
+\draw[arr,gray] (out)  -- (a4);
+% --- annotations ---
+\node[above=0.08cm of yolo,font=\scriptsize\itshape] {detect};
+\node[above=0.08cm of trocr,font=\scriptsize\itshape] {read};
+\node[above=0.08cm of asg,font=\scriptsize\itshape\bfseries] {assign (this paper)};
+\end{tikzpicture}
+\caption{The FOCUS pipeline. A receipt is decomposed into stages with
+inspectable artefacts (dashed). The bold \textbf{assigner} block is the
+contribution of this paper: a $\approx$400\,K-parameter cross-attention
+module that maps OCR tokens to four field values.}
+\label{fig:focus-pipeline}
+\end{figure*}
+
+% ---------------------------------------------------------------------------
+% Diagram 2 - FOCUS assigner internals (cross-attention with priors).
+% ---------------------------------------------------------------------------
+\begin{figure}[t]
+\centering
+\begin{tikzpicture}[
+  font=\footnotesize,
+  every node/.style={align=center},
+  q/.style={draw,rounded corners=2pt,fill=orange!25,minimum width=1.0cm,
+            minimum height=0.45cm,font=\scriptsize},
+  k/.style={draw,rounded corners=2pt,fill=blue!10,minimum width=0.95cm,
+            minimum height=0.45cm,font=\scriptsize},
+  proj/.style={draw,rounded corners=2pt,fill=gray!12,minimum width=1.6cm,
+               minimum height=0.55cm},
+  arr/.style={-Stealth,thin}
+]
+% Token + bbox + prior inputs.
+\node[k] (t1) {$t_1$ KFC};
+\node[k,below=0.06cm of t1] (t2) {$t_2$ JALAN};
+\node[k,below=0.06cm of t2] (t3) {$t_3$ 23/05};
+\node[k,below=0.06cm of t3] (t4) {$t_4$ RM12};
+\node[fit=(t1)(t4),draw,dashed,inner sep=2pt,label=above:{OCR tokens}] (toks) {};
+
+% Priors phi (6-d hand features).
+\node[proj,right=0.4cm of toks,fill=green!10] (phi) {$\phi_i\!\in\!\mathbb{R}^6$\\(text priors)};
+
+% Key projection.
+\node[proj,right=0.4cm of phi] (key) {$k_i = W_k[t_i;\phi_i]$};
+
+% Field queries.
+\node[q,above=0.5cm of key,xshift=2.0cm] (q1) {$q_{\text{co}}$};
+\node[q,right=0.05cm of q1]              (q2) {$q_{\text{dt}}$};
+\node[q,right=0.05cm of q2]              (q3) {$q_{\text{ad}}$};
+\node[q,right=0.05cm of q3]              (q4) {$q_{\text{tot}}$};
+\node[fit=(q1)(q4),draw,dashed,inner sep=2pt,
+      label=above:{4 learned field queries}] (qs) {};
+
+% Attention block.
+\node[proj,right=0.4cm of key,fill=orange!12,minimum width=2.6cm]
+     (att) {softmax$_i\,q_f^{\top}W k_i/\sqrt{d}$\\$=\alpha_{f,i}$};
+
+% Output.
+\node[proj,right=0.4cm of att,fill=red!10,minimum width=1.8cm]
+     (out) {field $f$\\$=\,t_{\arg\max_i\alpha_{f,i}}$};
+
+\draw[arr] (toks) -- (phi);
+\draw[arr] (phi)  -- (key);
+\draw[arr] (key)  -- (att);
+\draw[arr] (qs.south) -- ++(0,-0.2) -| (att.north);
+\draw[arr] (att)  -- (out);
+\node[below=0.05cm of att,font=\scriptsize]
+  {$\mathcal{L}_{pos} = -\log\!\sum_{i\in P_f}\alpha_{f,i}$};
+\end{tikzpicture}
+\caption{FOCUS assigner internals. Four learned field queries cross-attend
+over OCR keys augmented with handcrafted text priors ($\phi_i$: \texttt{is\_digit},
+\texttt{is\_currency}, \texttt{date\_pattern}, \texttt{y\_pos}, \texttt{x\_pos},
+\texttt{height}). Training uses the multi-instance positive-mass NLL.}
+\label{fig:focus-internals}
+\end{figure}
+
+% ---------------------------------------------------------------------------
+% Diagram 3 - Hierarchical L1 (category) -> L2 (field) routing.
+% ---------------------------------------------------------------------------
+\begin{figure}[t]
+\centering
+\begin{tikzpicture}[
+  font=\footnotesize,
+  l1/.style={draw,rounded corners=2pt,fill=blue!10,minimum width=2.0cm,
+             minimum height=0.6cm},
+  l2/.style={draw,rounded corners=2pt,fill=orange!18,minimum width=1.4cm,
+             minimum height=0.55cm,font=\scriptsize},
+  arr/.style={-Stealth,thin}
+]
+\node[l1] (root) {OCR token $t_i$};
+\node[l1,below left=0.7cm and 0.3cm of root,fill=green!12] (txt)  {category: \emph{text}};
+\node[l1,below right=0.7cm and 0.3cm of root,fill=red!10]   (num)  {category: \emph{numeric}};
+\node[l2,below=0.55cm of txt,xshift=-0.7cm]  (co) {company};
+\node[l2,below=0.55cm of txt,xshift=0.7cm]   (ad) {address};
+\node[l2,below=0.55cm of num,xshift=-0.7cm]  (dt) {date};
+\node[l2,below=0.55cm of num,xshift=0.7cm]   (tot){total};
+\draw[arr] (root) -- node[above left,font=\scriptsize]{$\pi_{L1}$} (txt);
+\draw[arr] (root) -- node[above right,font=\scriptsize]{$\pi_{L1}$} (num);
+\draw[arr] (txt)  -- (co);
+\draw[arr] (txt)  -- (ad);
+\draw[arr] (num)  -- (dt);
+\draw[arr] (num)  -- (tot);
+\node[right=0.4cm of root,font=\scriptsize\itshape,align=left]
+  {Acc$_{L1}\!=\!0.96$\\Acc$_{L2}\!=\!0.79$\\Joint $=$ Acc$_{L1}\!\cdot\!$Acc$_{L2|L1}$};
+\end{tikzpicture}
+\caption{Hierarchical assignment. The L1 head routes a token to a category
+(\emph{text} vs.\ \emph{numeric}); the L2 head picks the field within the
+category. The structure cuts the negative-class set by $2\times$ and yields
+calibrated marginals (Section~\ref{sec:assigner}).}
+\label{fig:focus-hier}
+\end{figure}
+
+% ---------------------------------------------------------------------------
+% Diagram 4 - Training algorithm (algorithmic environment).
+% ---------------------------------------------------------------------------
+\begin{algorithm}[t]
+\caption{FOCUS assigner training step}\label{alg:focus}
+\begin{algorithmic}[1]
+\Require receipt $R$ with OCR tokens $\{(t_i, b_i)\}_{i=1}^N$,
+         priors $\{\phi_i\}$, GT field set $\{(f, P_f)\}$
+\State $k_i \gets W_k\,[\,t_i\,;\,\phi_i\,]$ \Comment{key projection}
+\For{each field $f \in \{$company, date, address, total$\}$}
+  \State $\alpha_{f,i} \gets \mathrm{softmax}_i\!\bigl(q_f^{\!\top} W\,k_i / \sqrt{d}\bigr)$
+  \State $\mathcal{L}_f \gets -\log \sum_{i \in P_f} \alpha_{f,i}$
+   \Comment{multi-instance pos-mass NLL}
+\EndFor
+\State $\mathcal{L} \gets \tfrac{1}{4}\sum_f \mathcal{L}_f
+       + \lambda \cdot \mathrm{KL}\!\bigl(\pi_{L1}\,\|\,\mathrm{prior}\bigr)$
+\State backprop $\nabla \mathcal{L}$; update $\{q_f, W_k, W\}$ via AdamW
+\end{algorithmic}
+\end{algorithm}

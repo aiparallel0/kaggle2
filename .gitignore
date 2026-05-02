@@ -60,3 +60,6 @@ report/paper_filled.blg
 # OS
 .DS_Store
 Thumbs.db
+
+# Visual-first paper build artefacts (zips are regenerated from sources)
+paper_zip_build/
