@@ -15,8 +15,6 @@ import json
 from collections.abc import Callable
 from pathlib import Path
 
-from models.rule_regex import rule_based_assign
-
 from core.metrics import compute_metrics
 from core.types import EvalBundle, ExpConfig, Field, Metrics, Prediction, Receipt
 from data.sroie_crops import _parse_box_file
@@ -26,6 +24,7 @@ from models.normalize import (
     normalize_company,
     normalize_date,
 )
+from models.rule_regex import rule_based_assign
 
 
 def _receipt_to_regions(

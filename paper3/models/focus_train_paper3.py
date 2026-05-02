@@ -26,6 +26,7 @@ import re
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
+from core.types import AssignerData, ExpConfig
 from models.assigner_loss import (
     composite_field_loss,
     field_distractor_mask,
@@ -48,8 +49,6 @@ from models.focus_teacher import (
     hard_negatives,
     teacher_distribution,
 )
-
-from core.types import AssignerData, ExpConfig
 from models.oracle import _best_span
 
 _import_error: ImportError | None = None

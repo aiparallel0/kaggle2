@@ -50,7 +50,7 @@ def _load_pipeline_f1(run_dir: Path) -> float | None:
             log.warning("paper_f1_gap: cannot read %s (%s).", path, exc)
             continue
         v = data.get("pipeline_f1")
-        if isinstance(v, (int, float)):
+        if isinstance(v, int | float):
             return float(v)
     return None
 

@@ -18,6 +18,12 @@ from __future__ import annotations
 import math
 import re
 
+from models.normalize import (
+    normalize_address,
+    normalize_company,
+    normalize_date,
+    normalize_total_value,
+)
 from models.rule_fields import (
     _SUBTOTAL_KW_RE,
     _is_short_junk,
@@ -51,13 +57,6 @@ from models.total_arithmetic import (
     _identity_sub_tax,
     subset_sum_target_cents,
     total_arithmetic_consensus,
-)
-
-from models.normalize import (
-    normalize_address,
-    normalize_company,
-    normalize_date,
-    normalize_total_value,
 )
 
 _CURRENCY_PREFIX_RE = re.compile(r"^(RM|USD|SGD|MYR|\$)\s*", re.IGNORECASE)

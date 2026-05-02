@@ -14,6 +14,10 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from PIL import Image
+
+from core.errors import TrainError
+from core.types import AssignerData, Crop
 from models.focus_inference import (
     N_TEXT_PRIORS,
     N_TEXT_PRIORS_V2,
@@ -26,10 +30,6 @@ from models.focus_inference import (
     text_priors_v4,
 )
 from models.focus_priors import _MONEY_RE, _parse_money
-from PIL import Image
-
-from core.errors import TrainError
-from core.types import AssignerData, Crop
 
 # Fraction of prepared receipts reserved for validation. 10 % is standard and
 # leaves enough training signal for a ~50k-param model on O(500) receipts.

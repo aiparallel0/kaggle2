@@ -21,10 +21,9 @@ from __future__ import annotations
 
 from typing import Any
 
-from models.retrieval_bank import RetrievalBank, retrieve
-
 from core.types import ExpConfig, Receipt
 from models.donut_dataset import _build_label, _SROIEDataset
+from models.retrieval_bank import RetrievalBank, retrieve
 
 _RAG_OPEN, _RAG_CLOSE = "<retrieved>", "</retrieved>"
 

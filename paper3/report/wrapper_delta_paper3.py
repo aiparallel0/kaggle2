@@ -75,10 +75,10 @@ def _merge_flat_sidecar(
     for key, value in data.items():
         if key == "schema_version":
             continue
-        if isinstance(value, (str, int, float, bool)):
+        if isinstance(value, str | int | float | bool):
             metrics.setdefault(key, value)
         elif isinstance(value, list) and len(value) == 2 and all(
-            isinstance(v, (int, float)) for v in value
+            isinstance(v, int | float) for v in value
         ):
             metrics.setdefault(
                 key, f"[{float(value[0]):.4f}, {float(value[1]):.4f}]",
@@ -117,7 +117,7 @@ def _heal_baseline_from_headline(metrics: dict[str, object]) -> None:
     stay distinguishable.
     """
     bare = metrics.get("pipeline_f1_total")
-    if isinstance(bare, (int, float)):
+    if isinstance(bare, int | float):
         metrics.setdefault("pipeline_f1_total_baseline", float(bare))
 
 

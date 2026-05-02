@@ -20,6 +20,7 @@ import re
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
+from core.types import ZoneConfig
 from models.consensus import (
     _is_addr_boundary as _consensus_is_addr_boundary,
 )
@@ -56,8 +57,6 @@ from models.rule_regex import DATE_RE, MONEY_RE, repair_money_ocr
 from models.total_arithmetic import total_arithmetic_consensus
 from models.total_post import apply_zone_gate, extract_total_value
 from models.zone_prior import decode_zone_posterior
-
-from core.types import ZoneConfig
 
 try:
     import torch
