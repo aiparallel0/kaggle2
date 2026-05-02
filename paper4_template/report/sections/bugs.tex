@@ -1,0 +1,79 @@
+\section{Implementation-Failure Atlas}
+\label{sec:bugs}
+
+The SVKIE framework is built on top of a multi-stage pipeline whose
+implementation surface admits a number of silent failure modes.  We
+catalogue sixteen pitfalls encountered during framework development;
+each is annotated with mechanism and a source-level guard.  All
+guards are regression-tested in \texttt{paper3/tests/}.  Bugs 1--14
+are upstream pipeline failures (DONUT / YOLO / TrOCR training and
+inference); Bugs 15, 16 are framework-specific failures introduced
+by the multi-prior ensemble and the FOCUS-$\Sigma$ verifier
+respectively.
+
+\begin{itemize}
+\item \textbf{Bug 1 --- \texttt{lm\_head} weight-tying drift.}  Adding
+      special tokens before resizing causes \texttt{safetensors}
+      deduplication; lm\_head points at stale rows.  Guard:
+      \texttt{tie\_word\_embeddings=False} + tensor clone.
+
+\item \textbf{Bug 2 --- decoder start-token list-vs-string form.}
+      Single-string input to \texttt{convert\_tokens\_to\_ids}
+      collapses generation.  Guard: list-form conversion + assert.
+
+\item \textbf{Bug 3 --- decoder kwargs leak.}  Inference kwargs
+      override trained settings.  Guard: explicit whitelist.
+
+\item \textbf{Bug 4 --- fp16 overflow without grad-clip.}  bf16
+      fallback to fp16 NaN-cascades without
+      \texttt{max\_grad\_norm}.  Guard: precision auto-detect +
+      grad-clip enforcement.
+
+\item \textbf{Bug 5 --- YOLO image-size train/inference mismatch.}
+      Default 640 inference vs 1024 training degrades mAP.  Guard:
+      parity assertion in \texttt{pipeline\_meta.json}.
+
+\item \textbf{Bug 6 --- TrOCR underfit on $<$5 epochs.}  Guard:
+      config-loader floor at 5.
+
+\item \textbf{Bug 7 --- split non-persistence.}  Guard:
+      \texttt{results/split.json} reload.
+
+\item \textbf{Bug 8 --- duplicated decoder-prefix tag.}  Guard: drop
+      leading tag from labels.
+
+\item \textbf{Bug 9 --- stale \texttt{generation\_config} after
+      fine-tune.}  Guard: explicit persistence hook.
+
+\item \textbf{Bug 10 --- weight-tie drift assertion.}  Guard:
+      assert distinct \texttt{data\_ptr}.
+
+\item \textbf{Bug 11 --- transformers $\geq$4.48 kwargs leak.}
+      Guard: \texttt{accepts\_loss\_kwargs=False}.
+
+\item \textbf{Bug 12 --- inference-time \texttt{do\_sample=True}.}
+      Guard: explicit greedy.
+
+\item \textbf{Bug 13 --- \texttt{warmup\_steps} silently overrides
+      \texttt{warmup\_ratio}.}  Guard: explicit zeroing.
+
+\item \textbf{Bug 14 --- regex word-boundary on Bahasa keywords.}
+      Guard: extended regex bank.
+
+\item \textbf{Bug 15 --- assigner head trained but not on dispatch
+      path.}  A trained FOCUS-T head shipped in
+      \texttt{assigner.pt} can fail to be invoked at inference for an
+      entire release cycle if the dispatch test does not exist.
+      Guard: integration test that every learned head registered in
+      \texttt{\_architecture\_config} appears on the dispatch path of
+      \texttt{\_assign\_learned\_with\_attn}.
+
+\item \textbf{Bug 16 --- contrastive top-K repulsion misfires under
+      empty assigner outputs.}  When the assigner returns no
+      candidates the CTKR loss contains a division by zero.  Guard:
+      empty-batch skip + log.
+\end{itemize}
+
+The full per-bug $\Delta$F1 atlas is in
+\texttt{paper3/results/bug\_atlas.json}; each row carries a measured
+or mechanistically-bounded F1 delta with paired-bootstrap CI.

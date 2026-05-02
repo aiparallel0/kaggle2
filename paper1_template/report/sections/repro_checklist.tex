@@ -1,0 +1,42 @@
+% IEEE Access reproducibility checklist for Paper 2.
+% Each item is answered concretely against the released artefacts.
+
+\begin{enumerate}
+\item \textbf{Code availability.}  Code is released under the licence
+in the repository's \texttt{LICENSE} file.  The Paper 2 system is
+self-contained under \texttt{paper2/} in the project repository.
+
+\item \textbf{Data availability.}  The SROIE Task-3 benchmark is
+released under the ICDAR-2019 Task-3 competition policy.
+\texttt{data/sroie\_canonical.py} fetches it from the canonical
+source \texttt{rrc.cvc.uab.es} on first run with sha256 verification;
+\texttt{data/sroie\_hf.py} provides a HuggingFace mirror as fallback.
+
+\item \textbf{Hyperparameters.}  Every training-stage hyperparameter
+is in \texttt{paper2/configs/default.json} and is snapshotted into
+\texttt{paper2/runs/<run\_id>/env/config\_snapshot.json} per run.
+The DONUT recipe matches the original
+\texttt{train\_sroie.yaml}~\cite{kim2022donut} verbatim.
+
+\item \textbf{Statistical significance.}  Results are reported across
+$n=5$ random seeds with paired-bootstrap 95\,\% CIs on $\Delta$F1
+and McNemar's exact test on per-image correctness.  See
+\texttt{paper2/scripts/run\_5seed\_sweep.sh}.
+
+\item \textbf{Compute resources.}  Per-stage GPU utilisation, peak
+VRAM, wall-clock time, energy (kWh), and CO\textsubscript{2}eq (kg)
+are sampled at 5\,s intervals via \texttt{nvidia-smi}\,+\,
+\texttt{psutil} and persisted to
+\texttt{paper2/runs/<run\_id>/telemetry\_*.jsonl} following Strubell
+et al.~\cite{strubell2019energy}.  Per-run cost in USD is recorded
+in \texttt{paper2/runs/<run\_id>/cost\_*.json}.
+
+\item \textbf{Random seeds.}  All RNG sources (Python, NumPy, PyTorch,
+CUDA) are seeded by \texttt{core/seed.py::seed\_everything}.
+DataLoaders use a seeded \texttt{worker\_init\_fn} and per-worker
+\texttt{torch.Generator}.
+
+\item \textbf{Limitations.}  Single-corpus evaluation; statistical
+power constrained by $n=347$ test set; learned components excluded
+by design.  See Sec.~\ref{sec:limitations}.
+\end{enumerate}

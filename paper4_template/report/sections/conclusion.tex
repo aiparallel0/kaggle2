@@ -1,0 +1,29 @@
+\section{Conclusion}
+\label{sec:conclusion}
+
+We posed compression crossover for structurally-verified document
+KIE as a falsifiable empirical question: can parameter-efficient
+compression (int8 / int4 quantization, structured pruning,
+half-depth distillation) place the SVKIE upstream backbone at the
+same on-device memory footprint as a non-learned modular pipeline
+without F1 collapse?  We released a working repository implementing
+the compression sweep and the Pareto-frontier evaluation harness on
+canonical SROIE Task-3.  Empirical Pareto results are pending the
+next vast.ai compression sweep.
+
+The methodological contribution holds independently of the
+empirical outcome.  Compression crossover is operationalised as a
+binary criterion that explicitly requires both the memory-footprint
+constraint and the F1 floor; the rule-based FOCUS-$\Sigma$ verifier
+acts as a graceful-degradation regulariser that catches degraded
+candidates after compression and routes the receipt through a
+rule-based fallback.  Whichever way the empirical Pareto falls when
+measured, the framework is correctly stated.
+
+Future work runs the sweep, reports the Pareto frontier, and
+characterises the verifier's recovery rate post-compression on
+both SROIE Task-3 and CORD-v2.  We anticipate that int8 alone is
+sufficient to cross the memory-footprint threshold (DONUT int8 at
+260\,MB sits below the pipeline's 268\,MB baseline by construction)
+and that combining int8 with structured pruning provides a wider
+safety margin against catastrophic compression failure.

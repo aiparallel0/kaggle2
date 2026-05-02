@@ -1,0 +1,79 @@
+\section{Results}
+\label{sec:results}
+
+\subsection{Headline: data-axis decomposition}
+
+\begin{table}[!t]
+\centering
+\caption{Macro-F1 on canonical SROIE Task-3 ($n=\VAR{n_test_images}$)
+         under three training-set composition regimes.  The marginal
+         column reports the F1 lift attributable to each new donor
+         corpus added to the joint training pool.  Architecture
+         (DONUT) and training recipe (Kim et al.\ 2022) held fixed
+         across rows.}
+\label{tab:headline}
+\begin{tabular}{lcc}
+\toprule
+Training regime & F1 & marginal $\Delta$ \\ \midrule
+SROIE only (single-corpus baseline)         & \VAR{donut_f1_single}        & --- \\
++\,CORD-v2 (schema diversity)               & \VAR{donut_f1_cord}          & \VAR{donut_delta_cord} \\
++\,WildReceipt (imaging diversity)          & \VAR{donut_f1}               & \VAR{donut_delta_wild} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Per-field decomposition}
+
+\begin{table}[!t]
+\centering
+\caption{Per-field token F1 on canonical SROIE Task-3 ($n=347$).
+         The largest per-field lift attributable to multi-dataset
+         training is on \textsf{total} (CORD's 30-field schema
+         exercises tax / subtotal / item-line structure that SROIE
+         under-represents); the smallest is on \textsf{date}, where
+         the regex-conforming substring is already near-saturated
+         in the single-corpus baseline.}
+\label{tab:perfield}
+\begin{tabular}{lcccc}
+\toprule
+Training regime & Company & Date & Address & Total \\ \midrule
+SROIE only            & \VAR{donut_f1_company_single}  & \VAR{donut_f1_date_single}  & \VAR{donut_f1_address_single}  & \VAR{donut_f1_total_single} \\
++\,CORD-v2            & \VAR{donut_f1_company_cord}    & \VAR{donut_f1_date_cord}    & \VAR{donut_f1_address_cord}    & \VAR{donut_f1_total_cord} \\
++\,WildReceipt (full) & \VAR{donut_f1_company}         & \VAR{donut_f1_date}         & \VAR{donut_f1_address}         & \VAR{donut_f1_total} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Cross-corpus generalisation}
+
+We additionally evaluate the multi-dataset DONUT on the donor
+corpora (CORD-v2 test, WildReceipt test) to confirm that the
+training-data expansion does not sacrifice SROIE performance for
+in-distribution donor performance.
+
+\begin{table}[!t]
+\centering
+\caption{Cross-corpus macro-F1.  The multi-dataset DONUT remains
+         competitive on each donor's own test split, demonstrating
+         that the joint training does not collapse onto SROIE at
+         the cost of the donor distributions.}
+\label{tab:crosscorpus}
+\begin{tabular}{lccc}
+\toprule
+Training regime & SROIE F1 & CORD-v2 F1 & WildReceipt F1 \\ \midrule
+SROIE only            & \VAR{donut_f1_single} & \VAR{donut_cord_f1_single}     & \VAR{donut_wild_f1_single} \\
++\,CORD-v2            & \VAR{donut_f1_cord}   & \VAR{donut_cord_f1_cord}       & \VAR{donut_wild_f1_cord} \\
++\,WildReceipt (full) & \VAR{donut_f1}        & \VAR{donut_cord_f1}            & \VAR{donut_wild_f1} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Training-data manifest provenance}
+
+The multi-dataset training fold consists of \VAR{n_train_total}
+receipts: \VAR{n_train_sroie} from SROIE, \VAR{n_train_cord} from
+CORD-v2, and \VAR{n_train_wild} from WildReceipt.  Image-level
+SHA-256 hashes for the full fold are published in
+\texttt{paper1/results/training\_manifest.json}, with per-image
+schema mappings that translate each donor corpus's labels into
+SROIE's four-field schema (Sec.~\ref{sec:method}).

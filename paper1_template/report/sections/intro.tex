@@ -1,0 +1,65 @@
+\section{Introduction}
+\label{sec:intro}
+
+Receipt key-information extraction (KIE) systems on the canonical
+ICDAR-2019 SROIE Task-3 benchmark~\cite{huang2019icdar} report
+macro-F1 plateauing in the $0.78$--$0.86$ range across architectural
+families.  The conventional explanation is that the architecture is
+the bottleneck: end-to-end transformer
+generators~\cite{kim2022donut}, layout-aware
+encoders~\cite{huang2022layoutlmv3}, and modular detect-then-read
+pipelines~\cite{yu2020pick} converge on similar numbers despite
+substantial parameter-count differences.
+
+This paper asks a different question.  \emph{Is the plateau a
+property of the architecture, or of the training data?}  We hold the
+DONUT architecture and training recipe fixed and vary only the
+training-set composition.  We compare three regimes:
+
+\begin{itemize}
+\item \textbf{SROIE-only.}  DONUT fine-tuned on the SROIE 626-image
+  train fold under the original Kim et al.\ recipe.  Single-corpus
+  baseline.
+\item \textbf{SROIE + CORD-v2.}  Joint training on SROIE plus
+  CORD-v2~\cite{park2019cord} (Korean restaurant receipts, 30-field
+  schema).  Schema diversity expands the training distribution
+  beyond a single vendor type.
+\item \textbf{SROIE + CORD-v2 + WildReceipt.}  Joint training adding
+  WildReceipt~\cite{sun2021wildreceipt} (in-the-wild receipts in
+  varied lighting and skew).  Imaging-condition diversity expands
+  the training distribution beyond clean scans.
+\end{itemize}
+
+\paragraph{Headline result.}  The full multi-dataset regime reaches
+\VAR{donut_f1} macro-F1 on canonical SROIE Task-3, an absolute lift
+of $+\VAR{multidataset_delta}$ over the single-corpus baseline at
+the same parameter count and the same evaluation protocol.
+
+\paragraph{Why this matters.}  Three of the donor corpora's
+contributions are decomposable: schema diversity (CORD-v2's 30-field
+labels exercise tax / subtotal / item-line structure that SROIE
+under-represents), imaging-condition diversity (WildReceipt's
+phone-camera receipts), and target-domain alignment (SROIE itself
+keeps the test distribution in-domain).  We quantify each
+contribution separately in Sec.~\ref{sec:results}.
+
+\paragraph{Contributions.}  This paper makes three contributions:
+
+\begin{itemize}
+\item A controlled study of training-set composition's effect on
+  SROIE Task-3 F1, holding architecture and training recipe fixed.
+\item Quantification of three orthogonal data-axis effects (schema
+  diversity, imaging diversity, target alignment) and their
+  additivity.
+\item A reproducibility manifest that publishes the exact training-
+  fold composition (image-level SHA-256 plus per-image schema
+  mappings) so an independent lab can reproduce the multi-dataset
+  fold from the public corpora.
+\end{itemize}
+
+\paragraph{Empirical headline.}  The full multi-dataset DONUT under
+the paper-recipe training reaches \VAR{donut_f1} macro-F1 on
+canonical SROIE Task-3 (mean across $n=\VAR{n_trials}$ seeds,
+paired-bootstrap CI $[\VAR{donut_bootstrap_ci_lo},\,
+\VAR{donut_bootstrap_ci_hi}]$).  The lift is decomposed in
+Tab.~\ref{tab:headline} into the three contributing data axes.

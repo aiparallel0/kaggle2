@@ -1,0 +1,89 @@
+% Paper 4 — Compression Crossover for SVKIE: future-work-scoped paper.
+%
+% Template skeleton; populated by the paper-4 agent per
+% docs/agent_prompts/paper4_prompt.md.  All empirical claims are
+% framed as future work pending the next vast.ai compression sweep.
+\documentclass[conference]{IEEEtran}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{hyperref}
+\usepackage{url}
+\usepackage{booktabs}
+\usepackage{amsfonts}
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage{microtype}
+\usepackage{xcolor}
+\usepackage{graphicx}
+\usepackage{tikz}
+\usepackage{multirow}
+
+\title{Compression Crossover for Structure-Verified Document KIE:\\
+       A Pareto Study of Memory Footprint vs F1 under Pruna-OSS\\
+       Quantization, Pruning, and Distillation}
+
+\author{Anonymous Authors\\Anonymous Affiliation\\
+        \texttt{anonymous@example.com}}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+Structure-Verified Document Key-Information Extraction (SVKIE)
+attains high macro-F1 on receipt benchmarks at the cost of an
+upstream backbone with $\sim$260\,M parameters (DONUT) or
+$\sim$133\,M parameters (LayoutLMv3-base).  Both exceed the
+$\sim$67\,M-parameter budget of a deliberately-non-learned modular
+pipeline.  We ask whether parameter-efficient compression
+techniques --- int8 / int4
+quantization~\cite{frantar2023optq,dettmers2023qlora}, structured
+pruning~\cite{ma2023llmpruner}, and half-depth
+distillation~\cite{hinton2015distilling} --- can place a
+structurally-verified end-to-end system at the same on-device
+memory footprint as the modular pipeline without sacrificing F1.
+We define \textbf{compression crossover} as the simultaneous
+satisfaction of (effective-memory $\leq$ pipeline-baseline-MB) and
+(macro-F1 $\geq$ pipeline-F1 $-$ bootstrap-CI-half-width).  We
+release a working repository implementing the compression sweep
+and the Pareto-frontier evaluation on canonical SROIE Task-3.
+\emph{Empirical results in this manuscript are pending the next
+vast.ai compression sweep; cells below report the expected
+Pareto trajectory based on Pruna-OSS calibration data and are
+flagged accordingly.}
+\end{abstract}
+
+\input{sections/intro}
+
+\input{sections/related}
+
+\input{sections/problem}
+
+\input{sections/method}
+
+\input{sections/figure_architecture}
+
+\input{sections/experiments}
+
+\input{sections/results}
+
+\input{sections/discussion}
+
+\input{sections/limitations}
+
+\input{sections/broader_impact}
+
+\input{sections/conclusion}
+
+\bibliographystyle{IEEEtran}
+\bibliography{references}
+
+\input{sections/appendix}
+
+\input{sections/bugs}
+
+\section*{Reproducibility Checklist}
+\label{sec:repro_checklist}
+\input{sections/repro_checklist}
+
+\end{document}

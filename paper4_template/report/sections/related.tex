@@ -1,0 +1,137 @@
+% Related Work — NeurIPS framing.
+% Five positioning blocks:
+%   (a) document KIE landscape with the structural-verification gap;
+%   (b) verifier-augmented generation in NLP / reasoning;
+%   (c) neuro-symbolic learning with hard constraints;
+%   (d) arithmetic-consistency post-processing in invoice extraction —
+%       the closest published precedent for FOCUS-Σ I3;
+%   (e) receipt and document-AI benchmarks.
+% Citation count: 38 distinct works (NeurIPS norm: 30–60).
+
+\section{Related Work}
+\label{sec:related}
+
+\paragraph{Document KIE without verification.}
+End-to-end document understanding has converged on two architectural
+families.  Generative models — DONUT~\cite{kim2022donut},
+Dessurt~\cite{davis2022dessurt}, Pix2Struct~\cite{lee2023pix2struct},
+UDOP~\cite{tang2023unifying}, DocLLM~\cite{wang2024docllm}, and
+LayoutLLM~\cite{luo2024layoutllm} — autoregressively decode the
+structured output from the page image, optionally conditioned on OCR
+tokens.  Layout-aware encoders fuse text, image, and 2-D position via
+masked language / image objectives:
+LayoutLM~\cite{xu2020layoutlm,xu2021layoutlmv2,huang2022layoutlmv3},
+LayoutXLM~\cite{xu2021layoutxlm}, BROS~\cite{hong2022bros},
+TILT~\cite{powalski2021tilt}, DocFormer~\cite{appalaraju2021docformer},
+ERNIE-Layout~\cite{peng2022ernielayout}, and
+StrucTexT~\cite{li2021structext}.  Pipeline approaches retain a
+modular detect/read/assign decomposition with a text-line detector
+(YOLOv8~\cite{jocher2023yolov8}, DBNet~\cite{liao2020dbnet},
+PaddleOCR~\cite{paddleocr}, Tesseract~\cite{smith2007tesseract}),
+a text recogniser (TrOCR~\cite{li2023trocr}), and either a learned
+field-assignment head — exemplified by PICK~\cite{yu2020pick} and our
+FOCUS-T baseline — or a rule-based assigner.  Across both families,
+the cited systems emit one prediction per field per receipt without
+any consistency check against the receipt's own structural
+evidence.  Our contribution is a verification layer that wraps any
+of these architectures.
+
+\paragraph{Verifier-augmented generation in NLP.}
+Pairing a generator with a downstream verifier has become a standard
+device for chain-of-thought tasks.  Cobbe et al.~\cite{cobbe2021training}
+train a verifier on GSM8K to score solution candidates;
+Lightman et al.~\cite{lightman2023verify} contrast process- and
+outcome-supervised reward models on PRM800K;
+Madaan et al.~\cite{madaan2023selfrefine} use the generator itself as
+iterative critic; Chen et al.~\cite{chen2022codet} verify generated
+code against generated tests; Wang et al.~\cite{wang2023selfconsistency}
+marginalise across sampled chains to amplify a hidden consensus.
+Tool-using models — Toolformer~\cite{schick2023toolformer},
+PAL~\cite{gao2023pal} — outsource verification to an external
+interpreter, which is closest in spirit to FOCUS-$\Sigma$ but
+typically defers an entire arithmetic step rather than checking a
+single emitted candidate against a structural identity.
+FOCUS-$\Sigma$ is in this lineage but differs in two respects.
+\textbf{(i)} The verification target is a single numerical value
+bounded by a known arithmetic identity rather than a free-form claim
+or program; we exploit this to give exact soundness and completeness
+guarantees (Sec.~\ref{sec:focus_sigma}).
+\textbf{(ii)} The verifier is itself rule-based (a bounded subset-sum
+DP) rather than a learned head, which keeps it
+architecture-agnostic and trivially deployable across upstream
+extractors with no new gradient signal.
+
+\paragraph{Neuro-symbolic learning with hard constraints.}
+A complementary literature integrates symbolic constraints \emph{into}
+the learner rather than wrapping its outputs.  DeepProbLog
+\cite{manhaeve2018deepproblog} differentiates through probabilistic
+logic programs; the Semantic Loss~\cite{xu2018semanticloss} penalises
+violations of propositional constraints during training;
+Reluplex~\cite{katz2017reluplex} statically verifies neural networks
+against linear specifications.  These methods change the network's
+loss surface or formal contract.  FOCUS-$\Sigma$ takes the
+operationally cheaper path: the upstream extractor remains untouched,
+and a domain axiom (the receipt-construction rule) is enforced as a
+post-hoc test.  This trades the in-training generalisation benefits
+of constraint learning for a deployment property — the verifier
+ships to production without any joint optimisation — that matters in
+the document-AI setting where pre-trained backbones are repeatedly
+swapped.
+
+\paragraph{Arithmetic post-processing in invoice extraction.}
+The closest published precedent is in the invoice-extraction
+literature, where heuristic checks of \texttt{subtotal + tax = total}
+appear as a post-processing step.
+Kim et al.~\cite{kim2022donut} cite ``arithmetic-consistency
+post-processing'' as an ablation;
+Hong et al.~\cite{hong2022bros} mention sub-total + tax sanity checks
+in their post-process; commercial systems
+(Microsoft Form Recogniser~\cite{azure-form-recogniser},
+AWS Textract~\cite{aws-textract}) advertise total-field validation
+without publishing their rule set.  These approaches are
+\emph{keyword-anchored}: they fire only when the \textsf{SUBTOTAL}
+and \textsf{TAX} keywords are both present and OCR'd correctly, which
+on the canonical SROIE Task-3 split holds for only 38.3\% of
+receipts.  FOCUS-$\Sigma$ adds the structural Identity $\mathrm{I}_3$
+which fires on the full 87.6\% of receipts that satisfy the
+itemisation hypothesis, regardless of which summary keywords the
+printer chose to emit.
+
+\paragraph{Subset-sum and combinatorial-verification methods.}
+The bounded subset-sum we use is classical knapsack DP
+(Karp~\cite{karp1972reducibility}; Bellman~\cite{bellman1957dynamic}).
+Its application as a verifier in document AI is, to our knowledge,
+new.  Closer methodologically is the program-by-construction
+literature
+(Solar-Lezama~\cite{solarlezama2008program};
+Polozov \& Gulwani~\cite{polozov2015flashmeta}) that synthesises
+domain-specific constraints from examples, but those systems
+synthesise rules; FOCUS-$\Sigma$ uses a fixed rule (a domain axiom)
+and verifies against it.
+
+\paragraph{Faithfulness and calibration of structured predictors.}
+The interpretability claim we make about the FOCUS-T attention map is
+consistent with a literature that quantifies attribution faithfulness
+through deletion / insertion AUCs~\cite{petsiuk2018rise} and
+benchmarks rationale extraction~\cite{deyoung2020eraser}.
+Calibration of the verifier-augmented predictor follows the standard
+ECE / MCE / Brier toolkit~\cite{guo2017calibration,naeini2015ece,brier1950score};
+Sec.~\ref{sec:limitations} discusses why these measurements are
+preregistered rather than reported on the headline run.
+
+\paragraph{Receipt and document benchmarks.}
+SROIE~\cite{huang2019icdar} (626 receipts, 4 fields) is the standard
+single-vendor-type benchmark.  CORD~\cite{park2019cord} (Korean
+restaurant receipts, 30-field schema) is the second most-studied
+receipt corpus.  WildReceipt~\cite{sun2021wildreceipt} extends to
+in-the-wild imaging conditions but is rarely used as a fine-tune
+target.  Form / page benchmarks adjacent to receipts include
+FUNSD~\cite{jaume2019funsd}, RVL-CDIP~\cite{harley2015rvlcdip},
+DocVQA~\cite{mathew2021docvqa}, and Kleister~\cite{stanislawek2021kleister};
+they share the layout-driven extraction motif but lack the closed
+arithmetic structure that makes FOCUS-$\Sigma$ applicable.  Our
+unified text-to-text framing for receipts borrows from
+T5~\cite{raffel2020t5} and BART~\cite{lewis2020bart}; the visual
+backbone is Swin~\cite{liu2021swin}.  We evaluate on SROIE Task-3 and
+CORD-v2; WildReceipt generalisation is flagged as future work
+(Sec.~\ref{sec:limitations}).

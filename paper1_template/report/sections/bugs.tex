@@ -1,0 +1,109 @@
+\section{Bug Catalogue}
+\label{sec:bugs}
+
+The following fourteen silent F1-destroying implementation pitfalls
+were encountered during the faithful reproduction reported in this
+paper.  Each bug is annotated with mechanism, measured F1 impact on
+this study's runs, and a source-level guard now active in the
+released codebase.  All guards are regression-tested in
+\texttt{paper2/tests/}.
+
+\begin{itemize}
+\item \textbf{Bug 1 --- \texttt{lm\_head} weight-tying drift on token
+      resize.}  Adding SROIE special tokens
+      (\texttt{<s\_company>}, \dots) before resizing the decoder
+      embedding causes \texttt{safetensors} to deduplicate the
+      shared-storage alias, leaving \texttt{lm\_head} pointing at
+      stale rows.  Guard: explicit \texttt{tie\_word\_embeddings=
+      False} and a parameter-tensor clone of \texttt{lm\_head.weight}
+      before the resize.  F1 impact: $\Delta\!=\!\VAR{bug_1_delta}$.
+
+\item \textbf{Bug 2 --- \texttt{decoder\_start\_token\_id}
+      string-vs-list form.}  Passing the start token as a string
+      (rather than a singleton list) to
+      \texttt{convert\_tokens\_to\_ids} silently returns the ID of
+      \texttt{`<'} and collapses generation to gibberish.  Guard:
+      list-form conversion + assert.  F1 impact:
+      $\Delta\!=\!\VAR{bug_2_delta}$.
+
+\item \textbf{Bug 3 --- decoder kwargs leak.}  Passing inference
+      kwargs into \texttt{generate} that the decoder configuration
+      already encodes silently overrides the trained settings.
+      Guard: explicit kwarg whitelist.  F1 impact:
+      $\Delta\!=\!\VAR{bug_3_delta}$.
+
+\item \textbf{Bug 4 --- fp16 overflow without gradient clipping.}
+      bf16 absent on older GPUs falls back to fp16; without
+      \texttt{max\_grad\_norm} the loss surface produces NaN
+      cascades after a few hundred steps.  Guard: precision
+      auto-detect + grad-clip enforcement.  F1 impact:
+      $\Delta\!=\!\VAR{bug_4_delta}$.
+
+\item \textbf{Bug 5 --- YOLO image-size train/inference mismatch.}
+      Training at $1024\times 1024$ and inferring at the default
+      $640$ silently degrades detection mAP.  Guard:
+      \texttt{yolo\_img\_size} parity assertion in
+      \texttt{pipeline\_meta.json}.  F1 impact:
+      $\Delta\!=\!\VAR{bug_5_delta}$.
+
+\item \textbf{Bug 6 --- TrOCR underfit on $<$5 epochs.}  Below 5
+      epochs TrOCR-small fails to specialise to printed receipts.
+      Guard: config-loader floor at 5 epochs.  F1 impact:
+      $\Delta\!=\!\VAR{bug_6_delta}$.
+
+\item \textbf{Bug 7 --- train/val/test split non-persistence.}
+      Re-shuffling the SROIE split on every run silently leaks val
+      and test images across runs.  Guard: split persisted to
+      \texttt{results/split.json} and reloaded.  F1 impact:
+      $\Delta\!=\!\VAR{bug_7_delta}$.
+
+\item \textbf{Bug 8 --- duplicated \texttt{<s\_sroie>} prefix in
+      decoder labels.}  Including the start tag in both the labels
+      and the auto-prepended \texttt{decoder\_start\_token\_id}
+      causes the decoder to learn the doubled prefix.  Guard: drop
+      the leading \texttt{<s\_sroie>} from labels.  F1 impact:
+      $\Delta\!=\!\VAR{bug_8_delta}$.
+
+\item \textbf{Bug 9 --- stale \texttt{generation\_config} after
+      fine-tune.}  HuggingFace persists the pretrained
+      \texttt{generation\_config.json} verbatim, ignoring SROIE-
+      specific token IDs from the fine-tune.  Guard: explicit
+      \texttt{persist\_generation\_config} hook.  F1 impact:
+      $\Delta\!=\!\VAR{bug_9_delta}$.
+
+\item \textbf{Bug 10 --- \texttt{lm\_head} weight-tie drift assert.}
+      Companion guard for Bug 1: assert at training start that
+      \texttt{lm\_head.weight.data\_ptr()} differs from the embedding
+      matrix.  F1 impact: $\Delta\!=\!\VAR{bug_10_delta}$.
+
+\item \textbf{Bug 11 --- transformers $\geq$4.48
+      \texttt{num\_items\_in\_batch} kwargs leak.}  HF Trainer adds
+      \texttt{num\_items\_in\_batch} to forward-pass kwargs that
+      \texttt{SwinModel.forward} does not accept.  Guard:
+      \texttt{accepts\_loss\_kwargs=False}.  F1 impact:
+      $\Delta\!=\!\VAR{bug_11_delta}$.
+
+\item \textbf{Bug 12 --- inference-time \texttt{do\_sample=True}
+      override.}  Default \texttt{generate} call samples instead of
+      decoding greedily, introducing seed-dependent variance.
+      Guard: explicit \texttt{do\_sample=False, num\_beams=1}.  F1
+      impact: $\Delta\!=\!\VAR{bug_12_delta}$.
+
+\item \textbf{Bug 13 --- \texttt{warmup\_steps} silently overrides
+      \texttt{warmup\_ratio}.}  HF Trainer uses
+      \texttt{warmup\_steps} when both are set, ignoring
+      \texttt{warmup\_ratio}.  Guard: explicit zeroing of one when
+      the other is non-zero.  F1 impact: $\Delta\!=\!\VAR{bug_13_delta}$.
+
+\item \textbf{Bug 14 --- regex word-boundary on Bahasa keywords.}
+      \texttt{JUMLAH BESAR} (Bahasa for ``grand total'') was
+      mis-classified as a distractor by an English-only regex
+      that anchored on \texttt{TOTAL} alone.  Guard: extended regex
+      bank with Bahasa synonyms.  F1 impact:
+      $\Delta\!=\!\VAR{bug_14_delta}$.
+\end{itemize}
+
+The \textbf{all-off} configuration (every guard disabled) loses
+$\Delta\!=\!\VAR{all_off_delta}$ absolute F1 against the headline
+build, demonstrating that the cumulative cost of these silent
+failure modes is large.

@@ -1,0 +1,255 @@
+% Experiments — NeurIPS framing for FOCUS-$\Sigma$ as the central
+% contribution.  Replaces the IEEE/ICDAR ``DONUT vs Pipeline''
+% experiment design with a wrapper-$\Delta$ matrix across three
+% upstream architectures, two receipt-KIE datasets, and five seeds.
+% Every \VAR{} key here resolves through the producer matrix in
+% docs/TRACKING.md; unmeasured keys land in
+% runs/<run_id>/metrics/unresolved_vars.json and surface in the
+% NeurIPS reproducibility checklist (Sec.~\ref{sec:repro_checklist}).
+
+\section{Experiments}
+\label{sec:experiments}
+
+We test whether FOCUS-$\Sigma$ behaves as a verification layer in the
+sense made formal in Sec.~\ref{sec:focus_sigma}: that on receipts
+satisfying the itemisation hypothesis~\eqref{eq:item_hypothesis} the
+witness count $W(\hat y)$ is informative about whether an upstream
+KIE head's candidate $\hat y$ equals the gold total $y_{\textsf{total}}$,
+\emph{across upstream architectures with no retraining}, and
+\emph{across receipt corpora with disjoint vendor distributions}.
+
+\subsection{Datasets}
+\label{sec:experiments_data}
+
+\textbf{SROIE Task-3.}  We evaluate on the canonical ICDAR-2019 SROIE
+Task-3 test split~\cite{huang2019icdar} of $n=347$ scanned Malaysian
+retail receipts, fetched on first run from \texttt{rrc.cvc.uab.es}
+with sha256 verification (\texttt{data/sroie\_canonical.py}; docTR
+mirror as fallback).  The training pool is the SROIE 626-image train
+fold partitioned $500/63/63$ (train/val/internal-test) by
+\texttt{data/sroie.py}; the persisted split lives in
+\texttt{results/split.json} and is reloaded across runs to prevent
+val/test drift (Bug~7 in Sec.~\ref{sec:bugs}).  Token-level F1 numbers
+reported here are macro-averaged over the four-field schema
+(\textsf{company}, \textsf{date}, \textsf{address}, \textsf{total}).
+
+\textbf{CORD-v2.}  We additionally evaluate on the CORD-v2 corpus
+(Park et al.~\cite{park2019cord}; Korean restaurant receipts,
+$n=\VAR{cord_test_n}$ test images, 30-field schema).  CORD is loaded
+through \texttt{data/cord.py} from the \texttt{naver-clova-ix/cord-v2}
+HuggingFace dataset (CC BY 4.0); per-receipt item prices required by
+$\mathrm{I}_3$ are exposed via \texttt{CordReceipt.item\_prices()}.
+For the head-to-head comparison we map CORD's
+\textsf{menu.price} / \textsf{sub\_total.subtotal\_price} /
+\textsf{total.total\_price} to the SROIE four-field schema; the
+mapping is reported in Appendix~\ref{app:cord_schema}.
+
+\subsection{Upstream architectures}
+\label{sec:experiments_arms}
+
+We instantiate the wrapper-$\Delta$ measurement around three upstream
+KIE heads spanning the dominant architectural families in document
+AI:
+
+\begin{enumerate}[label=\textbf{(\arabic*)},leftmargin=2.0em]
+\item \textbf{DONUT}~\cite{kim2022donut}: end-to-end OCR-free
+  encoder--decoder, $\approx\!260\,\mathrm{M}$ parameters; fine-tuned
+  on the SROIE / CORD train fold under the recipe of
+  \texttt{models/donut\_train.py} (epochs=\VAR{epochs_donut},
+  cosine schedule, differential encoder/decoder LR, beam-4 decoding,
+  best-by-val-F1 checkpointing).
+\item \textbf{LayoutLMv3-base}~\cite{huang2022layoutlmv3}: a
+  layout-aware encoder, $133\,\mathrm{M}$ parameters; token-classified
+  under the BIO scheme over the same word-level input as the FOCUS
+  arm (\texttt{models/layoutlmv3\_eval.py}; recipe matches the
+  public LayoutLMv3 SROIE recipe at
+  \texttt{microsoft/unilm/.../layoutlmv3} — Apache-2.0 — with full
+  attribution in the file header).  This is a fine-tune from the
+  public \texttt{microsoft/layoutlmv3-base} checkpoint, not a
+  zero-shot inference; the published 0.857 SROIE-Task-3 number serves
+  as a calibration target.
+\item \textbf{FOCUS-T}: our learned cross-attention assigner over
+  YOLOv8n + TrOCR-small features (\texttt{models/focus\_attention.py},
+  \texttt{models/focus\_pipeline.py}), with $\approx\!400\,\mathrm{K}$
+  trainable assigner parameters atop a frozen $65\,\mathrm{M}$-parameter
+  feature stack.  Trained for up to \VAR{epochs_assigner} epochs
+  (patience=7 on val pos-mass loss, AdamW $1\mathrm{e}{-3}$,
+  weight-decay $1\mathrm{e}{-4}$, grad-clip $1.0$).
+\end{enumerate}
+
+For each upstream head we measure two configurations:
+\textsc{Bare} (the head's native candidate $\hat y$) and
+\textsc{+FOCUS-$\Sigma$} (the same candidate after the verification
+layer of Sec.~\ref{sec:focus_sigma} is applied; on a candidate that
+the verifier rejects with $W(\hat y)=0$ we fall back to the next-best
+witnessable candidate by the procedure of
+Sec.~\ref{sec:focus_sigma_robust}).  Crucially, no upstream weights
+are updated under \textsc{+FOCUS-$\Sigma$}: the verifier consumes
+candidates, never gradients.
+
+\subsection{Wrapper-$\Delta$ measurement protocol}
+\label{sec:experiments_protocol}
+
+For each (architecture, dataset, seed) triple we record
+$\mathrm{F1}^{\mathrm{bare}}$ and $\mathrm{F1}^{+\Sigma}$ on the
+canonical test split; the per-architecture wrapper-$\Delta$ is
+$\Delta\mathrm{F1}_a \;\triangleq\;
+\mathrm{F1}^{+\Sigma}_a - \mathrm{F1}^{\mathrm{bare}}_a$,
+reported with a paired-bootstrap 95\,\% CI computed by resampling
+per-image correctness vectors $B = \VAR{bootstrap_n_iter}$ times
+(\texttt{core/statistics.py::paired\_bootstrap\_ci}).
+Per-image significance against the null $\mathrm{F1}^{+\Sigma}=
+\mathrm{F1}^{\mathrm{bare}}$ uses McNemar's exact test on per-image
+all-fields-correct vectors; we report the two-tailed $p$-value with
+Benjamini--Hochberg correction at $q=0.05$ across the
+$3\,\text{archs}\times 2\,\text{datasets}=6$ comparisons.  These
+artefacts are computed once per run by
+\texttt{report.wrapper\_delta.write\_wrapper\_delta\_metrics} and
+persisted to \texttt{runs/<run\_id>/metrics/wrapper\_delta\_metrics.json}.
+
+\subsection{Per-component ablation}
+\label{sec:experiments_ablation}
+
+To quantify the marginal contribution of each FOCUS-$\Sigma$
+ingredient we run the following six-cell ablation grid on the
+FOCUS-T arm of SROIE Task-3 (the most fully instrumented arm in our
+codebase) using the runner \texttt{scripts/run\_focus\_ablation.sh}.
+Each row produces a complete \texttt{runs/<id>/} directory and is
+aggregated by \texttt{scripts/aggregate\_seeds.py} into a single
+\texttt{ablation.csv} with mean / std / paired-bootstrap CI columns.
+
+\begin{enumerate}[label=\arabic*.,leftmargin=2.0em]
+\item \textbf{Baseline}: FOCUS-T attention assigner alone; no
+  identity check, no OCR-drift recovery, no zone gate.
+\item \textbf{$+\mathrm{I}_2$}: adds the keyword-anchored
+  $\textsf{subtotal}+\tau$ identity (\texttt{models/total\_post.py}).
+\item \textbf{$+\mathrm{I}_3$}: adds the structural subset-sum
+  identity (\texttt{models/total\_arithmetic.py::solve}).  This is
+  the principal contribution; the row's $\Delta$F1 against row~2 is
+  the wrapper-$\Delta$ attributable to the keyword-independent
+  identity.
+\item \textbf{$+$ OCR-drift Hamming-1}: adds the single-edit recovery
+  procedure of Prop.~\ref{prop:single_edit}, gated on the
+  $\textsf{TOTAL}$ keyword regex.
+\item \textbf{$+$ OCR-drift Hamming-2}: extends the recovery radius
+  to two edits, gated on $\textsf{TOTAL\_STRONG}$ (a stricter regex
+  enumerated in \texttt{models/consensus.py}).  The cardinality
+  bound on $\mathrm{I}_3$ subsets prevents over-correction.
+\item \textbf{$+$ Zone-gated} ($\textsf{header} / \textsf{items} /
+  \textsf{totals}$ HMM prior of \texttt{models/zone\_prior.py}):
+  filters candidate money lines by $p_{\textsf{totals}}\geq 0.5$
+  before $\mathrm{I}_3$ enumeration.  Reports the zone-prior
+  train-fold accuracy
+  $\VAR{zone_prior_train_acc}$ as a sanity gate.
+\end{enumerate}
+
+\subsection{Faithfulness, calibration, and efficiency}
+\label{sec:experiments_aux}
+
+\textbf{Attention-map faithfulness.}  The interpretability claim made
+about the FOCUS-T cross-attention map (Sec.~\ref{sec:method_pipeline})
+is quantified through deletion-AUC and insertion-AUC computed by
+\texttt{models/attention\_faithfulness.py}, following the RISE
+protocol~\cite{petsiuk2018rise} and the rationale-extraction
+benchmark of DeYoung et al.~\cite{deyoung2020eraser}.  We report
+\VAR{faithfulness_deletion_auc} (deletion; lower is better) and
+\VAR{faithfulness_insertion_auc} (insertion; higher is better) on
+the SROIE test split; the random-token baseline lies at
+\VAR{faithfulness_random_baseline}.
+
+\textbf{Calibration.}  We report Expected Calibration Error
+(ECE)~\cite{naeini2015ece}, Maximum Calibration Error
+(MCE)~\cite{guo2017calibration}, and Brier
+score~\cite{brier1950score} on the per-field confidence emitted by
+each arm.  The per-field ECE on \textsf{total} pre- and
+post-FOCUS-$\Sigma$ is reported in Table~\ref{tab:calibration}; the
+post-$\Sigma$ confidence is the witness count $W(\hat y)$ rescaled
+to $[0,1]$, which is well-calibrated by construction
+(Prop.~\ref{prop:complete}).
+
+\textbf{Inference latency and verification overhead.}  We measure
+end-to-end inference latency at $p_{50}$, $p_{95}$, $p_{99}$ on a
+single RTX\,4090 in two regimes: cold-start (first 10 images) and
+steady-state (images 50--250 of the canonical split).  The
+verification-layer overhead is the per-receipt cost of materialising
+the subset-sum target set $T$ and probing the candidate; on receipts
+with $|\mathcal{I}|\le 30$ items and per-item value bounded at
+$5{,}000$\,RM the bounded knapsack DP runs in
+$\le 35\,$ms in pure Python (Sec.~\ref{sec:focus_sigma_complexity}),
+strictly below the $\sim\!100\,$ms TrOCR forward pass that precedes it.
+
+\subsection{Statistical protocol and pre-registration}
+\label{sec:experiments_stats}
+
+Headline numbers are reported as the cross-seed mean over
+$n_{\text{trials}}=\VAR{n_trials}$ random seeds
+(\VAR{seeds_used}), with paired-bootstrap 95\,\% CI on every
+$\Delta$F1 cell ($B=\VAR{bootstrap_n_iter}$ resamples) and McNemar's
+exact test on per-image correctness with Benjamini--Hochberg
+correction across the wrapper-$\Delta$ comparisons.  Pre-registered
+hypotheses, decision rules, and the file paths under which they are
+adjudicated live in \texttt{docs/archive/PRE\_REGISTRATION.md}; the
+hypotheses tested in Tables~\ref{tab:wrapper_delta},
+\ref{tab:ablation_neurips}, \ref{tab:error_decomp},
+\ref{tab:faithfulness}, and~\ref{tab:calibration} were registered
+before any cross-architecture, cross-dataset, multi-seed run was
+executed.  The promotion criteria of \texttt{docs/HONESTY.md}~\S5
+gate which of these tables resolve to measured values vs which
+remain pre-registered placeholders in the current build; the
+\texttt{unresolved\_vars.json} sidecar enumerates every
+$\backslash$VAR$\{\}$ key whose value is not yet measured.
+
+\subsection{Hyperparameters, hardware, and reproducibility}
+\label{sec:experiments_repro}
+
+\begin{table}[!t]
+\centering
+\caption{Shared training hyperparameters.  Knowledge-distillation
+         weights and DONUT label-smoothing are disabled throughout
+         the reported runs and are listed at zero so a reviewer can
+         see they did not influence the headline.  All values are
+         read at paper-build time from the snapshotted
+         \texttt{runs/<id>/env/config\_snapshot.json}.}
+\label{tab:hparams_neurips}
+\begin{tabular}{ll}
+\toprule
+Parameter & Value \\ \midrule
+DONUT epochs                            & \VAR{epochs_donut} \\
+DONUT LR (encoder / decoder)            & $\VAR{lr_encoder}$ / $\VAR{lr_decoder}$ \\
+TrOCR epochs                            & \VAR{epochs_trocr} \\
+YOLO epochs                             & \VAR{epochs_yolo} \\
+YOLO imgsz                              & \VAR{yolo_img_size} \\
+LayoutLMv3 epochs                       & \VAR{layoutlmv3_epochs} \\
+LayoutLMv3 LR / batch                   & $5\mathrm{e}{-5}$ / 8 \\
+Assigner epochs (max / stopped / best)  &
+  \VAR{epochs_assigner} / \VAR{assigner_stopped_at} / \VAR{assigner_best_epoch} \\
+Assigner $d_{\text{model}}$ / layers    & \VAR{assigner_d_model} / \VAR{assigner_n_layers} \\
+Assigner parameters                     & $\approx\!\VAR{assigner_params_k}\,$K \\
+Batch size                              & \VAR{batch_size} \\
+Precision                               & \VAR{precision} \\
+Bootstrap resamples / CI level          & \VAR{bootstrap_n_iter} / \VAR{bootstrap_ci_level} \\
+Seeds                                   & \VAR{seeds_used} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{Hardware.}  RTX\,4090 (24\,GB VRAM) on vast.ai, CUDA 12.x.
+Per-stage GPU utilisation, peak VRAM, wall-clock time, energy (kWh)
+and CO$_2$eq (kg) are sampled at 5\,s intervals via
+\texttt{nvidia-smi}\,+\,\texttt{psutil} and persisted to
+\texttt{runs/<id>/telemetry\_*.jsonl} following Strubell et
+al.~\cite{strubell2019energy}; per-run cost in USD is recorded in
+\texttt{runs/<id>/cost\_*.json}.  Carbon intensity is set to
+$0.4$\,kg\,CO$_2$/kWh.
+
+\textbf{Reproducibility.}  Deterministic RNG seeding across Python,
+NumPy, and PyTorch with CUDNN determinism enabled
+(\texttt{core/seed.py::seed\_everything}).  DataLoader workers use a
+seeded \texttt{worker\_init\_fn} and a per-worker
+\texttt{torch.Generator}.  Every run writes a SHA-256 manifest
+(\texttt{runs/<id>/MANIFEST.json}) over every artefact the paper
+cites, the git SHA of the producing tree
+(\texttt{runs/<id>/env/git\_sha.txt}), and a
+\texttt{config\_snapshot.json} of the exact \texttt{ExpConfig} that
+was constructed.  The full NeurIPS-2024 reproducibility checklist is
+filled in Appendix~\ref{sec:repro_checklist}.
