@@ -10,26 +10,37 @@
 %                       experiment is run. Renders as a visible PENDING tag.
 %                       NEVER replace with a number until the experiment exists.
 %  - No long em-dash glyphs; use colons/commas.
-\documentclass[11pt,a4paper]{article}
+% IJDAR / Springer Nature layout EMULATION.
+% The genuine Springer class (sn-jnl.cls) is not installed in this
+% environment, so this skeleton emulates the IJDAR look with 'article':
+% single-column masthead/title/abstract/keywords, then two-column body.
+% The real submission swaps in sn-jnl.cls; content is class-independent.
+% HONESTY: no real DOI, no acceptance dates, no copyright-of-record line is
+% fabricated. The masthead carries only public journal name + placeholders,
+% and the SKELETON banner stays on every page.
+\documentclass[10pt,twocolumn,a4paper]{article}
 \usepackage[utf8]{inputenc}
 \usepackage[T1]{fontenc}
 \usepackage{lmodern}
 \usepackage{amsmath,amssymb}
 \usepackage{booktabs}
-\usepackage[margin=1in]{geometry}
+\usepackage[top=2.4cm,bottom=2.2cm,left=1.9cm,right=1.9cm]{geometry}
+\setlength{\columnsep}{6mm}
 \usepackage{xcolor}
 \usepackage{microtype}            % protrusion + expansion: prevents overfull boxes
 \setlength{\emergencystretch}{3em}
 \usepackage{titlesec}
-\titleformat{\section}{\large\bfseries}{\thesection}{0.6em}{}
-\titlespacing*{\section}{0pt}{1.4ex plus .3ex}{0.8ex}
-\titlespacing*{\paragraph}{0pt}{1.0ex plus .2ex}{0.6em}
+\titleformat{\section}{\bfseries}{\thesection}{0.5em}{}
+\titleformat{\subsection}{\bfseries}{\thesubsection}{0.5em}{}
+\titlespacing*{\section}{0pt}{1.5ex plus .3ex}{0.7ex}
+\titlespacing*{\subsection}{0pt}{1.1ex plus .2ex}{0.5ex}
+\titlespacing*{\paragraph}{0pt}{0.9ex plus .2ex}{0.5em}
 \usepackage{enumitem}
-\setlist{topsep=2pt,itemsep=2pt,parsep=0pt,leftmargin=1.4em}
+\setlist{topsep=2pt,itemsep=2pt,parsep=0pt,leftmargin=1.3em}
 \usepackage{hyperref}
 \hypersetup{hidelinks,pdftitle={The Two Questions of Trust}}
 
-% Skeleton banner so reviewers/readers see this is a structure, not a draft.
+% Skeleton banner so readers cannot mistake this for an accepted paper.
 \usepackage{fancyhdr}
 \pagestyle{fancy}\fancyhf{}
 \fancyhead[C]{\footnotesize\color{gray}STRUCTURE SKELETON: not for circulation; experiments and results pending}
@@ -41,16 +52,32 @@
 \newcommand{\priorfact}[1]{#1}
 \newcommand{\pending}[1]{{\small\sffamily\color{pendingclr}[\,PENDING:\ #1\,]}}
 \newcommand{\todo}[1]{{\small\sffamily\color{writeclr}[\,WRITE:\ #1\,]}}
-
-\title{The Two Questions of Trust:\\
-Why a Model's Confidence Is Not Enough, and What Is}
-\author{Authors Anonymized}
-\date{}
+\newcommand{\kwsep}{\ $\cdot$\ }
 
 \begin{document}
-\maketitle
 
-\begin{abstract}
+\twocolumn[{%
+\vspace*{-0.4cm}
+{\footnotesize International Journal on Document Analysis and Recognition (IJDAR)\\
+\ttfamily [DOI assigned on acceptance]\par}
+\vspace{6pt}
+\noindent\colorbox{gray!30}{\strut\ \footnotesize\bfseries ORIGINAL PAPER\ }%
+\hfill{\footnotesize\color{gray}\itshape submission template}
+\vspace{14pt}
+
+{\noindent\LARGE\bfseries The Two Questions of Trust:\\[2pt]
+Why a Model's Confidence Is Not Enough, and What Is\par}
+\vspace{12pt}
+
+{\noindent\large Authors Anonymized\par}
+\vspace{4pt}
+{\noindent\footnotesize\color{gray}STRUCTURE SKELETON. Submission draft only:
+received / revised / accepted dates, DOI, and copyright line are assigned on
+acceptance and are deliberately not shown.\par}
+\vspace{16pt}
+
+\begin{minipage}{\textwidth}\small
+\noindent\textbf{Abstract}\quad
 A deployed document-extraction model is trusted through a single number it
 reports about itself: its own confidence. That number has a fatal confound,
 it cannot separate an input that is hard but familiar from one that is easy
@@ -77,7 +104,13 @@ applied formalisation, not a methodological novelty. The paper's claim is
 therefore sharp by construction: trust was never one number, it is two
 questions, and asking both is the safer policy precisely where asking one is
 not.
-\end{abstract}
+\par\vspace{9pt}
+\noindent\textbf{Keywords}\quad selective prediction \kwsep distribution
+shift \kwsep document total extraction \kwsep trustworthy machine learning
+\kwsep structural verification
+\end{minipage}
+\vspace{1.5em}
+}]
 
 \paragraph{Contributions.}
 \begin{enumerate}
