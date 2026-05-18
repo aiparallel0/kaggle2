@@ -42,8 +42,10 @@ sys.path.insert(0, HERE)
 
 from common import (  # noqa: E402
     UnifiedRecord, write_records, write_result, seed_everything,
-    wilson, median, to_cents, subset_sum_verdict,
+    wilson, median,
     decode_or_load,
+    gold_total_cents, pred_total_cents, pred_items_cents, pred_tax_cents,
+    is_correct, subset_sum_verdict_prior,
 )
 
 
@@ -87,25 +89,17 @@ def decode_one_corpus(label_path, ckpt, args, backbone):
         fields = p["fields"] if isinstance(p["fields"], dict) else {}
         sm, cs = p["softmax_confidence"], p["c_seq"]
         gt = p["gold"]
-        pred_total = to_cents(fields.get("total"))
-        items = []
-        menu = fields.get("menu")
-        if isinstance(menu, list):
-            for it in menu:
-                if isinstance(it, dict):
-                    c = to_cents(it.get("price"))
-                    if c is not None:
-                        items.append(c)
-        tau = to_cents(fields.get("tax")) or 0
-        ss = subset_sum_verdict(pred_total, items, tau)
-        gp = (gt.get("gt_parse", gt) if isinstance(gt, dict) else {})
+        pred_total = pred_total_cents(fields)
+        items = pred_items_cents(fields)
+        tau = pred_tax_cents(fields)
+        ss = subset_sum_verdict_prior(pred_total, items, tau)
         recs.append(UnifiedRecord(
             receipt_id=f"{backbone}:{label}:{rid}", corpus=label,
-            backbone=backbone, gold_total=to_cents(gp.get("total")),
+            backbone=backbone, gold_total=gold_total_cents(gt),
             pred_total=pred_total, softmax_confidence=sm, c_seq=cs,
             arith_pass=(ss == "pass"), subset_sum_verdict=ss,
             beam_margin=p["beam_margin"],
-            extra={"correct": fields == gp}))
+            extra={"correct": is_correct(gt, fields)}))
     return recs
 
 

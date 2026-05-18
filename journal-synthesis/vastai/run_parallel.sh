@@ -76,7 +76,19 @@ sys.path.insert(0, ".")
 from common import decode_or_load
 corpus_arg, ckpt, prompt, batch = sys.argv[1:5]
 recs = decode_or_load(corpus_arg, ckpt, prompt, int(batch))
-print("decoded/loaded %d receipts for %s" % (len(recs), corpus_arg))
+n = len(recs)
+print("decoded/loaded %d receipts for %s" % (n, corpus_arg))
+# Hard sanity stamp: a Stage-A decode/load that yields 0 records is a
+# FAIL, never a "complete" cache downstream silently consumes (this is
+# exactly the WildReceipt n_records:0 collapse). decode_or_load already
+# raises on a genuine 0-record corpus / refuses a 0-record cache; this
+# is the belt-and-braces exit code in case a loader ever returns [].
+if n == 0:
+    sys.stderr.write(
+        "FAIL: Stage-A produced 0 records for %s. Refusing to treat "
+        "this as a complete cache; fix the corpus layout / loader.\n"
+        % corpus_arg)
+    sys.exit(3)
 PY
   rc=$?
   e="$(date -u +%FT%TZ)"

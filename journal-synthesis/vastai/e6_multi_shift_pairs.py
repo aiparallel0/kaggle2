@@ -41,8 +41,10 @@ sys.path.insert(0, HERE)
 
 from common import (  # noqa: E402
     UnifiedRecord, write_records, write_result, seed_everything,
-    variance, variance_ratio_log2, to_cents, subset_sum_verdict,
+    variance, variance_ratio_log2,
     decode_or_load,
+    pred_total_cents, pred_items_cents, pred_tax_cents,
+    subset_sum_verdict_prior,
 )
 
 
@@ -117,13 +119,19 @@ def decode_corpus(label_path, args, backbone):
         fields = p["fields"] if isinstance(p["fields"], dict) else {}
         sm, cs = p["softmax_confidence"], p["c_seq"]
         margin = p["beam_margin"]
-        pred_total = to_cents(fields.get("total"))
+        pred_total = pred_total_cents(fields)
+        # E6 is an Axis-B-only experiment (beam-margin variance ratios):
+        # gold_total/arith_pass stay None by design. The verdict is kept
+        # for schema completeness and now uses the prior-work verifier
+        # on the predicted line items (not an empty-items vacuous call).
         rec = UnifiedRecord(
             receipt_id=f"{label}:{rid}", corpus=label,
             backbone=backbone, gold_total=None,
             pred_total=pred_total, softmax_confidence=sm, c_seq=cs,
             arith_pass=None,
-            subset_sum_verdict=subset_sum_verdict(pred_total, []),
+            subset_sum_verdict=subset_sum_verdict_prior(
+                pred_total, pred_items_cents(fields),
+                pred_tax_cents(fields)),
             beam_margin=margin)
         out_records.append(rec)
         if margin is not None:

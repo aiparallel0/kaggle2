@@ -44,17 +44,29 @@ sys.path.insert(0, HERE)
 
 from common import (  # noqa: E402
     UnifiedRecord, write_records, write_result, seed_everything,
-    phi_mcc, perm_p, wilson, to_cents, subset_sum_verdict,
-    decode_or_load,
+    phi_mcc, perm_p, wilson,
+    decode_or_load, flatten_donut, parse_money,
+    gold_total_cents, pred_total_cents, pred_items_cents, pred_tax_cents,
+    is_correct, subset_sum_verdict_prior, EPS_CENTS,
 )
 
-EPS_CENTS = 2  # identical tolerance to triology subset_sum / E5
+# EPS_CENTS is the prior-work single-cent tolerance (common.totals,
+# phase4_verify_arith). Was locally 2 here; tightening to the prior
+# work's 1 is NOT a thesis-favouring loosening (it can only make the
+# alt-verifiers stricter).
 
 
 def v_line_item_qty(fields):
     """sum(price_i * qty_i) within EPS of total. Returns pass|fail|abstain
-    (abstain when no parseable line items / total)."""
-    total = to_cents(fields.get("total"))
+    (abstain when no parseable line items / total).
+
+    `fields` is the raw Donut token2json envelope; the menu list lives
+    at the top level, but the receipt total is nested under
+    total.total_price -- so we read the total via the prior-work
+    flatten+parse_money, not a flat `fields["total"]` (which was None
+    on the nested envelope)."""
+    flat = flatten_donut(fields)
+    total = parse_money(flat.get("total"))
     menu = fields.get("menu") or fields.get("items_detail")
     if total is None or not isinstance(menu, list) or not menu:
         return "abstain"
@@ -63,7 +75,7 @@ def v_line_item_qty(fields):
     for it in menu:
         if not isinstance(it, dict):
             continue
-        price = to_cents(it.get("price"))
+        price = parse_money(it.get("price"))
         if price is None:
             continue
         qty_raw = it.get("cnt") or it.get("qty") or 1
@@ -79,10 +91,12 @@ def v_line_item_qty(fields):
 
 
 def v_subtotal_tax(fields):
-    """subtotal + tax within EPS of total (triology I2/I4 method)."""
-    total = to_cents(fields.get("total"))
-    sub = to_cents(fields.get("subtotal"))
-    tax = to_cents(fields.get("tax")) or 0
+    """subtotal + tax within EPS of total (triology I2/I4 method).
+    Reads the nested Donut envelope via the prior-work flatten."""
+    flat = flatten_donut(fields)
+    total = parse_money(flat.get("total"))
+    sub = parse_money(flat.get("subtotal"))
+    tax = parse_money(flat.get("tax")) or 0
     if total is None or sub is None:
         return "abstain"
     return "pass" if abs(sub + tax - total) <= EPS_CENTS else "fail"
@@ -91,9 +105,10 @@ def v_subtotal_tax(fields):
 def v_rounding(fields, increment_cents=5):
     """total is a valid cash-rounding of subtotal+tax to the nearest
     `increment_cents` (default 5c). abstain if inputs missing."""
-    total = to_cents(fields.get("total"))
-    sub = to_cents(fields.get("subtotal"))
-    tax = to_cents(fields.get("tax")) or 0
+    flat = flatten_donut(fields)
+    total = parse_money(flat.get("total"))
+    sub = parse_money(flat.get("subtotal"))
+    tax = parse_money(flat.get("tax")) or 0
     if total is None or sub is None:
         return "abstain"
     raw = sub + tax
@@ -133,27 +148,19 @@ def main():
         fields = p["fields"] if isinstance(p["fields"], dict) else {}
         sm, cs = p["softmax_confidence"], p["c_seq"]
         gt = p["gold"]
-        pred_total = to_cents(fields.get("total"))
-        items = []
-        menu = fields.get("menu")
-        if isinstance(menu, list):
-            for it in menu:
-                if isinstance(it, dict):
-                    c = to_cents(it.get("price"))
-                    if c is not None:
-                        items.append(c)
-        tau = to_cents(fields.get("tax")) or 0
-        ss = subset_sum_verdict(pred_total, items, tau)
-        gp = (gt.get("gt_parse", gt) if isinstance(gt, dict) else {})
+        pred_total = pred_total_cents(fields)
+        items = pred_items_cents(fields)
+        tau = pred_tax_cents(fields)
+        ss = subset_sum_verdict_prior(pred_total, items, tau)
         records.append(UnifiedRecord(
             receipt_id=f"{label}:{rid}", corpus=label,
             backbone=backbone,
-            gold_total=to_cents(gp.get("total")),
+            gold_total=gold_total_cents(gt),
             pred_total=pred_total, softmax_confidence=sm, c_seq=cs,
             arith_pass=(ss == "pass"), subset_sum_verdict=ss,
             beam_margin=None,
             extra={
-                "correct": fields == gp,
+                "correct": is_correct(gt, fields),
                 "v_line_item_qty": v_line_item_qty(fields),
                 "v_subtotal_tax": v_subtotal_tax(fields),
                 "v_rounding": v_rounding(
@@ -199,8 +206,10 @@ def main():
 
     payload = {
         "experiment": "E9",
-        "scope": "alternative structural-verifier bake-off vs subset-sum "
-                 "on shared decoded receipts (H4)",
+        "scope": (f"alternative structural-verifier bake-off vs subset-sum "
+                  f"on shared decoded receipts (H4); corpus={label}; "
+                  f"path={_path}; n_records={len(records)} "
+                  f"(split/size is whatever --corpus points at)"),
         "per_verifier": summary,
         "orthogonality_vs_subset_sum": ortho,
         "computed_on": f"{socket.gethostname()}@"

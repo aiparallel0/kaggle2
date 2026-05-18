@@ -1,16 +1,20 @@
 #!/usr/bin/env python3
-"""E1/E2/E3 at FULL corpus scale (not the n=100 CORD proxy).
+"""E1/E2/E3 over whatever corpus/split is passed via --corpus.
 
 WHAT IT COMPUTES
   The exact same three analyses as experiments/run_analysis.py (E1
   error-decorrelation phi/MCC + permutation p; E2 confidence-alone vs
   Axis-A-alone vs composed precision/coverage + blind-spots; E3
-  precision-coverage frontier sweep) but on the FULL fetched corpus
-  decoded through the unified pipeline, removing the GLOBAL SCOPE WARNING
-  (CORD-only, n=100, single pipeline) stated in EXPERIMENTS.md. Metric
-  math is reused verbatim from common (which is itself a verbatim port of
-  run_analysis.py), so a full-scale number is directly comparable to the
-  n=100 proxy.
+  precision-coverage frontier sweep) on the corpus/split given by
+  --corpus (label=path), decoded through the unified pipeline. Metric
+  math is reused verbatim from common (a verbatim port of
+  run_analysis.py).
+
+  SCOPE HONESTY: the emitted "scope" string states the TRUE corpus
+  label, the path it was decoded from, and the actual record count n.
+  It does NOT claim "full-scale" -- if the runbook points --corpus at
+  the n=100 OCR-derived CORD *validation* split (cord_dev), the scope
+  string will say exactly that. There is no hard-coded scope constant.
 
 WHAT IT NEEDS
   GPU. KIE checkpoint (--checkpoint). The full corpus (all splits)
@@ -37,8 +41,10 @@ sys.path.insert(0, HERE)
 
 from common import (  # noqa: E402
     UnifiedRecord, write_records, write_result, seed_everything,
-    phi_mcc, perm_p, median, to_cents, subset_sum_verdict,
+    phi_mcc, perm_p, median,
     decode_or_load,
+    gold_total_cents, pred_total_cents, pred_items_cents, pred_tax_cents,
+    is_correct, subset_sum_verdict_prior,
 )
 
 
@@ -71,6 +77,13 @@ def main():
         args.corpus, args.checkpoint, args.task_prompt, args.batch)
     label, _path = args.corpus.split("=", 1)
     backbone = os.path.basename(args.checkpoint.rstrip("/"))
+    # Honest scope: the TRUE corpus label, the path it was decoded from,
+    # and (filled after records are built) the actual n. No hard-coded
+    # "FULL-SCALE" claim -- whatever --corpus points at is reported.
+    def scope_str(n_records):
+        return (f"corpus={label}; path={_path}; "
+                f"n_records={n_records} (decoded via unified pipeline; "
+                f"split/size is whatever --corpus points at)")
 
     records = []
     for p in primitives:
@@ -78,25 +91,21 @@ def main():
         fields = p["fields"] if isinstance(p["fields"], dict) else {}
         sm, cs = p["softmax_confidence"], p["c_seq"]
         gt = p["gold"]
-        pred_total = to_cents(fields.get("total"))
-        items = []
-        menu = fields.get("menu")
-        if isinstance(menu, list):
-            for it in menu:
-                if isinstance(it, dict):
-                    c = to_cents(it.get("price"))
-                    if c is not None:
-                        items.append(c)
-        tau = to_cents(fields.get("tax")) or 0
-        ss = subset_sum_verdict(pred_total, items, tau)
-        gp = (gt.get("gt_parse", gt) if isinstance(gt, dict) else {})
+        # Prior-work-faithful extraction (common.totals): pred/gold total
+        # via phase4_verify_arith.parse_money on the flattened CORD Donut
+        # envelope / canonical annotation. Subset-sum uses the prior
+        # paper's verifier semantics so Axis-A does not vacuously abstain.
+        pred_total = pred_total_cents(fields)
+        items = pred_items_cents(fields)
+        tau = pred_tax_cents(fields)
+        ss = subset_sum_verdict_prior(pred_total, items, tau)
         records.append(UnifiedRecord(
             receipt_id=f"{label}:{rid}", corpus=label,
-            backbone=backbone, gold_total=to_cents(gp.get("total")),
+            backbone=backbone, gold_total=gold_total_cents(gt),
             pred_total=pred_total, softmax_confidence=sm, c_seq=cs,
             arith_pass=(ss == "pass"), subset_sum_verdict=ss,
             beam_margin=None,
-            extra={"correct": fields == gp,
+            extra={"correct": is_correct(gt, fields),
                    "n_applicable": 0 if ss == "abstain" else 1}))
 
     write_records(args.out_records, records)
@@ -119,7 +128,7 @@ def main():
                                                   seed=args.seed)}
 
     e1 = {
-        "scope": "FULL-SCALE (not the n=100 CORD proxy)",
+        "scope": scope_str(n),
         "n_records": n, "n_applicable_gt0": len(appl),
         "n_applicable_eq0_excluded_from_axisA": n - len(appl),
         "axisA_error_rate_on_applicable": (
@@ -153,7 +162,7 @@ def main():
     co_ids, aa_ids, cp_ids = (set(co.pop("ids")), set(aa.pop("ids")),
                               set(cp.pop("ids")))
     e2 = {
-        "scope": "FULL-SCALE",
+        "scope": scope_str(n),
         "c_seq_threshold_median": thr,
         "confidence_alone": co, "axisA_alone": aa,
         "composed_axisA_AND_cseq": cp,
@@ -180,7 +189,7 @@ def main():
     payload = {
         "experiment": "E1E3_fullscale",
         "E1": e1, "E2": e2,
-        "E3": {"scope": "FULL-SCALE", "frontier": frontier},
+        "E3": {"scope": scope_str(n), "frontier": frontier},
         "computed_on": f"{socket.gethostname()}@"
                        f"{datetime.datetime.utcnow().isoformat()}Z",
     }

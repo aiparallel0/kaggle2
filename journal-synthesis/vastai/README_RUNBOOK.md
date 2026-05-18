@@ -1,4 +1,15 @@
-# vast.ai Runbook - blocked journal experiments (E5-E10 + full-scale E1-E3)
+# vast.ai Runbook - blocked journal experiments (E5-E10 + E1-E3)
+
+> SCOPE HONESTY: "full-scale" is NOT automatic. Each experiment's
+> emitted `scope` string now states the TRUE corpus label, the decode
+> path, and the actual record count `n`. If you point `--corpus` at the
+> n=100 OCR-derived CORD *validation* split (`fetch_cord_dev.py`'s
+> `dev`), the scope string will say exactly that -- it will NOT claim
+> full-scale. To actually run at scale, pass the full `test` (or
+> train+test) split path. WildReceipt images are `.jpeg` (not `.png`);
+> the loader resolves images via each annotation's own
+> `image_filename`, so the corpus no longer silently collapses to
+> 0 records.
 
 This package reproduces / scales every experiment that EXPERIMENTS.md
 marks BLOCKED in the preparation environment (no GPU, no models, no
@@ -113,8 +124,8 @@ these against PREREGISTRATION.md (the excluded internal-QA step).
 
 | Exp | Computes | Needs |
 |-----|----------|-------|
-| E1E3 full-scale | E1/E2/E3 (same math as run_analysis.py) on full corpus, removing the n=100 proxy caveat | GPU, ckpt, full CORD |
-| E5 | unified pipeline, four-way head-to-head at matched cost (H1) + error-decorrelation (H2) at scale | GPU, ckpt, >=1 corpus |
+| E1E3 | E1/E2/E3 (same math as run_analysis.py) on whatever `--corpus` points at; the JSON `scope` states the true corpus/path/n (NOT auto "full-scale") | GPU, ckpt, CORD |
+| E5 | unified pipeline, four-way head-to-head at matched cost (H1) + error-decorrelation (H2); JSON `scope` lists the ACTUAL corpora + per-corpus n and flags SINGLE vs MULTI-CORPUS | GPU, ckpt, >=1 corpus |
 | E6 | Axis-B log2 variance-ratio + KS + permutation p over multiple natural shift pairs | GPU, ckpt, >=2 corpora |
 | E7 | margin-variance vs independently dialed difficulty/shift (H3) + ablation hooks | GPU, ckpt, 1 base corpus |
 | E8 | real end-to-end GPU latency, gate inline, vs prior CPU 4.07 us | GPU, ckpt, 1 corpus |

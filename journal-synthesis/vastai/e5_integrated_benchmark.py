@@ -43,7 +43,9 @@ sys.path.insert(0, HERE)
 from common import (  # noqa: E402
     UnifiedRecord, write_records, write_result, seed_everything,
     phi_mcc, perm_p, bootstrap_ci, wilson, median,
-    subset_sum_verdict, to_cents, decode_or_load,
+    decode_or_load,
+    gold_total_cents, gold_items_cents, gold_tax_cents,
+    pred_total_cents, is_correct, subset_sum_verdict_prior,
 )
 
 
@@ -65,19 +67,13 @@ def parse_args():
 
 
 def gold_total_and_items(gt):
-    """Pull gold total + item prices (cents) from the flattened CORD
-    schema produced by arith-gating fetch_data / phase3 _flatten_gt."""
-    parse = gt.get("gt_parse", gt) if isinstance(gt, dict) else {}
-    total = to_cents(parse.get("total"))
-    items_raw = parse.get("items")
-    items = []
-    if isinstance(items_raw, str):
-        for tok in items_raw.split():
-            c = to_cents(tok)
-            if c is not None:
-                items.append(c)
-    tau = to_cents(parse.get("tax")) or 0
-    return total, items, tau
+    """Gold total + item prices + tax (cents) from the canonical
+    annotation, using the prior-work-faithful common.totals extractors
+    (phase4_verify_arith.parse_money / parse_items on the on-disk
+    {"fields": {...}} schema written by fetch_data / fetch_wildreceipt).
+    The previous `gt.get("gt_parse", gt).get("total")` read a key absent
+    from the on-disk annotation, so gold_total was always None."""
+    return (gold_total_cents(gt), gold_items_cents(gt), gold_tax_cents(gt))
 
 
 def main():
@@ -99,11 +95,12 @@ def main():
             sm_conf, c_seq = p["softmax_confidence"], p["c_seq"]
             gt = p["gold"]
             gold_total, items, tau = gold_total_and_items(gt)
-            pred_total = to_cents(fields.get("total"))
-            verdict = subset_sum_verdict(pred_total, items, tau)
+            pred_total = pred_total_cents(fields)
+            # Axis-A: subset-sum of the GOLD line items against the
+            # predicted total (gold-anchored verifier, prior-work
+            # semantics) so it does not vacuously abstain.
+            verdict = subset_sum_verdict_prior(pred_total, items, tau)
             bm = p["beam_margin"]
-            gold_fields = (gt.get("gt_parse", gt)
-                           if isinstance(gt, dict) else {})
             rec = UnifiedRecord(
                 receipt_id=f"{corpus}:{rid}",
                 corpus=corpus, backbone=backbone,
@@ -111,13 +108,14 @@ def main():
                 softmax_confidence=sm_conf, c_seq=c_seq,
                 arith_pass=(verdict == "pass"),
                 subset_sum_verdict=verdict, beam_margin=bm,
-                extra={"correct": fields == gold_fields})
+                extra={"correct": is_correct(gt, fields)})
             records.append(rec)
 
     write_records(args.out_records, records)
 
     # ---- pre-registered four-way head-to-head (H1) -----------------------
-    # Receipt "correct" iff decoded fields == gold (same proxy as E2).
+    # Receipt "correct" iff predicted total == gold total within
+    # EPS_CENTS (prior-work definition; common.totals.is_correct).
     rs = [r for r in records]
     correct = {r.receipt_id: bool(r.extra.get("correct")) for r in rs}
     c_seqs = [r.c_seq for r in rs if r.c_seq is not None]
@@ -184,10 +182,21 @@ def main():
           "permutation_p_two_sided": perm_p(axisA_err, conf_err,
                                             seed=args.seed)}
 
+    # Honest scope: the ACTUAL corpora decoded + per-corpus record
+    # counts (not a blanket "multi-corpus" claim -- if only one corpus
+    # was passed this says so).
+    per_corpus = {}
+    for r in rs:
+        per_corpus[r.corpus] = per_corpus.get(r.corpus, 0) + 1
     payload = {
         "experiment": "E5",
-        "scope": "integrated multi-corpus four-way benchmark; receipt_ids "
-                 "aligned by construction (one unified pipeline)",
+        "scope": ("integrated four-way benchmark; receipt_ids aligned by "
+                  "construction (one unified pipeline); corpora="
+                  + ",".join(f"{c}(n={n})"
+                              for c, n in sorted(per_corpus.items()))
+                  + (" [SINGLE CORPUS]" if len(per_corpus) <= 1
+                     else " [MULTI-CORPUS]")),
+        "per_corpus_n": per_corpus,
         "n_records": len(rs),
         "c_seq_threshold_median": c_thr,
         "beam_margin_threshold_median": m_thr,

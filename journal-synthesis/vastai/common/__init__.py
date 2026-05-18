@@ -41,6 +41,23 @@ from .records import (
     checkpoint_sha,
     split_corpus_arg,
 )
+from .totals import (
+    parse_money,
+    parse_items,
+    flatten_donut,
+    gold_fields,
+    gold_total_cents,
+    gold_items_cents,
+    gold_tax_cents,
+    pred_total_cents,
+    pred_items_cents,
+    pred_tax_cents,
+    is_correct,
+    subset_sum_exists,
+    subset_sum_verdict_prior,
+    EPS_CENTS,
+    ADMISSIBLE_RATES_CORD,
+)
 
 __all__ = [
     "UnifiedRecord",
@@ -67,4 +84,19 @@ __all__ = [
     "cache_path",
     "checkpoint_sha",
     "split_corpus_arg",
+    "parse_money",
+    "parse_items",
+    "flatten_donut",
+    "gold_fields",
+    "gold_total_cents",
+    "gold_items_cents",
+    "gold_tax_cents",
+    "pred_total_cents",
+    "pred_items_cents",
+    "pred_tax_cents",
+    "is_correct",
+    "subset_sum_exists",
+    "subset_sum_verdict_prior",
+    "EPS_CENTS",
+    "ADMISSIBLE_RATES_CORD",
 ]

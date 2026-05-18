@@ -74,11 +74,46 @@ def cache_path(results_dir: str, label: str, checkpoint: str) -> str:
         results_dir, f"{label}__{checkpoint_sha(checkpoint)}.records.jsonl")
 
 
+# Image extensions the canonical loaders may have written. CORD's
+# arith-gating fetcher writes PNG; WildReceipt's fetch_wildreceipt.py
+# to_canonical writes the SOURCE suffix (jpeg/jpg/png) or '.jpeg' as a
+# fallback. The previous hard-coded `<rid>.png` is exactly why
+# WildReceipt produced 0 records (every .jpeg image was "missing", so
+# every annotation was skipped). We resolve the image by the annotation
+# JSON's own `image_filename` first (authoritative, written by the
+# fetcher), then fall back to a tolerant extension probe.
+_IMG_EXTS = (".png", ".jpeg", ".jpg", ".JPEG", ".JPG", ".PNG")
+
+
+def _resolve_image(imgs_dir: str, rid: str, ann_path: str) -> Optional[str]:
+    """Find the image for a receipt. Authoritative source is the
+    annotation's own `image_filename` (written by the canonical
+    fetchers); fall back to a tolerant extension probe so a corpus whose
+    images are .jpeg (WildReceipt) is NOT silently dropped."""
+    try:
+        with open(ann_path) as f:
+            meta = json.load(f)
+        name = meta.get("image_filename")
+        if name:
+            cand = os.path.join(imgs_dir, os.path.basename(str(name)))
+            if os.path.exists(cand):
+                return cand
+    except (OSError, ValueError):
+        pass
+    for ext in _IMG_EXTS:
+        cand = os.path.join(imgs_dir, rid + ext)
+        if os.path.exists(cand):
+            return cand
+    return None
+
+
 def _enumerate_receipts(path: str):
     """Canonical receipt enumeration: sorted *.json annotations whose
-    matching images/<rid>.png exists. This is EXACTLY the order + skip
-    rule the scripts already used (sorted listdir of annotations,
-    `.json` only, skip when the png is missing)."""
+    matching image exists. Order + skip rule unchanged (sorted listdir
+    of annotations, `.json` only, skip when the image is missing) EXCEPT
+    the image is now resolved by the annotation's own `image_filename`
+    (and a tolerant extension probe) instead of a hard-coded `.png`, so
+    WildReceipt (.jpeg) no longer collapses to 0 records."""
     anns = os.path.join(path, "annotations")
     imgs_dir = os.path.join(path, "images")
     out = []
@@ -86,10 +121,11 @@ def _enumerate_receipts(path: str):
         if not fn.endswith(".json"):
             continue
         rid = os.path.splitext(fn)[0]
-        ip = os.path.join(imgs_dir, rid + ".png")
-        if not os.path.exists(ip):
+        ap = os.path.join(anns, fn)
+        ip = _resolve_image(imgs_dir, rid, ap)
+        if ip is None:
             continue
-        out.append((rid, os.path.join(anns, fn), ip))
+        out.append((rid, ap, ip))
     return out
 
 
@@ -121,6 +157,19 @@ def _try_load_cache(path: str, label: str, corpus_path: str,
             or header.get("corpus_path") != corpus_path
             or header.get("task_prompt") != task_prompt):
         return None
+    if not header.get("n_records"):
+        # A 0-record cache (the WildReceipt bug: Stage-A "loaded"
+        # wildreceipt but produced zero records and still wrote a
+        # "complete" cache that downstream silently consumed, collapsing
+        # every multi-corpus experiment to cord-only). Refuse it: force
+        # a rebuild, which now raises loudly on a genuine 0-record
+        # corpus instead of masquerading as a finished cache.
+        raise RuntimeError(
+            f"Refusing 0-record cache {path} for corpus '{label}'. A "
+            f"complete-looking 0-record cache is invalid (downstream "
+            f"would silently drop this corpus). Delete it and re-decode; "
+            f"if the corpus genuinely yields 0 records the rebuild will "
+            f"FAIL loudly with the layout diagnostic.")
     body = lines[1:]
     if header.get("n_records") != len(body):
         # truncated / half-written -> rebuild, never half-use
@@ -206,6 +255,15 @@ def decode_or_load(corpus_arg: str, checkpoint: str, task_prompt: str,
     pad = processor.tokenizer.pad_token_id
 
     receipts = _enumerate_receipts(path)
+    if not receipts:
+        raise RuntimeError(
+            f"Stage-A decode for corpus '{label}' (path={path}) enumerated "
+            f"0 receipts: no annotations/*.json with a resolvable image in "
+            f"{os.path.join(path, 'images')}. This is a FAIL (likely an "
+            f"image filename/extension or layout mismatch). A 0-record "
+            f"cache is NOT written so downstream cannot silently collapse "
+            f"to another corpus. Verify the on-disk layout: "
+            f"{path}/annotations/*.json + {path}/images/<image_filename>.")
     recs: List[Dict[str, Any]] = []
     for i in range(0, len(receipts), batch):
         chunk = receipts[i:i + batch]
@@ -230,6 +288,12 @@ def decode_or_load(corpus_arg: str, checkpoint: str, task_prompt: str,
                 "c_seq": cs,
                 "beam_margin": margin,
             })
+
+    if not recs:
+        raise RuntimeError(
+            f"Stage-A decode for corpus '{label}' produced 0 records from "
+            f"{len(receipts)} enumerated receipts. This is a FAIL; a "
+            f"0-record cache is NOT written.")
 
     _write_cache(cpath, label, path, checkpoint, task_prompt, recs)
     return recs
