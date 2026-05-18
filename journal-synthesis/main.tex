@@ -1,0 +1,206 @@
+% Journal synthesis paper -- STRUCTURE SKELETON.
+% Venue (planned): IJDAR primary; IEEE Access safety; DAS if conference.
+% Final camera-ready will use the venue class (Springer svjour3 for IJDAR).
+% This skeleton uses 'article' so the structure builds anywhere.
+%
+% HONESTY RULES BAKED INTO THIS FILE:
+%  - \priorfact{...}  : a result ESTABLISHED in the two prior ASYU papers,
+%                       cited, NOT re-claimed here. Renders normally.
+%  - \pending{...}    : a NEW result this paper will report once the
+%                       experiment is run. Renders as a visible PENDING tag.
+%                       NEVER replace with a number until the experiment exists.
+%  - No long em-dash glyphs; use colons/commas.
+\documentclass[11pt,a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage{geometry}
+\geometry{margin=1in}
+\usepackage{xcolor}
+\usepackage{hyperref}
+\hypersetup{hidelinks}
+
+\newcommand{\priorfact}[1]{#1}
+\newcommand{\pending}[1]{{\color{red}\textbf{[PENDING:} #1\textbf{]}}}
+\newcommand{\todo}[1]{{\color{blue}\textit{[WRITE: #1]}}}
+
+\title{The Two Questions of Trust:\\
+Why a Model's Confidence Is Not Enough, and What Is}
+\author{Authors Anonymized}
+\date{}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+A deployed document-extraction model is trusted through a single number it
+reports about itself: its own confidence. That number has a fatal confound,
+it cannot separate an input that is hard but familiar from one that is easy
+but drawn from a shifted world, and no amount of recalibration removes it,
+because one scalar is being asked two different questions at once. In this
+work we argue that trust in numeric document extraction is not one quantity
+but two independent questions: is this answer internally consistent (a
+symbolic question), and is the model still operating in the distribution it
+was trained on (a statistical question). Two prior studies established,
+separately, a strong answer to each question: a subset-sum arithmetic gate
+that is precision-orthogonal to softmax confidence, and the variance of the
+beam margin as a distribution-shift signal that confidence is structurally
+blind to. Each is a complete result, and each is, by its authors' own
+account, deliberately partial. The contribution of this paper is the
+synthesis those papers could not make individually: a formal two-axis theory
+of extraction trust, a non-redundancy result that explains mechanistically
+why the two signals fail independently rather than together, and an
+integrated, pre-registered evaluation testing whether composing them is
+strictly safer than either axis or than confidence alone, at matched
+false-alarm rate and matched human-review cost. We also state, unsoftened,
+the boundary the synthesis does not move: the distributional axis remains a
+population-level signal, not a per-receipt detector, and the framework is an
+applied formalisation, not a methodological novelty. The paper's claim is
+therefore sharp by construction: trust was never one number, it is two
+questions, and asking both is the safer policy precisely where asking one is
+not.
+\end{abstract}
+
+\paragraph{Contributions.}
+\begin{enumerate}
+  \item \textbf{A two-axis theory of extraction trust (new).} We formalise
+  symbolic checkability and distributional stability as orthogonal trust
+  axes, define their composition operator and the accept / abstain /
+  flag-shift decision policy, and give a non-redundancy statement argued both
+  definitionally and empirically.
+  \item \textbf{A mechanistic account of why the axes are independent
+  (new).} We show the symbolic axis's errors are governed by document
+  structure while the distributional axis's signal is a scale (not location)
+  effect, and tie this to an error-decorrelation analysis, turning an
+  empirically convenient pairing into a predicted one.
+  \item \textbf{An integrated system and a pre-registered head-to-head
+  evaluation (new).} A shared, released benchmark and a pre-registered
+  protocol testing the composed policy against each axis alone and against
+  confidence alone, at fixed false-alarm and fixed reviewer cost, with
+  operating-point analysis.
+  \item \textbf{Hardened external validity for each axis (new evidence;
+  component results are prior work).} New experiments extend the two
+  established components; the base results for each axis are not re-claimed
+  here, they are cited to prior work and used as the components this paper
+  composes.
+  \item \textbf{An explicit, carried-forward boundary (new framing).} We
+  restate the permanent structural limitations of the components in the
+  language of the framework, so the synthesis sharpens rather than overstates
+  the prior claims.
+\end{enumerate}
+
+\section{Introduction: the crack}
+\label{sec:intro}
+\todo{Open on the confound, not the method: confidence cannot separate
+hard-but-familiar from easy-but-shifted. State the two-question thesis.
+Contributions paragraph. Then the explicit new-vs-prior delineation pointer
+(see Appendix~\ref{app:delineation}) so this remains a legitimate extended
+version that does not dilute the two prior papers.}
+
+\section{Related work: why no single signal closes the crack}
+\label{sec:related}
+\todo{Selective prediction; confidence calibration; OOD / distribution-shift
+detection; formal and structural verification; document KIE / total
+extraction. The argument: each prior line maps to ONE axis only; none spans
+both. This is what licenses the reframe.}
+
+\section{The two-axis theory of trust}
+\label{sec:theory}
+\todo{Core, fully new. Definitions:}
+\begin{itemize}
+  \item Axis A, symbolic checkability: \todo{formal definition.}
+  \item Axis B, distributional stability: \todo{formal definition.}
+  \item Composition operator and the accept / abstain / flag-shift policy.
+  \item Non-redundancy statement: argued definitionally here, tested
+  empirically in Sec.~\ref{sec:mechanism} and Sec.~\ref{sec:integrated}.
+\end{itemize}
+
+\section{Axis A: symbolic verification, and its honest ceiling}
+\label{sec:axisA}
+\paragraph{Recap (prior work, not re-claimed).}
+\priorfact{The subset-sum arithmetic gate is precision-orthogonal to softmax
+confidence; on the pooled prior-work evaluation it reaches 0.989 precision
+(Wilson lower bound 0.961), with either signal alone below 0.92.}
+This result is established in prior work and cited; it is used here only as
+the component this paper composes.
+\paragraph{Hardening (new evidence).}
+\begin{itemize}
+  \item Alternative-verifier bake-off: \pending{precision/coverage/orthogonality vs. line-item, subtotal+tax, rounding verifiers}.
+  \item Full precision--coverage--cost frontier: \pending{swept tolerance curves, per corpus and pooled, with CIs and the reviewer-cost model}.
+  \item Power-resolving per-corpus replication: \pending{per-corpus CIs at pre-registered target half-width}.
+  \item Real end-to-end latency on the deployment pipeline: \pending{true end-to-end ratio (prior work measured CPU-only standalone)}.
+\end{itemize}
+
+\section{Axis B: distributional stress, and its honest ceiling}
+\label{sec:axisB}
+\paragraph{Recap (prior work, not re-claimed).}
+\priorfact{The variance of the beam margin is a distribution-shift signal
+that is location-invariant where sequence confidence is not; on the prior
+natural shift pair the variance-ratio statistic shows a large compression
+that a Kolmogorov--Smirnov location test does not see.}
+Established in prior work and cited; used here as a component only.
+\paragraph{The boundary, carried forward unsoftened.}
+\priorfact{The beam margin sits below every confidence baseline on raw
+per-receipt AUROC and provides no per-receipt triage value. This is a
+structural property, not a defect, and it is not retracted here.}
+\paragraph{Hardening (new evidence).}
+\begin{itemize}
+  \item Multiple natural shift pairs: \pending{variance-ratio + significance battery across several natural pairs; how often sign/magnitude holds}.
+  \item Controlled mechanism study: \pending{synthetic shifts with independently dialed difficulty vs. distribution distance}.
+  \item Ablations and negative controls: \pending{beam width, length normalisation, architecture; registered no-shift null}.
+  \item Operational monitor: \pending{detection rate at fixed false-alarm and detection delay (prior-work F6/F7 numbers were pending)}.
+\end{itemize}
+
+\section{The integrated system: the grand experiment}
+\label{sec:integrated}
+\todo{Shared, released benchmark and pipeline running both axes on the same
+receipts.}
+\begin{itemize}
+  \item Pre-registered four-way head-to-head: composed vs. Axis A vs. Axis B
+  vs. confidence alone, at matched false-alarm and matched reviewer cost.
+  Primary endpoint: \pending{registered primary metric and result}.
+  \item Blind-spot coverage test: \pending{cases where each axis individually fails and whether composition recovers them}.
+  \item Error-decorrelation measurement: \pending{empirical correlation of the two axes' error events}.
+  \item Adversarial / stress probe: \pending{graceful degradation of the composed policy under money-line noise + cardinality ablation}.
+\end{itemize}
+
+\section{Mechanism: why the coverage is principled, not lucky}
+\label{sec:mechanism}
+\todo{Scale-vs-location separation; why symbolic errors decorrelate from
+confidence errors; the formal plus empirical account that turns a convenient
+pairing into a predicted one. This section is what makes the story robust
+rather than anecdotal, and it carries the novelty weight.}
+
+\section{Limitations: the boundary, stated as strength}
+\label{sec:limitations}
+\begin{itemize}
+  \item \priorfact{Axis B is a population-level signal, not a per-receipt
+  detector; no per-receipt triage. Carried forward, not erased.}
+  \item \priorfact{The framework is an applied formalisation; no
+  methodological-novelty claim.}
+  \item Residual external-validity bounds after the new evidence:
+  \pending{state precisely what the broadened experiments do and do not establish}.
+\end{itemize}
+
+\section{Conclusion}
+\label{sec:conclusion}
+\todo{Restate the reframe: trust was never one number, it is two questions,
+and you must ask both.}
+
+\appendix
+\section{New-vs-prior delineation}
+\label{app:delineation}
+\todo{Reproduce the table from DELINEATION.md so the extended-version
+boundary is explicit in the manuscript itself.}
+
+\section{Pre-registration record}
+\label{app:prereg}
+\todo{Reference PREREGISTRATION.md: hypotheses, endpoints, analysis plan,
+fixed before any new experiment is run.}
+
+\bibliographystyle{plain}
+\bibliography{references}
+
+\end{document}
