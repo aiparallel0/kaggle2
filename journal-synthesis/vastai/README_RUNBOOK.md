@@ -141,3 +141,36 @@ will vary with GPU, batch size, and corpus size.
 | **Full `run_all.sh`** | **ESTIMATE ~6-14 h** | **ESTIMATE ~USD 4-9** |
 
 Treat the table as planning guidance, not a measurement.
+
+## 6. Fresh-instance one-liner + parallel runner (added)
+
+`bootstrap.sh` is idempotent fresh-instance setup; `run_parallel.sh` is a
+GPU-aware, resumable scheduler. HONEST scope: all experiments are
+GPU-bound, so on a SINGLE GPU parallelism gives little speedup, the real
+wins on 1 GPU are resumability + per-job timing; on N GPUs it shards up
+to N experiments concurrently (one GPU each) for near-linear speedup. It
+does NOT share inference across experiments (the packaged scripts each
+re-decode; a shared decode cache would need a scripts refactor, noted as
+future work, not claimed here).
+
+Copy-paste on a fresh vast.ai PyTorch instance:
+
+```bash
+export REPO_URL=https://github.com/aiparallel0/kaggle2.git
+export ARITH_URL=https://github.com/aiparallel0/arith-gating.git
+export TRIOLOGY_URL=https://github.com/aiparallel0/triology.git
+export CKPT_ID=<your-hf-donut-cord-v2-checkpoint-id>
+cd /workspace 2>/dev/null || cd ~
+git clone --branch claude/prepare-papers-repos-4LUdJ --single-branch "$REPO_URL" kaggle2 \
+  || git clone "$REPO_URL" kaggle2
+cd kaggle2/journal-synthesis/vastai
+bash bootstrap.sh
+source .env.sh
+bash run_parallel.sh
+```
+
+Resumable: re-running `run_parallel.sh` skips any experiment whose
+`results/<EXP>.json` already has a real `computed_on` stamp; failed jobs
+are logged to `results/<EXP>.log` and timed in
+`results/PARALLEL_TIMING.tsv`. Nothing is faked: a job that cannot reach
+a GPU aborts and is recorded as FAIL, never as a fabricated result.
