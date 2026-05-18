@@ -64,7 +64,15 @@ def parse_args():
     # ablation hooks (recorded; vary by re-invocation):
     ap.add_argument("--beam_width", type=int, default=2)
     ap.add_argument("--length_penalty", type=float, default=1.0)
-    ap.add_argument("--batch", type=int, default=4)
+    # E7 decodes SYNTHETICALLY-PERTURBED images (degrade x domain_shift
+    # per grid cell). Those decodes are UNIQUE to E7 - they are NOT the
+    # redundant re-decode of an unperturbed corpus the shared cache
+    # eliminates - so E7 honestly cannot read the shared corpus cache
+    # without corrupting its own inputs (it would load clean-image
+    # primitives for perturbed cells). E7 therefore keeps its inline
+    # decode (correctness over a false speedup); only the batch default
+    # is aligned to 16 for run_parallel consistency.
+    ap.add_argument("--batch", type=int, default=16)
     ap.add_argument("--seed", type=int, default=12345)
     ap.add_argument("--out_records",
                     default=os.path.join(HERE, "results", "E7_records.jsonl"))

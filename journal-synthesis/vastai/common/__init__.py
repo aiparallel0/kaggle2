@@ -35,6 +35,12 @@ from .pipeline import (
     decode_fields,
     beam_margin_batch,
 )
+from .records import (
+    decode_or_load,
+    cache_path,
+    checkpoint_sha,
+    split_corpus_arg,
+)
 
 __all__ = [
     "UnifiedRecord",
@@ -57,4 +63,8 @@ __all__ = [
     "load_donut",
     "decode_fields",
     "beam_margin_batch",
+    "decode_or_load",
+    "cache_path",
+    "checkpoint_sha",
+    "split_corpus_arg",
 ]

@@ -54,6 +54,13 @@ def parse_args():
     ap.add_argument("--checkpoint", required=True)
     ap.add_argument("--task_prompt", default="<s_cord-v2>")
     ap.add_argument("--corpus", required=True, help="label=path")
+    # Accepted for run_parallel argparse consistency. E8 measures
+    # PER-RECEIPT end-to-end latency, so it intentionally decodes one
+    # receipt at a time (batch is inherently 1 for a per-receipt
+    # percentile); --batch is recorded but does NOT change the timing
+    # methodology. E8 also cannot read the shared decode cache: its
+    # decode IS the measurement, not redundant data.
+    ap.add_argument("--batch", type=int, default=16)
     ap.add_argument("--warmup", type=int, default=10)
     ap.add_argument("--max_receipts", type=int, default=300)
     ap.add_argument("--seed", type=int, default=12345)

@@ -42,7 +42,7 @@ sys.path.insert(0, HERE)
 from common import (  # noqa: E402
     UnifiedRecord, write_records, write_result, seed_everything,
     variance, variance_ratio_log2, to_cents, subset_sum_verdict,
-    load_donut, decode_fields, beam_margin_batch,
+    decode_or_load,
 )
 
 
@@ -56,7 +56,7 @@ def parse_args():
     ap.add_argument("--pairs", nargs="+", required=True,
                     help="in_label:shift_label entries, e.g. "
                          "cord:sroie cord:wildreceipt")
-    ap.add_argument("--batch", type=int, default=4)
+    ap.add_argument("--batch", type=int, default=16)
     ap.add_argument("--seed", type=int, default=12345)
     ap.add_argument("--perm_iters", type=int, default=20000)
     ap.add_argument("--out_records",
@@ -103,57 +103,43 @@ def perm_p_varratio(in_vals, shift_vals, iters, seed):
     return (ge + 1) / (iters + 1)
 
 
-def decode_corpus(label, path, processor, model, args, backbone):
-    from PIL import Image
-    anns = os.path.join(path, "annotations")
-    imgs_dir = os.path.join(path, "images")
-    items = sorted(f for f in os.listdir(anns) if f.endswith(".json"))
+def decode_corpus(label_path, args, backbone):
+    """Decode-once shared cache (identical decode_fields +
+    beam_margin_batch; loaded if already produced, NO model/GPU on a
+    cache hit). The per-receipt record + variance-ratio inputs below are
+    byte-for-byte the original, only sourced from the shared cache."""
+    label, _path = label_path.split("=", 1)
+    primitives = decode_or_load(
+        label_path, args.checkpoint, args.task_prompt, args.batch)
     out_records, margins_by_id = [], {}
-    dec_one = processor.tokenizer(
-        args.task_prompt, add_special_tokens=False,
-        return_tensors="pt").input_ids
-    for i in range(0, len(items), args.batch):
-        chunk = items[i:i + args.batch]
-        imgs, rids = [], []
-        for fn in chunk:
-            rid = os.path.splitext(fn)[0]
-            ip = os.path.join(imgs_dir, rid + ".png")
-            if not os.path.exists(ip):
-                continue
-            imgs.append(Image.open(ip).convert("RGB"))
-            rids.append(rid)
-        if not imgs:
-            continue
-        decoded = decode_fields(imgs, processor, model, args.task_prompt)
-        bm = beam_margin_batch(imgs, processor, model, dec_one,
-                               processor.tokenizer.pad_token_id)
-        for j, rid in enumerate(rids):
-            fields, sm, cs = decoded[j]
-            margin = bm[j]["margin"] if j < len(bm) else None
-            pred_total = to_cents(fields.get("total"))
-            rec = UnifiedRecord(
-                receipt_id=f"{label}:{rid}", corpus=label,
-                backbone=backbone, gold_total=None,
-                pred_total=pred_total, softmax_confidence=sm, c_seq=cs,
-                arith_pass=None,
-                subset_sum_verdict=subset_sum_verdict(pred_total, []),
-                beam_margin=margin)
-            out_records.append(rec)
-            if margin is not None:
-                margins_by_id[rec.receipt_id] = margin
+    for p in primitives:
+        rid = p["receipt_id"]
+        fields = p["fields"] if isinstance(p["fields"], dict) else {}
+        sm, cs = p["softmax_confidence"], p["c_seq"]
+        margin = p["beam_margin"]
+        pred_total = to_cents(fields.get("total"))
+        rec = UnifiedRecord(
+            receipt_id=f"{label}:{rid}", corpus=label,
+            backbone=backbone, gold_total=None,
+            pred_total=pred_total, softmax_confidence=sm, c_seq=cs,
+            arith_pass=None,
+            subset_sum_verdict=subset_sum_verdict(pred_total, []),
+            beam_margin=margin)
+        out_records.append(rec)
+        if margin is not None:
+            margins_by_id[rec.receipt_id] = margin
     return out_records, [margins_by_id[k] for k in sorted(margins_by_id)]
 
 
 def main():
     args = parse_args()
     seed_everything(args.seed)
-    processor, model = load_donut(args.checkpoint)
     backbone = os.path.basename(args.checkpoint.rstrip("/"))
-    paths = dict(lp.split("=", 1) for lp in args.corpora)
 
     all_records, margins = [], {}
-    for label, path in paths.items():
-        recs, m = decode_corpus(label, path, processor, model, args, backbone)
+    for label_path in args.corpora:
+        label, _path = label_path.split("=", 1)
+        recs, m = decode_corpus(label_path, args, backbone)
         all_records.extend(recs)
         margins[label] = m
     write_records(args.out_records, all_records)

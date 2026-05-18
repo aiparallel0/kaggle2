@@ -43,8 +43,7 @@ sys.path.insert(0, HERE)
 from common import (  # noqa: E402
     UnifiedRecord, write_records, write_result, seed_everything,
     phi_mcc, perm_p, bootstrap_ci, wilson, median,
-    subset_sum_verdict, to_cents, load_donut, decode_fields,
-    beam_margin_batch,
+    subset_sum_verdict, to_cents, decode_or_load,
 )
 
 
@@ -56,33 +55,13 @@ def parse_args():
     ap.add_argument("--corpora", nargs="+", required=True,
                     help="dataset roots fetched by the prior repos' "
                          "fetch scripts; format label=path")
-    ap.add_argument("--batch", type=int, default=4)
+    ap.add_argument("--batch", type=int, default=16)
     ap.add_argument("--seed", type=int, default=12345)
     ap.add_argument("--out_records",
                     default=os.path.join(HERE, "results", "E5_records.jsonl"))
     ap.add_argument("--out_json",
                     default=os.path.join(HERE, "results", "E5.json"))
     return ap.parse_args()
-
-
-def load_corpus_images(label_path):
-    """Yield (receipt_id, PIL.Image, gold_fields) from a fetched corpus
-    dir (canonical images/*.png + annotations/*.json layout written by
-    arith-gating scripts/fetch_data.py)."""
-    from PIL import Image
-    label, path = label_path.split("=", 1)
-    anns = os.path.join(path, "annotations")
-    imgs = os.path.join(path, "images")
-    for fn in sorted(os.listdir(anns)):
-        if not fn.endswith(".json"):
-            continue
-        rid = os.path.splitext(fn)[0]
-        with open(os.path.join(anns, fn)) as f:
-            gt = json.load(f)
-        img_path = os.path.join(imgs, rid + ".png")
-        if not os.path.exists(img_path):
-            continue
-        yield label, rid, Image.open(img_path).convert("RGB"), gt
 
 
 def gold_total_and_items(gt):
@@ -104,39 +83,36 @@ def gold_total_and_items(gt):
 def main():
     args = parse_args()
     seed_everything(args.seed)
-    processor, model = load_donut(args.checkpoint)
     backbone = os.path.basename(args.checkpoint.rstrip("/"))
 
     records = []
     for label_path in args.corpora:
-        buf = list(load_corpus_images(label_path))
-        for i in range(0, len(buf), args.batch):
-            chunk = buf[i:i + args.batch]
-            imgs = [c[2] for c in chunk]
-            decoded = decode_fields(imgs, processor, model, args.task_prompt)
-            dec_one = processor.tokenizer(
-                args.task_prompt, add_special_tokens=False,
-                return_tensors="pt").input_ids
-            margins = beam_margin_batch(
-                imgs, processor, model, dec_one,
-                processor.tokenizer.pad_token_id)
-            for j, (corpus, rid, _img, gt) in enumerate(chunk):
-                fields, sm_conf, c_seq = decoded[j]
-                gold_total, items, tau = gold_total_and_items(gt)
-                pred_total = to_cents(fields.get("total"))
-                verdict = subset_sum_verdict(pred_total, items, tau)
-                bm = margins[j]["margin"] if j < len(margins) else None
-                gold_fields = (gt.get("gt_parse", gt)
-                               if isinstance(gt, dict) else {})
-                rec = UnifiedRecord(
-                    receipt_id=f"{corpus}:{rid}",
-                    corpus=corpus, backbone=backbone,
-                    gold_total=gold_total, pred_total=pred_total,
-                    softmax_confidence=sm_conf, c_seq=c_seq,
-                    arith_pass=(verdict == "pass"),
-                    subset_sum_verdict=verdict, beam_margin=bm,
-                    extra={"correct": fields == gold_fields})
-                records.append(rec)
+        # Decode-once shared cache (identical decode_fields +
+        # beam_margin_batch; loaded if already produced, NO model/GPU on
+        # a cache hit). H1/H2 math below is byte-for-byte the original.
+        primitives = decode_or_load(
+            label_path, args.checkpoint, args.task_prompt, args.batch)
+        corpus, _path = label_path.split("=", 1)
+        for p in primitives:
+            rid = p["receipt_id"]
+            fields = p["fields"] if isinstance(p["fields"], dict) else {}
+            sm_conf, c_seq = p["softmax_confidence"], p["c_seq"]
+            gt = p["gold"]
+            gold_total, items, tau = gold_total_and_items(gt)
+            pred_total = to_cents(fields.get("total"))
+            verdict = subset_sum_verdict(pred_total, items, tau)
+            bm = p["beam_margin"]
+            gold_fields = (gt.get("gt_parse", gt)
+                           if isinstance(gt, dict) else {})
+            rec = UnifiedRecord(
+                receipt_id=f"{corpus}:{rid}",
+                corpus=corpus, backbone=backbone,
+                gold_total=gold_total, pred_total=pred_total,
+                softmax_confidence=sm_conf, c_seq=c_seq,
+                arith_pass=(verdict == "pass"),
+                subset_sum_verdict=verdict, beam_margin=bm,
+                extra={"correct": fields == gold_fields})
+            records.append(rec)
 
     write_records(args.out_records, records)
 

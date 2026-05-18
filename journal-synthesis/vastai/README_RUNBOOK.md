@@ -142,16 +142,60 @@ will vary with GPU, batch size, and corpus size.
 
 Treat the table as planning guidance, not a measurement.
 
-## 6. Fresh-instance one-liner + parallel runner (added)
+## 6. Decode-once shared cache + fresh-instance runner (added)
 
 `bootstrap.sh` is idempotent fresh-instance setup; `run_parallel.sh` is a
-GPU-aware, resumable scheduler. HONEST scope: all experiments are
-GPU-bound, so on a SINGLE GPU parallelism gives little speedup, the real
-wins on 1 GPU are resumability + per-job timing; on N GPUs it shards up
-to N experiments concurrently (one GPU each) for near-linear speedup. It
-does NOT share inference across experiments (the packaged scripts each
-re-decode; a shared decode cache would need a scripts refactor, noted as
-future work, not claimed here).
+resumable, **decode-once** scheduler.
+
+THE COST FIX (honest scope). Previously every experiment independently
+loaded the KIE model and RE-DECODED the same corpora, so a single run
+paid for the SAME Donut inference about **7x** (the cache-consuming
+experiments alone: E1E3, E5, E6, E9, E10 each re-decoded the corpus, plus
+the unbatched default). On a paid GPU that is ~90% wasted spend.
+
+Now `common/records.py::decode_or_load` decodes a corpus EXACTLY as the
+scripts always did (same `decode_fields` greedy pass and same
+`beam_margin_batch` num_beams=2 pass, same fp16, same task prompt, same
+money/cents parsing downstream) but writes the per-receipt primitives to
+
+```
+results/<corpuslabel>__<sha1(checkpoint)[:12]>.records.jsonl
+```
+
+The cache key is the **corpus label + path AND a checkpoint hash**, so a
+different checkpoint can never silently reuse another's decodes. The file
+carries a header with `computed_on`, `n_records`, `checkpoint_sha`, the
+corpus label/path, the task prompt and a schema version; it is reused
+only if the header matches AND the body line count equals `n_records`
+(a truncated / half-written cache is detected and rebuilt, never
+half-used). On a cache hit NO model is loaded and the GPU is never
+touched.
+
+`run_parallel.sh` therefore runs in stages:
+
+- **Stage A (GPU, ONE pass):** the shared decode runs ONCE per distinct
+  corpus, producing the `.records.jsonl` cache. This is the only GPU
+  work for the cache-consuming experiments.
+- **Stage B-cpu (CPU, parallel up to nproc):** E1E3 / E5 / E6 / E9 / E10
+  read the cache (no model, no GPU) and only run their analysis math, so
+  they are CPU-bound and run concurrently.
+- **Stage B-gpu (GPU, sequential):** E7 (synthetic per-cell perturbed
+  decodes) and E8 (per-receipt latency MEASUREMENT) genuinely need the
+  GPU and are NOT cache consumers - their decode is real, unique work,
+  not the redundant re-decode the cache removes - so they run on the
+  single GPU after Stage A. Their metric math is unchanged.
+
+This removes the ~7x redundant decode. It does NOT claim multi-GPU
+scaling: there is one GPU; the win is decode-once + CPU-parallel
+analyses + resumability. Every experiment's metric math, hypotheses,
+seeds and outputs are byte-for-byte unchanged - the same numbers, just
+sourced from the shared cache instead of an inline re-decode. All
+scripts accept `--batch` (default 16, was an unbatched/`4` default);
+`run_parallel.sh` passes `--batch "${BATCH:-16}"` to every experiment.
+
+Resumable: re-running skips any experiment whose `results/<EXP>.json`
+already has a real `computed_on`, and a complete Stage-A cache is reused
+(a truncated one is rebuilt).
 
 Copy-paste on a fresh vast.ai PyTorch instance. IMPORTANT: replace the
 two placeholders with REAL values (no angle brackets), keep each
@@ -172,8 +216,15 @@ cd kaggle2/journal-synthesis/vastai
 bash bootstrap.sh
 source .env.sh
 [ -n "$CHECKPOINT" ] || export CHECKPOINT=/path/to/ckpt
-bash run_parallel.sh
+BATCH=16 bash run_parallel.sh
 ```
+
+On the FIRST run this does ONE GPU decode pass per corpus (Stage A),
+then the cache-consuming analyses (E1E3/E5/E6/E9/E10) run CPU-only and
+in parallel off that cache; E7/E8 then run the genuine remaining GPU
+work. A second run reuses the cache (no GPU) and skips any experiment
+that already produced a real result. Tune throughput with `BATCH`
+(e.g. `BATCH=8` for a 16 GB GPU, `BATCH=32` for 24 GB+).
 
 The `CKPT_ID` above is an EXAMPLE public Donut CORD-v2 id; substitute the
 checkpoint you intend to evaluate (it is never stored in the repo). The

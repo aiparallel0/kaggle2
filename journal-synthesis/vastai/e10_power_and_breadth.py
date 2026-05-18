@@ -43,7 +43,7 @@ sys.path.insert(0, HERE)
 from common import (  # noqa: E402
     UnifiedRecord, write_records, write_result, seed_everything,
     wilson, median, to_cents, subset_sum_verdict,
-    load_donut, decode_fields, beam_margin_batch,
+    decode_or_load,
 )
 
 
@@ -57,7 +57,7 @@ def parse_args():
                     help="label=path entries (broadened-corpora hook)")
     ap.add_argument("--ci_halfwidth_target", type=float, default=0.05,
                     help="pre-registered Wilson CI half-width target")
-    ap.add_argument("--batch", type=int, default=4)
+    ap.add_argument("--batch", type=int, default=16)
     ap.add_argument("--seed", type=int, default=12345)
     ap.add_argument("--out_records",
                     default=os.path.join(HERE, "results", "E10_records.jsonl"))
@@ -72,54 +72,40 @@ def required_n(p_hat, target_hw, z=1.96):
     return int(math.ceil((z * z * p * (1 - p)) / (target_hw * target_hw)))
 
 
-def decode_one_corpus(label, path, processor, model, args, backbone):
-    from PIL import Image
-    anns = os.path.join(path, "annotations")
-    imgs_dir = os.path.join(path, "images")
-    files = sorted(f for f in os.listdir(anns) if f.endswith(".json"))
-    dec_one = processor.tokenizer(
-        args.task_prompt, add_special_tokens=False,
-        return_tensors="pt").input_ids
+def decode_one_corpus(label_path, ckpt, args, backbone):
+    """Decode-once shared cache (identical decode_fields +
+    beam_margin_batch; loaded if already produced, NO model/GPU on a
+    cache hit). Per-receipt record math below is byte-for-byte the
+    original, only sourced from the shared cache. The cache key includes
+    the checkpoint hash so each backbone gets its own records file."""
+    label, _path = label_path.split("=", 1)
+    primitives = decode_or_load(
+        label_path, ckpt, args.task_prompt, args.batch)
     recs = []
-    for i in range(0, len(files), args.batch):
-        chunk = files[i:i + args.batch]
-        imgs, rids, gts = [], [], []
-        for fn in chunk:
-            rid = os.path.splitext(fn)[0]
-            ip = os.path.join(imgs_dir, rid + ".png")
-            if not os.path.exists(ip):
-                continue
-            with open(os.path.join(anns, fn)) as f:
-                gts.append(json.load(f))
-            imgs.append(Image.open(ip).convert("RGB"))
-            rids.append(rid)
-        if not imgs:
-            continue
-        decoded = decode_fields(imgs, processor, model, args.task_prompt)
-        bm = beam_margin_batch(imgs, processor, model, dec_one,
-                               processor.tokenizer.pad_token_id)
-        for j, rid in enumerate(rids):
-            fields, sm, cs = decoded[j]
-            pred_total = to_cents(fields.get("total"))
-            items = []
-            menu = fields.get("menu")
-            if isinstance(menu, list):
-                for it in menu:
-                    if isinstance(it, dict):
-                        c = to_cents(it.get("price"))
-                        if c is not None:
-                            items.append(c)
-            tau = to_cents(fields.get("tax")) or 0
-            ss = subset_sum_verdict(pred_total, items, tau)
-            gp = (gts[j].get("gt_parse", gts[j])
-                  if isinstance(gts[j], dict) else {})
-            recs.append(UnifiedRecord(
-                receipt_id=f"{backbone}:{label}:{rid}", corpus=label,
-                backbone=backbone, gold_total=to_cents(gp.get("total")),
-                pred_total=pred_total, softmax_confidence=sm, c_seq=cs,
-                arith_pass=(ss == "pass"), subset_sum_verdict=ss,
-                beam_margin=bm[j]["margin"] if j < len(bm) else None,
-                extra={"correct": fields == gp}))
+    for p in primitives:
+        rid = p["receipt_id"]
+        fields = p["fields"] if isinstance(p["fields"], dict) else {}
+        sm, cs = p["softmax_confidence"], p["c_seq"]
+        gt = p["gold"]
+        pred_total = to_cents(fields.get("total"))
+        items = []
+        menu = fields.get("menu")
+        if isinstance(menu, list):
+            for it in menu:
+                if isinstance(it, dict):
+                    c = to_cents(it.get("price"))
+                    if c is not None:
+                        items.append(c)
+        tau = to_cents(fields.get("tax")) or 0
+        ss = subset_sum_verdict(pred_total, items, tau)
+        gp = (gt.get("gt_parse", gt) if isinstance(gt, dict) else {})
+        recs.append(UnifiedRecord(
+            receipt_id=f"{backbone}:{label}:{rid}", corpus=label,
+            backbone=backbone, gold_total=to_cents(gp.get("total")),
+            pred_total=pred_total, softmax_confidence=sm, c_seq=cs,
+            arith_pass=(ss == "pass"), subset_sum_verdict=ss,
+            beam_margin=p["beam_margin"],
+            extra={"correct": fields == gp}))
     return recs
 
 
@@ -129,12 +115,10 @@ def main():
     all_records = []
     cells = {}
     for ckpt in args.checkpoints:
-        processor, model = load_donut(ckpt)
         backbone = os.path.basename(ckpt.rstrip("/"))
         for lp in args.corpora:
-            label, path = lp.split("=", 1)
-            recs = decode_one_corpus(label, path, processor, model,
-                                     args, backbone)
+            label, _path = lp.split("=", 1)
+            recs = decode_one_corpus(lp, ckpt, args, backbone)
             all_records.extend(recs)
             cells[(backbone, label)] = recs
 

@@ -45,7 +45,7 @@ sys.path.insert(0, HERE)
 from common import (  # noqa: E402
     UnifiedRecord, write_records, write_result, seed_everything,
     phi_mcc, perm_p, wilson, to_cents, subset_sum_verdict,
-    load_donut, decode_fields,
+    decode_or_load,
 )
 
 EPS_CENTS = 2  # identical tolerance to triology subset_sum / E5
@@ -107,7 +107,7 @@ def parse_args():
     ap.add_argument("--task_prompt", default="<s_cord-v2>")
     ap.add_argument("--corpus", required=True, help="label=path")
     ap.add_argument("--rounding_increment_cents", type=int, default=5)
-    ap.add_argument("--batch", type=int, default=4)
+    ap.add_argument("--batch", type=int, default=16)
     ap.add_argument("--seed", type=int, default=12345)
     ap.add_argument("--out_records",
                     default=os.path.join(HERE, "results", "E9_records.jsonl"))
@@ -119,59 +119,45 @@ def parse_args():
 def main():
     args = parse_args()
     seed_everything(args.seed)
-    processor, model = load_donut(args.checkpoint)
+    # Decode-once shared cache (identical decode; loaded if already
+    # produced, NO model/GPU on a cache hit). Verifier math below is
+    # byte-for-byte the original, just sourced from the shared primitives.
+    primitives = decode_or_load(
+        args.corpus, args.checkpoint, args.task_prompt, args.batch)
+    label, _path = args.corpus.split("=", 1)
     backbone = os.path.basename(args.checkpoint.rstrip("/"))
 
-    from PIL import Image
-    label, path = args.corpus.split("=", 1)
-    anns = os.path.join(path, "annotations")
-    imgs_dir = os.path.join(path, "images")
-    files = sorted(f for f in os.listdir(anns) if f.endswith(".json"))
-
     records = []
-    for i in range(0, len(files), args.batch):
-        chunk = files[i:i + args.batch]
-        imgs, rids, gts = [], [], []
-        for fn in chunk:
-            rid = os.path.splitext(fn)[0]
-            ip = os.path.join(imgs_dir, rid + ".png")
-            if not os.path.exists(ip):
-                continue
-            with open(os.path.join(anns, fn)) as f:
-                gts.append(json.load(f))
-            imgs.append(Image.open(ip).convert("RGB"))
-            rids.append(rid)
-        if not imgs:
-            continue
-        decoded = decode_fields(imgs, processor, model, args.task_prompt)
-        for j, rid in enumerate(rids):
-            fields, sm, cs = decoded[j]
-            pred_total = to_cents(fields.get("total"))
-            items = []
-            menu = fields.get("menu")
-            if isinstance(menu, list):
-                for it in menu:
-                    if isinstance(it, dict):
-                        c = to_cents(it.get("price"))
-                        if c is not None:
-                            items.append(c)
-            tau = to_cents(fields.get("tax")) or 0
-            ss = subset_sum_verdict(pred_total, items, tau)
-            gp = (gts[j].get("gt_parse", gts[j])
-                  if isinstance(gts[j], dict) else {})
-            records.append(UnifiedRecord(
-                receipt_id=f"{label}:{rid}", corpus=label,
-                backbone=backbone,
-                gold_total=to_cents(gp.get("total")),
-                pred_total=pred_total, softmax_confidence=sm, c_seq=cs,
-                arith_pass=(ss == "pass"), subset_sum_verdict=ss,
-                beam_margin=None,
-                extra={
-                    "correct": fields == gp,
-                    "v_line_item_qty": v_line_item_qty(fields),
-                    "v_subtotal_tax": v_subtotal_tax(fields),
-                    "v_rounding": v_rounding(
-                        fields, args.rounding_increment_cents)}))
+    for p in primitives:
+        rid = p["receipt_id"]
+        fields = p["fields"] if isinstance(p["fields"], dict) else {}
+        sm, cs = p["softmax_confidence"], p["c_seq"]
+        gt = p["gold"]
+        pred_total = to_cents(fields.get("total"))
+        items = []
+        menu = fields.get("menu")
+        if isinstance(menu, list):
+            for it in menu:
+                if isinstance(it, dict):
+                    c = to_cents(it.get("price"))
+                    if c is not None:
+                        items.append(c)
+        tau = to_cents(fields.get("tax")) or 0
+        ss = subset_sum_verdict(pred_total, items, tau)
+        gp = (gt.get("gt_parse", gt) if isinstance(gt, dict) else {})
+        records.append(UnifiedRecord(
+            receipt_id=f"{label}:{rid}", corpus=label,
+            backbone=backbone,
+            gold_total=to_cents(gp.get("total")),
+            pred_total=pred_total, softmax_confidence=sm, c_seq=cs,
+            arith_pass=(ss == "pass"), subset_sum_verdict=ss,
+            beam_margin=None,
+            extra={
+                "correct": fields == gp,
+                "v_line_item_qty": v_line_item_qty(fields),
+                "v_subtotal_tax": v_subtotal_tax(fields),
+                "v_rounding": v_rounding(
+                    fields, args.rounding_increment_cents)}))
 
     write_records(args.out_records, records)
 
