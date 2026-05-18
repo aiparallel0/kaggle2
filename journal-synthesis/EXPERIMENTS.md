@@ -147,6 +147,70 @@ pre-registered target + additional-n-needed solve; broadened
 corpora/backbone via list args). See `vastai/README_RUNBOOK.md`.
 STATUS HERE: still BLOCKED; not run; no results committed.
 
+### Severe tests (S1-S4) - robustness-check the NEGATIVE; NOT thesis-rescue  [PREPARED, cache-only]
+PURPOSE (stated honestly): the clean decode-once run produced a NEGATIVE
+for the journal thesis (H1 composed WORSE than every single signal at
+matched cost: -0.25 / -0.41 / -0.34; H3 margin-variance tracks DIFFICULTY
+Spearman -0.68 not SHIFT +0.05; H2 error-association weak and
+SIGN-UNSTABLE across runs: +0.29 -> +0.21 -> -0.11). S1-S4 exist ONLY to
+check whether that negative is ROBUST or a small-n / OCR-cord_dev /
+difficulty-confound artifact. They are explicitly designed to let the
+negative STAND if it is real. NO tuning, threshold-picking, or
+stratification choice here can manufacture a positive; every decision
+rule is fixed before the data is read and the interpretation rule is
+written into `results/SEVERE.json` next to each number.
+
+- S1 DIFFICULTY-CONTROLLED DECORRELATION: bin receipts by difficulty
+  proxy (1 - c_seq) into quartiles; within each stratum compute phi/MCC
+  between the Axis-A error event and the confidence-error event with
+  permutation p and a bootstrap CI on phi. Verdict rule: the H2
+  association was the difficulty confound (robust-negative) if |phi|->~0
+  and p is not significant within every computable stratum; it only
+  "survives" if phi stays non-trivial with a STABLE SIGN across strata
+  AND corpora. Sign-instability = artifact, negative stands.
+- S2 PLACEBO-AXIS NEGATIVE CONTROL: replace real Axis-A with a random
+  gate matched to Axis-A's empirical accept rate (seeded, >=200 placebo
+  draws); compare composed(real A, B) vs composed(placebo, B) on
+  precision-at-matched-coverage with a bootstrap CI on the difference.
+  Verdict rule: real Axis-A composition only "wins" if the bootstrap CI
+  lower bound on (real - placebo) precision is > 0; otherwise the
+  two-axis story is illusory and the H1 negative stands.
+- S3 POWER / MINIMUM DETECTABLE EFFECT: by simulation, the smallest true
+  H1 advantage (composed minus best single) detectable at this n with
+  80% power, plus the achieved post-hoc CI width. Verdict rule:
+  CONCLUSIVE iff the 80%-power MDE <= a pre-stated 0.05 abs-precision
+  care-about gap AND the post-hoc CI excludes a +0.05 advantage; else
+  UNDERPOWERED (cannot distinguish "no effect" from "no power" - this
+  does NOT rescue the thesis, it only forbids calling the negative
+  conclusive).
+- S4 SPLIT-STABILITY: recompute H1 matched-cost deltas and
+  Spearman(margin-variance, difficulty) / (margin-variance, c_seq) for
+  cord_dev-only, wildreceipt-only AND pooled, each with bootstrap CIs.
+  Verdict rule: the negative is STABLE only if the sign of every H1
+  delta and the H3 difficulty-Spearman is the same across both corpora
+  and pooled; a corpus-specific sign flip means the pooled negative is
+  driven by one corpus / the OCR set and is reported as corpus-specific,
+  not a thesis-level refutation.
+
+COST/SCOPE: zero GPU, zero decode. `vastai/severe_tests.py` reads ONLY
+the existing Stage-A decode-once cache via the same cache-load path the
+CPU experiments use; it REFUSES to run if a corpus cache is missing
+(never invents records) and writes `results/SEVERE.json` only with a
+real `computed_on`. Wired as run_parallel.sh "STAGE C" after Stage B
+(resumable via the same computed_on skip).
+
+HARD LIMITATION the severe tests CANNOT remove: the on-box CORD is the
+OCR-derived n=100 `cord_dev` validation split, not a non-OCR gold CORD
+*test* set. The live HF mirror (`naver-clova-ix/cord-v2`, Donut-style:
+`ground_truth`+`image`, no words/bboxes) makes `fetch_data.py` REQUIRE
+`--ocr` for the token arrays, and the gold CORD *test* split was not
+obtainable in the prep environment (HF mirror fetch failed). The gold
+totals themselves come from `_decode_donut_gt(ground_truth)` (NOT OCR),
+so S1-S4 still operate on faithful gold totals; but a TRUE non-OCR gold
+CORD *test* set is NOT feasible with the available fetchers here. S1-S4
+robustness-check WITHIN the cord_dev + wildreceipt scope; they cannot
+and do not claim to lift the OCR-cord_dev scope itself.
+
 ### Full-scale E1-E3 (lift the n=100 CORD proxy caveat)
 PREPARED FOR VAST.AI: `vastai/e1e3_fullscale.py` re-runs E1/E2/E3 with
 the SAME metric math as `experiments/run_analysis.py` on the full

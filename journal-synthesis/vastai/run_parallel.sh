@@ -198,6 +198,24 @@ for entry in "${GPU_JOBS[@]}"; do
   run_one 0 "$name" $cmd || FAILED=1
 done
 
+# ---------------------------------------------------------------------
+# STAGE C (CPU): SEVERE TESTS S1-S4. Robustness-checks the NEGATIVE
+# result; NOT a thesis-rescue. Cache-only (reuses the Stage-A
+# decode-once cache via the same cache-load path), NO GPU, NO decode,
+# single fast job (~seconds). Resumable: a SEVERE.json that already
+# carries a real `computed_on` is skipped by already_done() exactly
+# like the Stage-B experiments. Runs AFTER Stage B so the caches it
+# reads are guaranteed present.
+# ---------------------------------------------------------------------
+echo "[parallel] === STAGE C (CPU): severe tests S1-S4 (cache-only, no GPU) ==="
+if already_done "SEVERE"; then
+  echo "[parallel] SKIP SEVERE (real result already present)"
+else
+  run_one "cpu0" "SEVERE" python3 severe_tests.py \
+      --checkpoint "$CHECKPOINT" --task_prompt "$TASK_PROMPT" \
+      --corpora "${CORPORA[@]}" || FAILED=1
+fi
+
 echo "=================================================================="
 column -t -s $'\t' "$TIMING" 2>/dev/null || cat "$TIMING"
 echo "=================================================================="
