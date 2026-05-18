@@ -1,127 +1,138 @@
 #!/usr/bin/env bash
 # =====================================================================
-# FRESH vast.ai INSTANCE BOOTSTRAP  (copy-paste, idempotent)
+# FRESH vast.ai INSTANCE BOOTSTRAP  (idempotent; corrected after a live
+# run exposed: private repos need a token, the prior fetch scripts take
+# NO --out flag and write inside the arith-gating repo, and the CKPT
+# placeholder must be a real id with no angle brackets).
 # =====================================================================
-# One-time setup on a fresh vast.ai PyTorch instance for the journal
-# experiment package. Safe to re-run (clones -> pull, fetch -> skip if
-# data already present).
-#
 # HONESTY / SCOPE:
-#  - Does NOT pip-install torch/torchvision: vast.ai PyTorch images ship
-#    a matched pair; pip torch breaks torchvision's C-extension. We use
-#    the image's torch (verified below).
-#  - The KIE checkpoint id is NOT baked in. You pass CKPT_ID (a public
-#    HF Donut CORD-v2 checkpoint of your choosing); nothing is fabricated
-#    and no model identifier is stored in the repo.
-#  - Fetches data ONLY via the prior repos' existing fetch scripts; this
-#    package does not re-implement data fetching.
+#  - No torch via pip (vast.ai image ships a matched torch+torchvision).
+#  - KIE checkpoint id is NOT baked in; you pass CKPT_ID (no < > ).
+#  - Data is fetched ONLY by the prior repos' own fetch scripts, with
+#    their REAL signatures; output dirs are then discovered, not guessed.
 #
-# USAGE (edit the three URLs / CKPT_ID, then paste the whole block):
+# REQUIRED env (set BEFORE running; replace placeholders, NO angle
+# brackets, each export on its OWN line):
+#   export GITHUB_TOKEN=ghp_xxx        # PAT with read access (private repos)
+#   export CKPT_ID=naver-clova-ix/...  # a real HF Donut CORD-v2 ckpt id
 #   export REPO_URL=https://github.com/aiparallel0/kaggle2.git
 #   export ARITH_URL=https://github.com/aiparallel0/arith-gating.git
 #   export TRIOLOGY_URL=https://github.com/aiparallel0/triology.git
-#   export CKPT_ID=<hf-donut-cord-v2-checkpoint-id>      # you choose
 #   bash bootstrap.sh
 # =====================================================================
-set -euo pipefail
+set -uo pipefail
 
 BRANCH="${BRANCH:-claude/prepare-papers-repos-4LUdJ}"
 WORK="${WORK:-/workspace}"
-DATA="${DATA:-/data}"
-REPO_URL="${REPO_URL:?set REPO_URL to the kaggle2 git remote (https)}"
-ARITH_URL="${ARITH_URL:?set ARITH_URL to the arith-gating git remote}"
-TRIOLOGY_URL="${TRIOLOGY_URL:?set TRIOLOGY_URL to the triology git remote}"
+REPO_URL="${REPO_URL:?set REPO_URL (kaggle2 https remote)}"
+ARITH_URL="${ARITH_URL:?set ARITH_URL (arith-gating https remote) - REQUIRED for data fetchers}"
+TRIOLOGY_URL="${TRIOLOGY_URL:-}"      # optional: logic is lifted into pipeline.py
+GITHUB_TOKEN="${GITHUB_TOKEN:-}"
 CKPT_ID="${CKPT_ID:-}"
-
-export HF_HOME="${HF_HOME:-$DATA/hf}"          # big-disk HF cache
+export HF_HOME="${HF_HOME:-$WORK/hf}"
 export PYTHONUNBUFFERED=1
-mkdir -p "$WORK" "$DATA" "$HF_HOME"
+mkdir -p "$WORK" "$HF_HOME"
 
-clone_or_pull() {  # url dir
-  local url="$1" dir="$2"
+# Inject token for private https github clones (x-access-token works for
+# both classic and fine-grained PATs).
+_auth() {  # url -> tokenised url
+  local u="$1"
+  if [ -n "$GITHUB_TOKEN" ] && printf '%s' "$u" | grep -q '^https://github.com/'; then
+    printf 'https://x-access-token:%s@github.com/%s' "$GITHUB_TOKEN" "${u#https://github.com/}"
+  else
+    printf '%s' "$u"
+  fi
+}
+clone_or_pull() {  # url dir required(0/1)
+  local url dir req; url="$(_auth "$1")"; dir="$2"; req="${3:-1}"
   if [ -d "$dir/.git" ]; then
     echo "[bootstrap] updating $dir"
-    git -C "$dir" fetch -q origin "$BRANCH" && git -C "$dir" checkout -q "$BRANCH" \
-      && git -C "$dir" pull -q --rebase origin "$BRANCH" || true
+    git -C "$dir" remote set-url origin "$url" 2>/dev/null || true
+    git -C "$dir" fetch -q origin "$BRANCH" 2>/dev/null \
+      && git -C "$dir" checkout -q "$BRANCH" 2>/dev/null \
+      && git -C "$dir" pull -q --rebase origin "$BRANCH" 2>/dev/null || true
   else
-    echo "[bootstrap] cloning $url -> $dir"
-    git clone -q --branch "$BRANCH" --single-branch "$url" "$dir" \
-      || git clone -q "$url" "$dir"
+    echo "[bootstrap] cloning $2 -> $dir"
+    if ! GIT_TERMINAL_PROMPT=0 git clone -q --branch "$BRANCH" --single-branch "$url" "$dir" 2>/dev/null \
+       && ! GIT_TERMINAL_PROMPT=0 git clone -q "$url" "$dir" 2>/dev/null; then
+      if [ "$req" -eq 1 ]; then
+        echo "FATAL: could not clone $2 (private?). Set GITHUB_TOKEN to a PAT with read access and re-run." >&2
+        exit 1
+      fi
+      echo "[bootstrap] WARN: optional repo $2 not cloned (not required at run time)."
+    fi
   fi
 }
 
 echo "== 1. system deps =="
 ( sudo apt-get update -qq && sudo apt-get install -y -qq git python3-pip tesseract-ocr ) \
-  || echo "[bootstrap] apt step skipped/non-fatal (likely already present)"
+  || echo "[bootstrap] apt step non-fatal (likely already present)"
 
 echo "== 2. repos =="
-clone_or_pull "$REPO_URL"     "$WORK/kaggle2"
-clone_or_pull "$ARITH_URL"    "$WORK/arith-gating"
-clone_or_pull "$TRIOLOGY_URL" "$WORK/triology"
+clone_or_pull "$REPO_URL"  "$WORK/kaggle2"        1
+clone_or_pull "$ARITH_URL" "$WORK/arith-gating"   1
+[ -n "$TRIOLOGY_URL" ] && clone_or_pull "$TRIOLOGY_URL" "$WORK/triology" 0
 PKG="$WORK/kaggle2/journal-synthesis/vastai"
+AG="$WORK/arith-gating"
 
 echo "== 3. python deps (NOT torch) =="
-python3 -m pip install -q --upgrade pip
-python3 -m pip install -q -r "$PKG/requirements.txt"
+python3 -m pip install -q --upgrade --root-user-action=ignore pip
+python3 -m pip install -q --root-user-action=ignore -r "$PKG/requirements.txt"
 
-echo "== 4. GPU sanity (fail loud if no CUDA) =="
-python3 - <<'PY'
+echo "== 4. GPU sanity =="
+python3 - <<'PY' || exit 1
 import sys
-try:
-    import torch
-except Exception as e:
-    sys.exit(f"FATAL: torch not importable from the image: {e}")
-if not torch.cuda.is_available():
-    sys.exit("FATAL: CUDA not available. Pick a GPU instance / PyTorch image.")
-print(f"OK torch {torch.__version__}  CUDA {torch.version.cuda}  "
-      f"GPUs={torch.cuda.device_count()}  "
-      f"{torch.cuda.get_device_name(0)}")
+try: import torch
+except Exception as e: sys.exit(f"FATAL: torch not importable: {e}")
+if not torch.cuda.is_available(): sys.exit("FATAL: no CUDA. Use a GPU PyTorch image.")
+print(f"OK torch {torch.__version__} CUDA {torch.version.cuda} "
+      f"GPUs={torch.cuda.device_count()} {torch.cuda.get_device_name(0)}")
 PY
 
 echo "== 5. checkpoint =="
-if [ -n "$CKPT_ID" ]; then
-  python3 -m pip install -q "huggingface_hub[cli]" >/dev/null 2>&1 || true
-  CKPT_DIR="$DATA/ckpt"
-  if [ ! -d "$CKPT_DIR" ] || [ -z "$(ls -A "$CKPT_DIR" 2>/dev/null)" ]; then
-    echo "[bootstrap] downloading checkpoint $CKPT_ID"
-    huggingface-cli download "$CKPT_ID" --local-dir "$CKPT_DIR" >/dev/null
-  else
-    echo "[bootstrap] checkpoint dir non-empty, skipping download"
-  fi
-  echo "export CHECKPOINT=$CKPT_DIR" > "$PKG/.env.sh"
-else
-  echo "[bootstrap] CKPT_ID not set: set CHECKPOINT manually before running."
-  : > "$PKG/.env.sh"
-fi
+CKPT_DIR=""
+case "$CKPT_ID" in
+  ""|*"<"*|*">"*)
+    echo "[bootstrap] CKPT_ID unset or still a placeholder."
+    echo "            -> export CKPT_ID=<real-hf-id-no-angle-brackets> and re-run,"
+    echo "               or set CHECKPOINT=/path manually before run_parallel.sh." ;;
+  *)
+    python3 -m pip install -q --root-user-action=ignore "huggingface_hub[cli]" || true
+    CKPT_DIR="$WORK/ckpt"
+    if [ -z "$(ls -A "$CKPT_DIR" 2>/dev/null)" ]; then
+      echo "[bootstrap] downloading $CKPT_ID"
+      huggingface-cli download "$CKPT_ID" --local-dir "$CKPT_DIR" >/dev/null \
+        || { echo "[bootstrap] WARN: checkpoint download failed; set CHECKPOINT manually."; CKPT_DIR=""; }
+    else
+      echo "[bootstrap] $CKPT_DIR non-empty, skipping download"
+    fi ;;
+esac
 
-echo "== 6. data via PRIOR repos' fetchers (skip if present) =="
-fetch() {  # marker_dir  command...
-  local marker="$1"; shift
-  if [ -d "$marker" ] && [ -n "$(ls -A "$marker" 2>/dev/null)" ]; then
-    echo "[bootstrap] $marker already populated, skipping"
-  else
-    echo "[bootstrap] fetching -> $marker"
-    "$@"
-  fi
-}
-AG="$WORK/arith-gating/scripts"
-fetch "$DATA/cord"        python3 "$AG/fetch_data.py"      --dataset cord --out "$DATA/cord"     || true
-fetch "$DATA/cord_dev"    python3 "$AG/fetch_cord_dev.py"  --out "$DATA/cord_dev"                || true
-fetch "$DATA/wildreceipt" python3 "$AG/fetch_wildreceipt.py" --out "$DATA/wildreceipt"          || true
-echo "[bootstrap] (SROIE: fetch via the same arith-gating path / triology sroie helper if used)"
+echo "== 6. data via PRIOR fetchers (REAL signatures; they write into arith-gating/data) =="
+have() { [ -d "$1" ] && [ -n "$(ls -A "$1" 2>/dev/null)" ]; }
+if have "$AG/data/cord/test"; then echo "[bootstrap] cord present, skip"
+  else python3 "$AG/scripts/fetch_data.py" --dataset cord || echo "[bootstrap] WARN: cord fetch failed"; fi
+if have "$AG/data/cord/dev"; then echo "[bootstrap] cord/dev present, skip"
+  else python3 "$AG/scripts/fetch_cord_dev.py" || echo "[bootstrap] WARN: cord/dev fetch failed"; fi
+if have "$AG/data/wild/test"; then echo "[bootstrap] wild present, skip"
+  else python3 "$AG/scripts/fetch_wildreceipt.py" || echo "[bootstrap] WARN: wild fetch failed"; fi
+echo "[bootstrap] NOTE: SROIE has no fetcher in these repos; supply it manually"
+echo "            and add: export SROIE=sroie=/path/to/sroie/test"
 
-cat >> "$PKG/.env.sh" <<EOF
-export CORD=cord=$DATA/cord/test
-export WILDRECEIPT=wildreceipt=$DATA/wildreceipt/test
-# export SROIE=sroie=$DATA/sroie/test   # uncomment once SROIE fetched
-export HF_HOME=$HF_HOME
-EOF
+echo "== 7. write .env.sh from DISCOVERED real paths =="
+{
+  [ -n "$CKPT_DIR" ] && echo "export CHECKPOINT=$CKPT_DIR"
+  have "$AG/data/cord/test"  && echo "export CORD=cord=$AG/data/cord/test"
+  have "$AG/data/cord/dev"   && echo "export CORD_DEV=cord_dev=$AG/data/cord/dev"
+  have "$AG/data/wild/test"  && echo "export WILDRECEIPT=wildreceipt=$AG/data/wild/test"
+  echo "export HF_HOME=$HF_HOME"
+} > "$PKG/.env.sh"
+echo "---- .env.sh ----"; cat "$PKG/.env.sh"; echo "-----------------"
 
 echo
 echo "=================================================================="
 echo "BOOTSTRAP DONE. Next:"
-echo "  cd $PKG"
-echo "  source .env.sh        # exports CHECKPOINT/CORD/WILDRECEIPT/..."
-echo "  bash run_parallel.sh  # GPU-aware, resumable runner"
-echo "(or: bash run_all.sh for the simple ordered driver)"
+echo "  cd $PKG && source .env.sh"
+echo "  [ -n \"\$CHECKPOINT\" ] || export CHECKPOINT=/path/to/ckpt   # if not auto-set"
+echo "  bash run_parallel.sh"
 echo "=================================================================="

@@ -153,21 +153,34 @@ does NOT share inference across experiments (the packaged scripts each
 re-decode; a shared decode cache would need a scripts refactor, noted as
 future work, not claimed here).
 
-Copy-paste on a fresh vast.ai PyTorch instance:
+Copy-paste on a fresh vast.ai PyTorch instance. IMPORTANT: replace the
+two placeholders with REAL values (no angle brackets), keep each
+`export` on its own line, and set a GitHub token because arith-gating /
+triology are private:
 
 ```bash
+export GITHUB_TOKEN=ghp_replace_with_a_real_PAT
+export CKPT_ID=naver-clova-ix/donut-base-finetuned-cord-v2
 export REPO_URL=https://github.com/aiparallel0/kaggle2.git
 export ARITH_URL=https://github.com/aiparallel0/arith-gating.git
 export TRIOLOGY_URL=https://github.com/aiparallel0/triology.git
-export CKPT_ID=<your-hf-donut-cord-v2-checkpoint-id>
 cd /workspace 2>/dev/null || cd ~
-git clone --branch claude/prepare-papers-repos-4LUdJ --single-branch "$REPO_URL" kaggle2 \
-  || git clone "$REPO_URL" kaggle2
+git clone --branch claude/prepare-papers-repos-4LUdJ --single-branch \
+  "https://x-access-token:$GITHUB_TOKEN@github.com/aiparallel0/kaggle2.git" kaggle2 \
+  || git -C kaggle2 pull --rebase
 cd kaggle2/journal-synthesis/vastai
 bash bootstrap.sh
 source .env.sh
+[ -n "$CHECKPOINT" ] || export CHECKPOINT=/path/to/ckpt
 bash run_parallel.sh
 ```
+
+The `CKPT_ID` above is an EXAMPLE public Donut CORD-v2 id; substitute the
+checkpoint you intend to evaluate (it is never stored in the repo). The
+prior fetch scripts take NO `--out`; bootstrap calls them with their
+real signatures and they write into `arith-gating/data/{cord,wild}` -
+`.env.sh` is filled from the directories that actually appear. SROIE has
+no fetcher here; add `export SROIE=sroie=/path` yourself if you use it.
 
 Resumable: re-running `run_parallel.sh` skips any experiment whose
 `results/<EXP>.json` already has a real `computed_on` stamp; failed jobs
