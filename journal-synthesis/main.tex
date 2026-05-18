@@ -16,15 +16,31 @@
 \usepackage{lmodern}
 \usepackage{amsmath,amssymb}
 \usepackage{booktabs}
-\usepackage{geometry}
-\geometry{margin=1in}
+\usepackage[margin=1in]{geometry}
 \usepackage{xcolor}
+\usepackage{microtype}            % protrusion + expansion: prevents overfull boxes
+\setlength{\emergencystretch}{3em}
+\usepackage{titlesec}
+\titleformat{\section}{\large\bfseries}{\thesection}{0.6em}{}
+\titlespacing*{\section}{0pt}{1.4ex plus .3ex}{0.8ex}
+\titlespacing*{\paragraph}{0pt}{1.0ex plus .2ex}{0.6em}
+\usepackage{enumitem}
+\setlist{topsep=2pt,itemsep=2pt,parsep=0pt,leftmargin=1.4em}
 \usepackage{hyperref}
-\hypersetup{hidelinks}
+\hypersetup{hidelinks,pdftitle={The Two Questions of Trust}}
 
+% Skeleton banner so reviewers/readers see this is a structure, not a draft.
+\usepackage{fancyhdr}
+\pagestyle{fancy}\fancyhf{}
+\fancyhead[C]{\footnotesize\color{gray}STRUCTURE SKELETON: not for circulation; experiments and results pending}
+\fancyfoot[C]{\thepage}
+\renewcommand{\headrulewidth}{0pt}
+
+\definecolor{pendingclr}{HTML}{B00020}
+\definecolor{writeclr}{HTML}{1A5FB4}
 \newcommand{\priorfact}[1]{#1}
-\newcommand{\pending}[1]{{\color{red}\textbf{[PENDING:} #1\textbf{]}}}
-\newcommand{\todo}[1]{{\color{blue}\textit{[WRITE: #1]}}}
+\newcommand{\pending}[1]{{\small\sffamily\color{pendingclr}[\,PENDING:\ #1\,]}}
+\newcommand{\todo}[1]{{\small\sffamily\color{writeclr}[\,WRITE:\ #1\,]}}
 
 \title{The Two Questions of Trust:\\
 Why a Model's Confidence Is Not Enough, and What Is}
