@@ -1,0 +1,140 @@
+# =====================================================================
+# journal-experiments.yml  (CI/CD PHASE 2 - scheduled hands-off cycle)
+# =====================================================================
+# INTEGRITY GUARDRAIL (NON-NEGOTIABLE):
+#   This workflow is INFRASTRUCTURE ONLY. It provisions a GPU, runs the
+#   existing experiment pipeline, fetches RAW results, generates an
+#   audit checklist, and OPENS a pull request containing ONLY the raw
+#   results + checklist. It NEVER edits journal-synthesis/main.tex,
+#   never writes a paper claim, never auto-merges, and the PR is
+#   labelled `needs-human-audit` with a DO-NOT-MERGE banner. The
+#   scientific decision stays human.
+#
+# COST SAFETY:
+#   * `schedule:` is present but COMMENTED OUT by default. Unattended
+#     spend must be a DELIBERATE choice: uncomment it knowingly.
+#   * `concurrency:` ensures only ONE run at a time (no overlap spend).
+#   * Job `timeout-minutes` is a hard ceiling; controller.py also
+#     enforces --max-cost-usd / --max-minutes and ALWAYS destroys the
+#     instance.
+#
+# SECRETS: VAST_API_KEY (required), NOTIFY_WEBHOOK (optional),
+#   SSH_PRIVATE_KEY (required for remote run) come from
+#   ${{ secrets.* }} ONLY. GITHUB_TOKEN is the built-in token. Nothing
+#   is ever hardcoded.
+# =====================================================================
+name: journal-experiments
+
+on:
+  workflow_dispatch:
+    inputs:
+      max_cost_usd:
+        description: "HARD per-run cost cap (USD)"
+        required: false
+        default: "2.00"
+      max_minutes:
+        description: "HARD per-run wall-clock cap (minutes)"
+        required: false
+        default: "45"
+      max_dph:
+        description: "Max $/hr offer to accept"
+        required: false
+        default: "0.50"
+      dry_run:
+        description: "true = print plan only, ZERO network/spend"
+        required: false
+        default: "false"
+  # -------------------------------------------------------------------
+  # DELIBERATELY DISABLED. Uncommenting the block below turns on
+  # UNATTENDED, RECURRING, REAL SPEND. Do NOT enable it casually: read
+  # cicd/README.md, do a --dry-run, then a single supervised run first.
+  # schedule:
+  #   - cron: "0 4 * * 1"   # 04:00 UTC every Monday (example only)
+  # -------------------------------------------------------------------
+
+concurrency:
+  group: journal-experiments
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  provision-run-audit-pr:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Prepare SSH key (from secret, never committed)
+        if: ${{ github.event.inputs.dry_run != 'true' }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_vast
+          chmod 600 ~/.ssh/id_vast
+          echo "SSH_KEY_PATH=$HOME/.ssh/id_vast" >> "$GITHUB_ENV"
+
+      - name: Provision -> run -> fetch -> destroy (controller.py)
+        env:
+          VAST_API_KEY: ${{ secrets.VAST_API_KEY }}
+          NOTIFY_WEBHOOK: ${{ secrets.NOTIFY_WEBHOOK }}
+        run: |
+          DRY=""
+          if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
+            DRY="--dry-run"
+          fi
+          python3 journal-synthesis/vastai/cicd/controller.py \
+            $DRY \
+            --max-cost-usd "${{ github.event.inputs.max_cost_usd }}" \
+            --max-minutes  "${{ github.event.inputs.max_minutes }}" \
+            --max-dph      "${{ github.event.inputs.max_dph }}"
+
+      - name: Generate audit checklist (interprets; does NOT decide)
+        run: |
+          python3 journal-synthesis/vastai/cicd/audit_checklist_gen.py
+
+      - name: Stage results-only PR branch (NEVER main.tex)
+        id: stage
+        if: ${{ github.event.inputs.dry_run != 'true' }}
+        run: |
+          set -e
+          RES="journal-synthesis/vastai/results"
+          DATE="$(date -u +%Y%m%d-%H%M)"
+          echo "branch=experiments/run-${DATE}" >> "$GITHUB_OUTPUT"
+          # Hard guard: refuse if main.tex somehow changed.
+          if ! git diff --quiet -- journal-synthesis/main.tex; then
+            echo "FATAL: main.tex changed; this automation must NEVER"
+            echo "touch the paper. Aborting." >&2
+            exit 1
+          fi
+          mkdir -p _pr_payload
+          cp "$RES"/*.json            _pr_payload/ 2>/dev/null || true
+          cp "$RES"/SEVERE.json       _pr_payload/ 2>/dev/null || true
+          cp "$RES"/AUDIT_CHECKLIST.md _pr_payload/ 2>/dev/null || true
+
+      - name: Open results PR (labelled needs-human-audit, NEVER merged)
+        if: ${{ github.event.inputs.dry_run != 'true' }}
+        uses: peter-evans/create-pull-request@v6
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          branch: ${{ steps.stage.outputs.branch }}
+          base: ${{ github.ref_name }}
+          add-paths: |
+            journal-synthesis/vastai/results/*.json
+            journal-synthesis/vastai/results/SEVERE.json
+            journal-synthesis/vastai/results/AUDIT_CHECKLIST.md
+          commit-message: >-
+            experiments: raw results + audit checklist (infra only,
+            human-gated, no paper write)
+          title: "Experiment run results (NEEDS HUMAN AUDIT - DO NOT MERGE INTO PAPER)"
+          labels: needs-human-audit
+          body-path: journal-synthesis/vastai/results/AUDIT_CHECKLIST.md
+          delete-branch: false
+          draft: true

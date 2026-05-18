@@ -35,6 +35,54 @@
 set -uo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"; cd "$HERE"
+
+# =====================================================================
+# OPT-IN SELF-DESTROY / COST-CAP  (CI/CD PHASE 0 wiring)
+# =====================================================================
+# DEFAULT: OFF. This block does NOTHING unless SELF_DESTROY=1 is set
+# AND a vast.ai instance id AND VAST_API_KEY are present. That gate is
+# deliberate: a developer running this on a local/dev box must NEVER
+# have the machine destroyed by surprise. When (and only when) every
+# condition holds, an EXIT trap tears the rented instance down on
+# completion / failure / signal, and an independent background
+# wall-clock killer force-destroys after MAX_RUN_MINUTES (also unset =
+# OFF) as a last-resort cost cap. INFRASTRUCTURE ONLY: teardown.sh
+# touches no results and no paper.
+SELF_DESTROY="${SELF_DESTROY:-0}"
+MAX_RUN_MINUTES="${MAX_RUN_MINUTES:-}"   # unset/empty = OFF (no killer)
+_CICD="$HERE/cicd"
+_SD_ID=""
+for _v in "${SELF_DESTROY_INSTANCE_ID:-}" "${INSTANCE_ID:-}" \
+          "${VAST_INSTANCE_ID:-}" "${CONTAINER_ID:-}"; do
+  [ -n "$_v" ] && { _SD_ID="$_v"; break; }
+done
+_SD_WATCHDOG_PID=""
+if [ "$SELF_DESTROY" = "1" ] && [ -n "$_SD_ID" ] \
+   && [ -n "${VAST_API_KEY:-}" ] && [ -f "$_CICD/teardown.sh" ]; then
+  echo "[parallel] SELF_DESTROY armed for instance $_SD_ID "\
+"(teardown on EXIT; cost cap=${MAX_RUN_MINUTES:-OFF} min)"
+  _self_destroy() {
+    local rc=$?
+    echo "[parallel] EXIT trap -> tearing down instance $_SD_ID (rc=$rc)"
+    [ -n "$_SD_WATCHDOG_PID" ] && kill "$_SD_WATCHDOG_PID" 2>/dev/null || true
+    bash "$_CICD/teardown.sh" "$_SD_ID" || true
+  }
+  trap _self_destroy EXIT INT TERM
+  if [ -n "$MAX_RUN_MINUTES" ] && [[ "$MAX_RUN_MINUTES" =~ ^[0-9]+$ ]] \
+     && [ "$MAX_RUN_MINUTES" -gt 0 ]; then
+    _CAP_SECS=$((MAX_RUN_MINUTES * 60))
+    bash "$_CICD/teardown.sh" --cost-cap-watchdog "$_CAP_SECS" "$_SD_ID" &
+    _SD_WATCHDOG_PID=$!
+    echo "[parallel] background cost-cap killer pid=$_SD_WATCHDOG_PID "\
+"(force-destroy in ${_CAP_SECS}s)"
+  fi
+else
+  [ "$SELF_DESTROY" = "1" ] && echo "[parallel] SELF_DESTROY=1 but "\
+"instance id / VAST_API_KEY / teardown.sh missing -> NOT arming "\
+"self-destroy (safe default; dev box protected)."
+fi
+# =====================================================================
+
 : "${CHECKPOINT:?set CHECKPOINT (e.g. source .env.sh)}"
 : "${CORD:?set CORD=label=/path}"
 SROIE="${SROIE:-}"; WILDRECEIPT="${WILDRECEIPT:-}"

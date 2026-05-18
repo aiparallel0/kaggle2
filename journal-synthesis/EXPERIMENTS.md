@@ -219,3 +219,21 @@ SCOPE WARNING (CORD-only, n=100, single pipeline). STATUS HERE: the
 n=100 proxy E1-E3 RUN numbers above are unchanged and remain the only
 recorded values; the full-scale re-run is not run and commits no
 results.
+
+---
+
+## CI/CD automation: `vastai/cicd/`
+
+`vastai/cicd/` automates the **infrastructure** around these
+experiments (provision a GPU -> bootstrap -> `run_parallel.sh` Stages
+A-C -> fetch raw results -> generate an audit checklist -> open a
+**human-gated** pull request -> destroy the GPU), plus a local-GPU
+variant and a braked self-repeating loop. See `vastai/cicd/README.md`.
+
+**HUMAN GATE (reiterated).** This automation is infrastructure only. It
+NEVER edits `main.tex`, never writes a paper claim or number, never
+decides a scientific outcome, and never auto-merges. Every generated PR
+is labelled `needs-human-audit` with a "DO NOT MERGE INTO PAPER WITHOUT
+HUMAN SIGN-OFF vs PREREGISTRATION.md" banner. No number reaches the
+paper until a human has audited it against `PREREGISTRATION.md` and
+signed off. The scientific decision stays human.

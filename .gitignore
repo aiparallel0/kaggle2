@@ -60,3 +60,13 @@ report/paper_filled.blg
 # OS
 .DS_Store
 Thumbs.db
+
+# CI/CD automation (journal-synthesis/vastai/cicd) - NEVER commit
+# secrets or loop state. The vast.ai API key / webhook MUST come from
+# env vars / GitHub Actions secrets only; any local .env is ignored.
+.env
+*.env
+.env.*
+journal-synthesis/vastai/cicd/.env
+journal-synthesis/vastai/cicd/state/*
+!journal-synthesis/vastai/cicd/state/.gitignore

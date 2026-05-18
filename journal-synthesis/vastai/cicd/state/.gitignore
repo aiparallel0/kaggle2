@@ -1,0 +1,5 @@
+# Phase 3 loop state lives here and is NEVER committed (cumulative cost
+# ledger, last-results hash, etc.). Only this .gitignore is tracked so
+# the directory exists on a fresh checkout.
+*
+!.gitignore
