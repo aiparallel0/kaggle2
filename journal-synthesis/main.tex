@@ -210,8 +210,23 @@ receipts.}
   \item Pre-registered four-way head-to-head: composed vs. Axis A vs. Axis B
   vs. confidence alone, at matched false-alarm and matched reviewer cost.
   Primary endpoint: \pending{registered primary metric and result}.
-  \item Blind-spot coverage test: \pending{cases where each axis individually fails and whether composition recovers them}.
-  \item Error-decorrelation measurement: \pending{empirical correlation of the two axes' error events}.
+  \item Blind-spot coverage test: on a CORD-only proxy (n=100, single
+  beam-margin-paper pipeline) the composed policy (arith-pass AND
+  $c_{\mathrm{seq}}\!\ge\!$ median) rejects 10 receipts that the symbolic
+  axis alone wrongly accepts and 2 that confidence alone wrongly accepts;
+  composed precision 0.83 at 0.36 coverage vs.\ confidence-alone 0.84 at
+  0.50 and Axis-A-alone 0.70 at 0.54 (CORD-only proxy, n=100; exact-match
+  on stored normalised fields, not the official KIE scorer). The integrated
+  multi-corpus four-way version remains \pending{registered primary metric
+  and result}.
+  \item Error-decorrelation measurement: on the same CORD-only proxy
+  (applicable receipts n=83) the Axis-A error event and the low-confidence
+  event show $\phi=+0.29$ (permutation $p=0.011$, two-sided): a weak but
+  significant positive association, not full independence, on this single
+  pipeline (CORD-only proxy, n=83). This does not displace the cited
+  prior-work orthogonality result, which rests on its own multi-corpus
+  evidence; the integrated cross-corpus decorrelation analysis is
+  \pending{empirical correlation of the two axes' error events at benchmark scale}.
   \item Adversarial / stress probe: \pending{graceful degradation of the composed policy under money-line noise + cardinality ablation}.
 \end{itemize}
 

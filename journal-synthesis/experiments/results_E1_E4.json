@@ -1,0 +1,380 @@
+{
+  "E1": {
+    "scope": "CORD-only proxy, n=100, single beam-margin-paper pipeline",
+    "matched_join_n": 100,
+    "n_applicable_gt0": 83,
+    "n_applicable_eq0_excluded_from_axisA": 17,
+    "axisA_error_def": "NOT arith_pass on applicable receipts (n_applicable>0)",
+    "axisA_error_rate_on_applicable": 0.3493975903614458,
+    "cseq_proxy": {
+      "proxy": "low_c_seq",
+      "median_split": 0.9939600716131508,
+      "phi_mcc": 0.28681935492197363,
+      "counts_n11_n10_n01_n00": [
+        20,
+        9,
+        21,
+        33
+      ],
+      "permutation_p_two_sided": 0.011449427528623568,
+      "n11_def": "A-error & low-conf"
+    },
+    "softmax_proxy": {
+      "proxy": "low_softmax_confidence",
+      "median_split": 0.9939600716141515,
+      "phi_mcc": 0.28681935492197363,
+      "counts_n11_n10_n01_n00": [
+        20,
+        9,
+        21,
+        33
+      ],
+      "permutation_p_two_sided": 0.011449427528623568,
+      "n11_def": "A-error & low-conf"
+    },
+    "interpretation": "HONEST READOUT (computed, not assumed): on this CORD-only proxy (n=83 applicable) phi/MCC = +0.287 with permutation p = 0.011 (two-sided), i.e. a WEAK but statistically significant POSITIVE association between Axis-A error and low-confidence events. The two error types are therefore NOT fully decorrelated here; they are only weakly correlated (phi^2 ~= 8% shared variance), leaving most error mass non-overlapping. This is a single-pipeline proxy and does NOT establish the prior-work orthogonality claim, which stands on its own cited multi-corpus evidence."
+  },
+  "E2": {
+    "scope": "CORD-only proxy, n=100, single beam-margin-paper pipeline",
+    "ground_truth_field": "cord_arith fields == ground_truth (exact match on stored normalized strings); proxy, not the official KIE scorer",
+    "c_seq_threshold_median": 0.9932217849588563,
+    "confidence_alone": {
+      "n_accept": 50,
+      "n_correct": 42,
+      "precision": 0.84,
+      "coverage": 0.5
+    },
+    "axisA_alone": {
+      "n_accept": 54,
+      "n_correct": 38,
+      "precision": 0.7037037037037037,
+      "coverage": 0.54
+    },
+    "composed_axisA_AND_cseq": {
+      "n_accept": 36,
+      "n_correct": 30,
+      "precision": 0.8333333333333334,
+      "coverage": 0.36
+    },
+    "blindspot_conf_wrong_accepts_caught_by_composition": 2,
+    "blindspot_axisA_wrong_accepts_caught_by_composition": 10,
+    "blindspot_conf_ids": [
+      "test_00007",
+      "test_00070"
+    ],
+    "blindspot_axisA_ids": [
+      "test_00002",
+      "test_00004",
+      "test_00027",
+      "test_00040",
+      "test_00063",
+      "test_00083",
+      "test_00084",
+      "test_00091",
+      "test_00092",
+      "test_00099"
+    ]
+  },
+  "E3": {
+    "scope": "CORD-only proxy, n=100, single beam-margin-paper pipeline",
+    "frontier": [
+      {
+        "c_seq_thr": 0.0,
+        "confidence_alone": {
+          "coverage": 1.0,
+          "precision": 0.59,
+          "n_accept": 100
+        },
+        "composed": {
+          "coverage": 0.54,
+          "precision": 0.7037037037037037,
+          "n_accept": 54
+        }
+      },
+      {
+        "c_seq_thr": 0.05,
+        "confidence_alone": {
+          "coverage": 1.0,
+          "precision": 0.59,
+          "n_accept": 100
+        },
+        "composed": {
+          "coverage": 0.54,
+          "precision": 0.7037037037037037,
+          "n_accept": 54
+        }
+      },
+      {
+        "c_seq_thr": 0.1,
+        "confidence_alone": {
+          "coverage": 1.0,
+          "precision": 0.59,
+          "n_accept": 100
+        },
+        "composed": {
+          "coverage": 0.54,
+          "precision": 0.7037037037037037,
+          "n_accept": 54
+        }
+      },
+      {
+        "c_seq_thr": 0.15,
+        "confidence_alone": {
+          "coverage": 1.0,
+          "precision": 0.59,
+          "n_accept": 100
+        },
+        "composed": {
+          "coverage": 0.54,
+          "precision": 0.7037037037037037,
+          "n_accept": 54
+        }
+      },
+      {
+        "c_seq_thr": 0.2,
+        "confidence_alone": {
+          "coverage": 1.0,
+          "precision": 0.59,
+          "n_accept": 100
+        },
+        "composed": {
+          "coverage": 0.54,
+          "precision": 0.7037037037037037,
+          "n_accept": 54
+        }
+      },
+      {
+        "c_seq_thr": 0.25,
+        "confidence_alone": {
+          "coverage": 1.0,
+          "precision": 0.59,
+          "n_accept": 100
+        },
+        "composed": {
+          "coverage": 0.54,
+          "precision": 0.7037037037037037,
+          "n_accept": 54
+        }
+      },
+      {
+        "c_seq_thr": 0.3,
+        "confidence_alone": {
+          "coverage": 1.0,
+          "precision": 0.59,
+          "n_accept": 100
+        },
+        "composed": {
+          "coverage": 0.54,
+          "precision": 0.7037037037037037,
+          "n_accept": 54
+        }
+      },
+      {
+        "c_seq_thr": 0.35,
+        "confidence_alone": {
+          "coverage": 1.0,
+          "precision": 0.59,
+          "n_accept": 100
+        },
+        "composed": {
+          "coverage": 0.54,
+          "precision": 0.7037037037037037,
+          "n_accept": 54
+        }
+      },
+      {
+        "c_seq_thr": 0.4,
+        "confidence_alone": {
+          "coverage": 1.0,
+          "precision": 0.59,
+          "n_accept": 100
+        },
+        "composed": {
+          "coverage": 0.54,
+          "precision": 0.7037037037037037,
+          "n_accept": 54
+        }
+      },
+      {
+        "c_seq_thr": 0.45,
+        "confidence_alone": {
+          "coverage": 1.0,
+          "precision": 0.59,
+          "n_accept": 100
+        },
+        "composed": {
+          "coverage": 0.54,
+          "precision": 0.7037037037037037,
+          "n_accept": 54
+        }
+      },
+      {
+        "c_seq_thr": 0.5,
+        "confidence_alone": {
+          "coverage": 1.0,
+          "precision": 0.59,
+          "n_accept": 100
+        },
+        "composed": {
+          "coverage": 0.54,
+          "precision": 0.7037037037037037,
+          "n_accept": 54
+        }
+      },
+      {
+        "c_seq_thr": 0.55,
+        "confidence_alone": {
+          "coverage": 1.0,
+          "precision": 0.59,
+          "n_accept": 100
+        },
+        "composed": {
+          "coverage": 0.54,
+          "precision": 0.7037037037037037,
+          "n_accept": 54
+        }
+      },
+      {
+        "c_seq_thr": 0.6,
+        "confidence_alone": {
+          "coverage": 1.0,
+          "precision": 0.59,
+          "n_accept": 100
+        },
+        "composed": {
+          "coverage": 0.54,
+          "precision": 0.7037037037037037,
+          "n_accept": 54
+        }
+      },
+      {
+        "c_seq_thr": 0.65,
+        "confidence_alone": {
+          "coverage": 1.0,
+          "precision": 0.59,
+          "n_accept": 100
+        },
+        "composed": {
+          "coverage": 0.54,
+          "precision": 0.7037037037037037,
+          "n_accept": 54
+        }
+      },
+      {
+        "c_seq_thr": 0.7,
+        "confidence_alone": {
+          "coverage": 1.0,
+          "precision": 0.59,
+          "n_accept": 100
+        },
+        "composed": {
+          "coverage": 0.54,
+          "precision": 0.7037037037037037,
+          "n_accept": 54
+        }
+      },
+      {
+        "c_seq_thr": 0.75,
+        "confidence_alone": {
+          "coverage": 1.0,
+          "precision": 0.59,
+          "n_accept": 100
+        },
+        "composed": {
+          "coverage": 0.54,
+          "precision": 0.7037037037037037,
+          "n_accept": 54
+        }
+      },
+      {
+        "c_seq_thr": 0.8,
+        "confidence_alone": {
+          "coverage": 0.99,
+          "precision": 0.5959595959595959,
+          "n_accept": 99
+        },
+        "composed": {
+          "coverage": 0.54,
+          "precision": 0.7037037037037037,
+          "n_accept": 54
+        }
+      },
+      {
+        "c_seq_thr": 0.85,
+        "confidence_alone": {
+          "coverage": 0.99,
+          "precision": 0.5959595959595959,
+          "n_accept": 99
+        },
+        "composed": {
+          "coverage": 0.54,
+          "precision": 0.7037037037037037,
+          "n_accept": 54
+        }
+      },
+      {
+        "c_seq_thr": 0.9,
+        "confidence_alone": {
+          "coverage": 0.99,
+          "precision": 0.5959595959595959,
+          "n_accept": 99
+        },
+        "composed": {
+          "coverage": 0.54,
+          "precision": 0.7037037037037037,
+          "n_accept": 54
+        }
+      },
+      {
+        "c_seq_thr": 0.95,
+        "confidence_alone": {
+          "coverage": 0.93,
+          "precision": 0.6344086021505376,
+          "n_accept": 93
+        },
+        "composed": {
+          "coverage": 0.52,
+          "precision": 0.7307692307692307,
+          "n_accept": 52
+        }
+      },
+      {
+        "c_seq_thr": 1.0,
+        "confidence_alone": {
+          "coverage": 0.0,
+          "precision": null,
+          "n_accept": 0
+        },
+        "composed": {
+          "coverage": 0.0,
+          "precision": null,
+          "n_accept": 0
+        }
+      }
+    ]
+  },
+  "E4": {
+    "scope": "PRIOR-WORK re-confirmation only; NOT a new contribution",
+    "pooled_composed_precision": 0.9891304347826086,
+    "pooled_composed_precision_recomputed_wilson_lb": 0.9612400316909088,
+    "pooled_composed_int_corr_over_acc": [
+      182,
+      184
+    ],
+    "pooled_ci_table_int": [
+      0.961,
+      0.997
+    ],
+    "main_tex_claims_0_989_wilson_lb_0_961": {
+      "precision_matches_0.989": true,
+      "wilson_lb_matches_0.961": true
+    },
+    "wildreceipt_intersection_corr_over_acc": [
+      113,
+      114
+    ],
+    "wildreceipt_113_over_114_confirmed": true,
+    "cpu_latency_median_us": 4.07,
+    "cpu_latency_note": "Raw amount multisets are not persisted and source corpora are unavailable on this CPU host. SROIE and WildReceipt receipts are timed at their real stored per-re"
+  }
+}
