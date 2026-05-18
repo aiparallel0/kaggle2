@@ -1,0 +1,29 @@
+# Off-box (vast.ai GPU) dependencies for the journal experiment package.
+#
+# torch / torchvision are intentionally NOT pinned here: this is the
+# explicit guidance from arith-gating/requirements.txt - vast.ai PyTorch
+# images ship a matched torch+torchvision pair (e.g. torch 2.x +
+# torchvision +cuXXX) and forcing torch from pip breaks the torchvision
+# C-extension (torchvision::nms). Use the instance's preinstalled torch.
+#
+# transformers / datasets / accelerate / huggingface_hub / sentencepiece
+# / protobuf / numpy / pandas / scikit-learn / Pillow / tqdm versions are
+# taken VERBATIM from arith-gating/requirements.txt (the prior repo that
+# pins the Donut stack). scipy is added (used by the beam-margin KS test
+# in arith-gating BM2_compression.py); its bound is a known-good recent
+# range, stated as such since the prior repos do not pin scipy.
+
+transformers>=4.40,<5.0
+datasets>=2.18,<3.0
+accelerate>=0.30,<1.0
+huggingface_hub>=0.23,<0.27
+sentencepiece>=0.1.99
+protobuf>=4.0
+numpy>=1.26
+pandas>=2.2
+scikit-learn>=1.4
+Pillow>=10.2
+tqdm>=4.66
+pytesseract>=0.3.10
+# Not pinned by the prior repos; known-good recent range (stated):
+scipy>=1.11,<2.0

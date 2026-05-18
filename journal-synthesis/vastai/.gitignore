@@ -1,0 +1,5 @@
+# Results are produced ONLY by a real vast.ai GPU run. They must never be
+# committed from the preparation environment (no GPU here => any committed
+# result would be fabricated). Keep the directory, ignore its payloads.
+results/*
+!results/.gitkeep

@@ -93,26 +93,65 @@ Reason: arith-gating prediction ids and triology run ids are different
 pipelines / id spaces; no provably valid per-receipt join exists, so the
 integrated cross-corpus decorrelation and four-way head-to-head cannot be
 computed honestly.
+PREPARED FOR VAST.AI: `vastai/e5_integrated_benchmark.py` (runs both axes
+through ONE pipeline on a shared receipt set so receipt_ids align by
+construction, fixing the join blocker; H1 four-way head-to-head + H2
+decorrelation). See `vastai/README_RUNBOOK.md`. STATUS HERE: still
+BLOCKED (no GPU/models/network); not run; no results committed.
 
 ### E6 - Multiple natural shift pairs (Axis B battery)  [BLOCKED]
 Reason: needs new corpora + model inference to produce additional
 natural-shift beam-margin distributions; no network, no GPU, not on disk.
+PREPARED FOR VAST.AI: `vastai/e6_multi_shift_pairs.py` (parameterised
+pair list; reuses arith-gating beam-margin extraction; log2 variance
+ratio + KS + permutation p per pair). See `vastai/README_RUNBOOK.md`.
+STATUS HERE: still BLOCKED; not run; no results committed.
 
 ### E7 - Controlled mechanism / synthetic-shift study  [BLOCKED]
 Reason: requires generating synthetic shifts and re-running model inference
 with independently dialed difficulty vs distribution distance; needs new
 data + inference, unavailable here.
+PREPARED FOR VAST.AI: `vastai/e7_mechanism_synthetic_shift.py`
+(independent difficulty vs distribution-distance knobs; margin-variance
+vs location signals; beam-width/length-norm/architecture ablation
+hooks; H3). See `vastai/README_RUNBOOK.md`. STATUS HERE: still BLOCKED;
+not run; no results committed.
 
 ### E8 - Real end-to-end deployment latency  [BLOCKED]
 Reason: no GPU; prior work measured CPU-only standalone DP latency (4.07 us
 median, explicitly disclosed). True end-to-end pipeline latency cannot be
 measured in this CPU-only environment without fabrication.
+PREPARED FOR VAST.AI: `vastai/e8_end_to_end_latency.py` (real GPU
+end-to-end decode+gate latency, triology timing methodology, warmup
+discarded; carries the 4.07 us CPU prior figure forward verbatim as
+contrast, never overwrites it). See `vastai/README_RUNBOOK.md`. STATUS
+HERE: still BLOCKED; not run; no results committed.
 
 ### E9 - Alternative-verifier bake-off  [BLOCKED]
 Reason: line-item / subtotal+tax / rounding verifiers are not implemented and
 the stored fields lack the structured per-line-item data needed to run them
 honestly on this data.
+PREPARED FOR VAST.AI: `vastai/e9_alt_verifier_bakeoff.py` (implements
+line-item x qty, subtotal+tax, rounding verifiers, faithful to triology
+identities; precision/coverage/orthogonality vs subset-sum on freshly
+decoded receipts that DO carry per-line-item structure; H4). See
+`vastai/README_RUNBOOK.md`. STATUS HERE: still BLOCKED; not run; no
+results committed.
 
 ### E10 - Power-resolving per-corpus replication / broadened corpora-languages-backbones  [BLOCKED]
 Reason: needs new data collection and model inference across additional
 corpora, languages, and backbones; no network, no GPU, not on disk.
+PREPARED FOR VAST.AI: `vastai/e10_power_and_breadth.py` (per-corpus /
+per-backbone composed precision + Wilson CI half-width vs a
+pre-registered target + additional-n-needed solve; broadened
+corpora/backbone via list args). See `vastai/README_RUNBOOK.md`.
+STATUS HERE: still BLOCKED; not run; no results committed.
+
+### Full-scale E1-E3 (lift the n=100 CORD proxy caveat)
+PREPARED FOR VAST.AI: `vastai/e1e3_fullscale.py` re-runs E1/E2/E3 with
+the SAME metric math as `experiments/run_analysis.py` on the full
+fetched corpus once models/data are available, removing the GLOBAL
+SCOPE WARNING (CORD-only, n=100, single pipeline). STATUS HERE: the
+n=100 proxy E1-E3 RUN numbers above are unchanged and remain the only
+recorded values; the full-scale re-run is not run and commits no
+results.
