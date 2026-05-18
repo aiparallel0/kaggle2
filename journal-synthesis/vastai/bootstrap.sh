@@ -110,11 +110,14 @@ esac
 
 echo "== 6. data via PRIOR fetchers (REAL signatures; they write into arith-gating/data) =="
 have() { [ -d "$1" ] && [ -n "$(ls -A "$1" 2>/dev/null)" ]; }
-if have "$AG/data/cord/test"; then echo "[bootstrap] cord present, skip"
-  else python3 "$AG/scripts/fetch_data.py" --dataset cord || echo "[bootstrap] WARN: cord fetch failed"; fi
-if have "$AG/data/cord/dev"; then echo "[bootstrap] cord/dev present, skip"
+# CORD: the live HF mirror is Donut-style (ground_truth+image, no
+# words/bboxes), so fetch_data.py REQUIRES --ocr (it self-reports this);
+# tesseract was installed in step 1. "present" = annotations actually written.
+if have "$AG/data/cord/test/annotations"; then echo "[bootstrap] cord present, skip"
+  else python3 "$AG/scripts/fetch_data.py" --dataset cord --ocr || echo "[bootstrap] WARN: cord fetch failed (see error above)"; fi
+if have "$AG/data/cord/dev/annotations"; then echo "[bootstrap] cord/dev present, skip"
   else python3 "$AG/scripts/fetch_cord_dev.py" || echo "[bootstrap] WARN: cord/dev fetch failed"; fi
-if have "$AG/data/wild/test"; then echo "[bootstrap] wild present, skip"
+if have "$AG/data/wild/test/annotations"; then echo "[bootstrap] wild present, skip"
   else python3 "$AG/scripts/fetch_wildreceipt.py" || echo "[bootstrap] WARN: wild fetch failed"; fi
 echo "[bootstrap] NOTE: SROIE has no fetcher in these repos; supply it manually"
 echo "            and add: export SROIE=sroie=/path/to/sroie/test"
@@ -122,11 +125,14 @@ echo "            and add: export SROIE=sroie=/path/to/sroie/test"
 echo "== 7. write .env.sh from DISCOVERED real paths =="
 {
   [ -n "$CKPT_DIR" ] && echo "export CHECKPOINT=$CKPT_DIR"
-  have "$AG/data/cord/test"  && echo "export CORD=cord=$AG/data/cord/test"
-  have "$AG/data/cord/dev"   && echo "export CORD_DEV=cord_dev=$AG/data/cord/dev"
-  have "$AG/data/wild/test"  && echo "export WILDRECEIPT=wildreceipt=$AG/data/wild/test"
+  if have "$AG/data/cord/test/annotations"; then echo "export CORD=cord=$AG/data/cord/test"
+  else echo "# WARNING: CORD test NOT produced (fetch failed); set CORD manually or experiments will fail" >&2; fi
+  have "$AG/data/cord/dev/annotations"   && echo "export CORD_DEV=cord_dev=$AG/data/cord/dev"
+  have "$AG/data/wild/test/annotations"  && echo "export WILDRECEIPT=wildreceipt=$AG/data/wild/test"
   echo "export HF_HOME=$HF_HOME"
 } > "$PKG/.env.sh"
+echo "[bootstrap] if CORD is absent below, the prior run's stale CORD env is invalid:"
+echo "            run 'unset CORD' before 'source .env.sh'."
 echo "---- .env.sh ----"; cat "$PKG/.env.sh"; echo "-----------------"
 
 echo
