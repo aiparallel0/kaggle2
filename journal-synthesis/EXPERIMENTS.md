@@ -147,7 +147,7 @@ pre-registered target + additional-n-needed solve; broadened
 corpora/backbone via list args). See `vastai/README_RUNBOOK.md`.
 STATUS HERE: still BLOCKED; not run; no results committed.
 
-### Severe tests (S1-S4) - robustness-check the NEGATIVE; NOT thesis-rescue  [PREPARED, cache-only]
+### Severe tests (S1-S5) - robustness-check the NEGATIVE; NOT thesis-rescue  [PREPARED, cache-only]
 PURPOSE (stated honestly): the clean decode-once run produced a NEGATIVE
 for the journal thesis (H1 composed WORSE than every single signal at
 matched cost: -0.25 / -0.41 / -0.34; H3 margin-variance tracks DIFFICULTY
@@ -191,6 +191,32 @@ written into `results/SEVERE.json` next to each number.
   and pooled; a corpus-specific sign flip means the pooled negative is
   driven by one corpus / the OCR set and is reported as corpus-specific,
   not a thesis-level refutation.
+
+- S5 MATCHED-LENGTH STRATIFIED AUROC (CONFOUND CHECK; not thesis-rescue):
+  is "sequence length / c_seq separates in-dist from shift better than
+  beam_margin" merely a CORPUS-LENGTH artifact? For each ordered pair of
+  corpora present in the cache (here cord_dev(0) vs wildreceipt(1)),
+  compute the AUROC (orientation fixed: pos=shift, raw score, no abs/sign
+  search) of length, c_seq and beam_margin both FULL and restricted to an
+  overlapping-length stratum, then with a bootstrap 95% CI. Length source:
+  the decode-once cache has NO explicit length and does not retain the raw
+  decoded string, so length is a DERIVED PROXY (whitespace-token count of
+  the serialized predicted `fields`) - stated as a proxy in the JSON;
+  receipts with no proxy are SKIPPED, never fabricated. ONE fixed binning
+  rule (not searched): pooled-length deciles, matched stratum = receipts
+  in a decile bin populated by BOTH corpora; a 1:1 nearest-length
+  subsample is a second view only. PRE-STATED verdict rule (in the JSON):
+  the negative STANDS if at matched length c_seq and/or length AUROC >=
+  beam_margin AUROC; beam_margin is 'rescued' ONLY if its matched AUROC is
+  highest AND its CI lower bound exceeds both others' point estimates.
+  EXPECTATION (stated, not tuned, reported either way): given the prior
+  length-confound-removed numbers (c_seq AUROC ~0.976 vs beam_margin
+  ~0.809) and the negative S1-S4, a margin 'rescue' is a priori unlikely.
+  HONEST SCOPE: cord_dev is the OCR-derived CORD validation split (n~100),
+  wildreceipt n~472; this is NOT the paper's CORD->SROIE pair (no SROIE
+  fetcher in these repos), so S5 answers the matched-length confound for
+  THIS single available shift pair only, at small matched-n - explicitly
+  not generalizable and not a paper-level result.
 
 COST/SCOPE: zero GPU, zero decode. `vastai/severe_tests.py` reads ONLY
 the existing Stage-A decode-once cache via the same cache-load path the

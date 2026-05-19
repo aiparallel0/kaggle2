@@ -247,7 +247,7 @@ for entry in "${GPU_JOBS[@]}"; do
 done
 
 # ---------------------------------------------------------------------
-# STAGE C (CPU): SEVERE TESTS S1-S4. Robustness-checks the NEGATIVE
+# STAGE C (CPU): SEVERE TESTS S1-S5. Robustness-checks the NEGATIVE
 # result; NOT a thesis-rescue. Cache-only (reuses the Stage-A
 # decode-once cache via the same cache-load path), NO GPU, NO decode,
 # single fast job (~seconds). Resumable: a SEVERE.json that already
@@ -255,7 +255,7 @@ done
 # like the Stage-B experiments. Runs AFTER Stage B so the caches it
 # reads are guaranteed present.
 # ---------------------------------------------------------------------
-echo "[parallel] === STAGE C (CPU): severe tests S1-S4 (cache-only, no GPU) ==="
+echo "[parallel] === STAGE C (CPU): severe tests S1-S5 (cache-only, no GPU) ==="
 if already_done "SEVERE"; then
   echo "[parallel] SKIP SEVERE (real result already present)"
 else

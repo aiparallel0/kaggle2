@@ -129,6 +129,42 @@ def spearman(x: Sequence[float], y: Sequence[float]) -> float:
     return cov / math.sqrt(vx * vy)
 
 
+def auroc(pos: Sequence[float], neg: Sequence[float]):
+    """Rank-based AUROC = Mann-Whitney U / (n_pos * n_neg), ties at 0.5.
+
+    `pos` = scores for the class labelled 1 (here: shifted corpus),
+    `neg` = scores for the class labelled 0 (here: in-distribution).
+    Returns the probability a random positive outranks a random negative
+    (0.5 = no separation, 1.0 = positives always rank higher, 0.0 =
+    perfectly reversed). Pure stdlib, exact tie handling (each tied
+    pair contributes 0.5). Returns None if either class is empty.
+
+    Computed via the rank-sum identity
+        U = R_pos - n_pos*(n_pos+1)/2
+    on midranks (ties averaged), which is exactly equivalent to the
+    O(n_pos*n_neg) pairwise count with 0.5 per tie, but O(n log n).
+    """
+    npos, nneg = len(pos), len(neg)
+    if npos == 0 or nneg == 0:
+        return None
+    combined = [(v, 1) for v in pos] + [(v, 0) for v in neg]
+    combined.sort(key=lambda t: t[0])
+    n = len(combined)
+    ranks = [0.0] * n
+    i = 0
+    while i < n:
+        j = i
+        while j + 1 < n and combined[j + 1][0] == combined[i][0]:
+            j += 1
+        avg = (i + j) / 2.0 + 1.0  # 1-based midrank
+        for k in range(i, j + 1):
+            ranks[k] = avg
+        i = j + 1
+    r_pos = sum(ranks[k] for k in range(n) if combined[k][1] == 1)
+    u = r_pos - npos * (npos + 1) / 2.0
+    return u / (npos * nneg)
+
+
 def variance(xs: Sequence[float]) -> float:
     """Population-free sample variance (n-1), matches statistics.variance."""
     n = len(xs)

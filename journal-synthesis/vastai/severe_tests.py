@@ -1,5 +1,15 @@
 #!/usr/bin/env python3
-"""SEVERE TESTS S1-S4 - robustness-check the NEGATIVE result.
+"""SEVERE TESTS S1-S5 - robustness-check the NEGATIVE result.
+
+S5 (added as a CONFOUND CHECK, not a thesis-rescue) asks whether the
+"sequence length / c_seq separates in-dist from shift better than
+beam_margin" finding is merely a CORPUS-LENGTH ARTIFACT, by recomputing
+the separation AUROC of length / c_seq / beam_margin both full and
+RESTRICTED to an overlapping-length stratum. Like S1-S4 its binning rule
+and verdict rule are fixed before the data is read and written into the
+JSON; no choice here can manufacture a margin 'rescue'. Honest scope: it
+runs on whatever pair is decoded on the box (cord_dev vs wildreceipt),
+which is NOT the paper's CORD->SROIE pair (no SROIE fetcher here).
 
 PURPOSE (stated honestly, up front): the clean decode-once run already
 produced a NEGATIVE for the journal thesis (H1 composed WORSE than every
@@ -48,7 +58,7 @@ from common.records import (  # noqa: E402
     _try_load_cache, cache_path, split_corpus_arg,
 )
 from common.metrics import (  # noqa: E402
-    phi_mcc, perm_p, bootstrap_ci, wilson, spearman, median,
+    phi_mcc, perm_p, bootstrap_ci, wilson, spearman, median, auroc,
 )
 from common.totals import (  # noqa: E402
     gold_total_cents, gold_items_cents, gold_tax_cents,
@@ -91,8 +101,41 @@ def _records_from_cache(label, path, checkpoint, task_prompt):
             "arith_pass": (verdict == "pass"),
             "verdict": verdict,
             "correct": bool(is_correct(gt, fields)),
+            # S5 length proxy (see _derived_pred_length): the cache schema
+            # has NO explicit length field and does NOT retain the raw
+            # decoded string (only the parsed token2json `fields` dict
+            # survives). length is therefore a DERIVED PROXY = whitespace
+            # token count of the deterministically serialized predicted
+            # `fields`. None if `fields` is absent/empty (skipped, never
+            # fabricated).
+            "pred_len_proxy": _derived_pred_length(fields),
         })
     return out
+
+
+def _derived_pred_length(fields):
+    """DERIVED length proxy for one receipt.
+
+    HONEST NOTE (also written into SEVERE.json): the decode-once cache
+    schema (common/records.py) stores NO explicit per-record length and
+    does NOT retain the raw decoded predicted string - only the parsed
+    `token2json` `fields` dict survives the cache. So a true predicted
+    token length is NOT recoverable here. We therefore use a PROXY:
+    the whitespace-token count of the deterministically serialized
+    predicted `fields` (sorted keys, stable separators). This is a
+    monotone-ish stand-in for "how much structured content the model
+    emitted", NOT the model's literal token count. Returns None if
+    `fields` is missing/empty so the receipt is SKIPPED (never
+    fabricated to a number)."""
+    if not isinstance(fields, dict) or not fields:
+        return None
+    try:
+        s = json.dumps(fields, sort_keys=True, ensure_ascii=False,
+                        separators=(" ", " "))
+    except (TypeError, ValueError):
+        return None
+    n = len(s.split())
+    return n if n > 0 else None
 
 
 def _axisA_err_event(r):
@@ -507,6 +550,370 @@ def s4_split_stability(per_corpus_recs, pooled):
 
 
 # ---------------------------------------------------------------------------
+# S5  MATCHED-LENGTH STRATIFIED AUROC  (CONFOUND CHECK; NOT thesis-rescue)
+# ---------------------------------------------------------------------------
+# Honest question: is "sequence length / c_seq separates in-dist from shift
+# better than beam_margin" merely a CORPUS-LENGTH ARTIFACT? Two corpora that
+# differ systematically in length will be trivially separable by length (and
+# by anything length-correlated such as c_seq) regardless of any
+# distribution-shift signal. S5 recomputes the separation AUROC of three
+# scores (sequence length, c_seq, beam_margin) for in-dist(0) vs shift(1)
+# both on the FULL pair and RESTRICTED to an overlapping-length stratum
+# where the two corpora have comparable length. If beam_margin's matched
+# AUROC does not overtake length/c_seq, the "length beats margin" finding is
+# NOT just a length confound and the prior negative STANDS.
+#
+# ONE binning rule, fixed before the data is read, NOT searched: pooled-
+# length DECILES over the pooled lengths of the ordered pair (10 equal-count
+# quantile cut points on the union of both corpora's lengths); the matched
+# stratum is exactly the receipts whose length falls in a decile bin that is
+# populated by BOTH corpora (>=1 receipt from each). A 1:1 nearest-length-
+# matched subsample is reported as a SECOND view only (not the verdict
+# driver). ORIENTATION is fixed: AUROC(pos=shift scores, neg=in-dist
+# scores) with the raw score (no abs, no sign search); a value <0.5 simply
+# means in-dist scores higher and is reported verbatim.
+#
+# LENGTH SOURCE: prefer an explicit per-record length if the cache schema
+# has one; the decode-once cache (common/records.py) has NONE and does NOT
+# retain the raw decoded string, so length is the DERIVED PROXY
+# `pred_len_proxy` (whitespace-token count of the deterministically
+# serialized predicted `fields`; see _derived_pred_length). This is stated
+# in the JSON. Receipts with no proxy (empty/absent fields) are SKIPPED,
+# never fabricated.
+#
+# PRE-STATED VERDICT RULE (written next to the numbers, not chosen post
+# hoc): the negative STANDS if, at matched length, c_seq AUROC and/or
+# length AUROC is >= beam_margin AUROC (CIs considered). beam_margin is
+# 'rescued' ONLY if its matched AUROC is the highest of the three AND its
+# bootstrap-CI lower bound exceeds the point estimates of BOTH the others.
+# AUROCs are folded to separation strength max(a, 1-a) for the comparison
+# so an equally-strong but oppositely-oriented separator is not mistaken
+# for weak; raw oriented AUROCs are reported too.
+
+def _explicit_record_length(r):
+    """Return an EXPLICIT per-record length iff the cache schema exposes
+    one. The decode-once cache (common/records.py SCHEMA_VERSION=1) has
+    NO such field, so this returns None and S5 falls back to the
+    documented derived proxy. Kept as a hook so that if a future schema
+    adds e.g. `pred_token_len` S5 uses it automatically and records the
+    source as explicit."""
+    for key in ("pred_token_len", "n_pred_tokens", "seq_len",
+                "pred_len", "token_len"):
+        v = r.get(key)
+        if isinstance(v, (int, float)) and v == v and v > 0:
+            return float(v)
+    return None
+
+
+def _length_of(r):
+    """(length, source) for one analysis record. Explicit field if the
+    schema has one, else the derived whitespace-token proxy of the
+    serialized predicted fields. None if neither is available (skip)."""
+    ex = _explicit_record_length(r)
+    if ex is not None:
+        return ex, "explicit"
+    lp = r.get("pred_len_proxy")
+    if isinstance(lp, (int, float)) and lp is not None and lp > 0:
+        return float(lp), "derived_proxy"
+    return None, "none"
+
+
+def _sep_strength(a):
+    """Orientation-free separation strength of an AUROC: max(a, 1-a).
+    0.5 == no separation; 1.0 == perfect (either orientation)."""
+    if a is None:
+        return None
+    return a if a >= 0.5 else 1.0 - a
+
+
+def _auroc_with_ci(pos, neg, seed=SEED):
+    """Oriented AUROC(pos=shift, neg=in-dist) plus a percentile bootstrap
+    95% CI obtained by resampling EACH class with replacement (the
+    correct two-sample AUROC bootstrap). Returns dict or None."""
+    if not pos or not neg:
+        return None
+    obs = auroc(pos, neg)
+    if obs is None:
+        return None
+    rng = random.Random(seed)
+    npos, nneg = len(pos), len(neg)
+    boots = []
+    for _ in range(2000):
+        bp = [pos[rng.randrange(npos)] for _ in range(npos)]
+        bn = [neg[rng.randrange(nneg)] for _ in range(nneg)]
+        v = auroc(bp, bn)
+        if v is not None:
+            boots.append(v)
+    lo = hi = None
+    if boots:
+        boots.sort()
+        lo = boots[int(0.025 * len(boots))]
+        hi = boots[int(0.975 * len(boots)) - 1]
+    return {"auroc": obs, "sep_strength": _sep_strength(obs),
+            "ci95": [lo, hi], "n_pos": npos, "n_neg": neg and nneg}
+
+
+def _score_aurocs(in_recs, shift_recs, with_ci):
+    """AUROC of length / c_seq / beam_margin separating in-dist(0) from
+    shift(1) over the supplied record subsets. Each receipt contributes
+    a score only if that score is present (independent missingness)."""
+    out = {}
+    for name, getter in (
+            ("length", lambda r: _length_of(r)[0]),
+            ("c_seq", lambda r: r.get("c_seq")),
+            ("beam_margin", lambda r: r.get("beam_margin"))):
+        pos = [getter(r) for r in shift_recs]
+        pos = [v for v in pos if isinstance(v, (int, float)) and v is not None]
+        neg = [getter(r) for r in in_recs]
+        neg = [v for v in neg if isinstance(v, (int, float)) and v is not None]
+        if with_ci:
+            res = _auroc_with_ci(pos, neg)
+            out[name] = res if res is not None else {
+                "auroc": None, "status": "INSUFFICIENT (a class empty)",
+                "n_pos": len(pos), "n_neg": len(neg)}
+        else:
+            a = auroc(pos, neg) if pos and neg else None
+            out[name] = {"auroc": a, "sep_strength": _sep_strength(a),
+                         "n_pos": len(pos), "n_neg": len(neg)}
+    return out
+
+
+def _pooled_decile_edges(lengths):
+    """9 equal-count quantile cut points (deciles) over the POOLED
+    lengths. Fixed rule; not searched. Bin index in [0,9]."""
+    s = sorted(lengths)
+    n = len(s)
+    return [s[min(n - 1, int(n * f))] for f in
+            (0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9)]
+
+
+def _bin_of(x, edges):
+    b = 0
+    for e in edges:
+        if x <= e:
+            return b
+        b += 1
+    return b
+
+
+def s5_matched_length_auroc(in_label, in_recs, shift_label, shift_recs):
+    """One ordered pair (in_dist=0, shift=1). Full + matched-length
+    stratified AUROC for length / c_seq / beam_margin, with the
+    pre-stated verdict rule attached."""
+    # length source: established from the records actually present.
+    src_counts = {"explicit": 0, "derived_proxy": 0, "none": 0}
+    for r in in_recs + shift_recs:
+        src_counts[_length_of(r)[1]] += 1
+    if src_counts["explicit"] > 0 and src_counts["derived_proxy"] == 0:
+        length_source = "explicit_per_record_field"
+    elif src_counts["derived_proxy"] > 0 and src_counts["explicit"] == 0:
+        length_source = ("DERIVED_PROXY (whitespace-token count of the "
+                         "deterministically serialized predicted `fields`; "
+                         "the decode-once cache stores NO explicit length "
+                         "and does NOT retain the raw decoded string, so "
+                         "this is a PROXY for emitted structured content, "
+                         "NOT the model's literal token count)")
+    elif src_counts["explicit"] > 0 and src_counts["derived_proxy"] > 0:
+        length_source = ("MIXED explicit+derived (reported; mixing is a "
+                         "limitation - treat with caution)")
+    else:
+        return {
+            "pair": f"{in_label}(0)_vs_{shift_label}(1)",
+            "status": ("SKIPPED: no length available - cache has no "
+                       "explicit length field and no receipt retained a "
+                       "non-empty predicted `fields` to derive a proxy "
+                       "from. A length is NOT fabricated."),
+            "length_source": "none",
+        }
+
+    in_l = [(r, _length_of(r)[0]) for r in in_recs]
+    in_l = [(r, L) for r, L in in_l if L is not None]
+    sh_l = [(r, _length_of(r)[0]) for r in shift_recs]
+    sh_l = [(r, L) for r, L in sh_l if L is not None]
+    if not in_l or not sh_l:
+        # A whole CLASS has zero usable length (no explicit field, no
+        # derivable proxy on that side). A per-pair AUROC needs lengths
+        # on BOTH sides; we SKIP rather than fabricate a length.
+        empty = [lbl for lbl, lst in
+                 ((in_label, in_l), (shift_label, sh_l)) if not lst]
+        return {
+            "pair": f"{in_label}(0)_vs_{shift_label}(1)",
+            "length_source": length_source,
+            "status": (f"SKIPPED: no length available for class(es) "
+                       f"{empty} - the cache has no explicit length and "
+                       f"no receipt on that side retained a non-empty "
+                       f"predicted `fields` to derive a proxy from. A "
+                       f"length is NOT fabricated."),
+        }
+    if len(in_l) < 4 or len(sh_l) < 4:
+        return {
+            "pair": f"{in_label}(0)_vs_{shift_label}(1)",
+            "length_source": length_source,
+            "status": (f"INSUFFICIENT (n<4 with a length per class: "
+                       f"in={len(in_l)} shift={len(sh_l)})"),
+        }
+
+    full = _score_aurocs([r for r, _ in in_l], [r for r, _ in sh_l],
+                         with_ci=False)
+
+    pooled_lengths = [L for _, L in in_l] + [L for _, L in sh_l]
+    edges = _pooled_decile_edges(pooled_lengths)
+    in_bins = {}
+    sh_bins = {}
+    for r, L in in_l:
+        in_bins.setdefault(_bin_of(L, edges), []).append((r, L))
+    for r, L in sh_l:
+        sh_bins.setdefault(_bin_of(L, edges), []).append((r, L))
+    shared_bins = sorted(set(in_bins) & set(sh_bins))
+    m_in = [rl for b in shared_bins for rl in in_bins[b]]
+    m_sh = [rl for b in shared_bins for rl in sh_bins[b]]
+
+    matched = None
+    if len(m_in) >= 4 and len(m_sh) >= 4:
+        matched = _score_aurocs([r for r, _ in m_in],
+                                [r for r, _ in m_sh], with_ci=True)
+    matched_status = (
+        "OK" if matched is not None else
+        f"INSUFFICIENT matched stratum (in={len(m_in)} shift={len(m_sh)}, "
+        f"need >=4 each); no overtake claim is made on too-small n")
+
+    # SECOND VIEW only: 1:1 nearest-length matched subsample (greedy on
+    # sorted lengths). Reported, NOT the verdict driver.
+    nn_view = None
+    if m_in and m_sh:
+        sm_in = sorted(m_in, key=lambda t: t[1])
+        sm_sh = sorted(m_sh, key=lambda t: t[1])
+        pairs_in, pairs_sh = [], []
+        used = [False] * len(sm_sh)
+        for r, L in sm_in:
+            best, bd = -1, None
+            for j in range(len(sm_sh)):
+                if used[j]:
+                    continue
+                d = abs(sm_sh[j][1] - L)
+                if bd is None or d < bd:
+                    bd, best = d, j
+            if best >= 0:
+                used[best] = True
+                pairs_in.append(r)
+                pairs_sh.append(sm_sh[best][0])
+        if len(pairs_in) >= 4:
+            nn_view = _score_aurocs(pairs_in, pairs_sh, with_ci=True)
+        nn_status = (f"1:1 nearest-length subsample n_pairs="
+                     f"{len(pairs_in)}")
+    else:
+        nn_status = "no nearest-length subsample (empty shared stratum)"
+
+    # ---- pre-stated verdict (CIs considered; folded sep-strength) ----
+    verdict = {
+        "rule": (
+            "PRE-STATED, written here BEFORE interpreting the numbers and "
+            "NOT tuned: the prior NEGATIVE STANDS if, at matched length, "
+            "c_seq AUROC and/or length AUROC separation-strength is >= "
+            "beam_margin's. beam_margin is 'RESCUED' only if (a) its "
+            "matched separation-strength is the HIGHEST of the three AND "
+            "(b) its bootstrap-CI lower bound (folded) EXCEEDS the point "
+            "separation-strengths of BOTH c_seq and length. Anything else "
+            "= negative stands. Orientation is fixed (pos=shift); raw "
+            "oriented AUROCs are also reported. This rule is honest and "
+            "cannot be cherry-picked after the fact."),
+        "negative_stands": None,
+        "beam_margin_rescued": None,
+        "basis": "matched_overlapping_length_stratum",
+    }
+    if matched is not None:
+        def ss(name):
+            d = matched.get(name, {})
+            return d.get("sep_strength")
+
+        bm, cs, ln = ss("beam_margin"), ss("c_seq"), ss("length")
+        if None not in (bm, cs, ln):
+            highest = bm > cs and bm > ln
+            bm_d = matched["beam_margin"]
+            ci = bm_d.get("ci95") or [None, None]
+            bm_lo = None
+            if ci[0] is not None and ci[1] is not None:
+                a = bm_d.get("auroc")
+                bm_lo = (_sep_strength(ci[0]) if a is not None and a >= 0.5
+                         else _sep_strength(ci[1]))
+            rescued = bool(highest and bm_lo is not None
+                           and bm_lo > cs and bm_lo > ln)
+            verdict["beam_margin_rescued"] = rescued
+            verdict["negative_stands"] = (not rescued)
+            verdict["matched_sep_strength"] = {
+                "beam_margin": bm, "c_seq": cs, "length": ln,
+                "beam_margin_ci_lo_folded": bm_lo}
+        else:
+            verdict["negative_stands"] = None
+            verdict["note"] = ("a matched AUROC was not computable; no "
+                               "rescue can be claimed (negative not "
+                               "overturned).")
+    else:
+        verdict["note"] = ("matched stratum too small to compute; the "
+                           "prior negative is NOT overturned by S5 (an "
+                           "uncomputable test cannot rescue the thesis).")
+
+    return {
+        "pair": f"{in_label}(0)_vs_{shift_label}(1)",
+        "label_convention": f"0={in_label} (in-dist), 1={shift_label} (shift)",
+        "length_source": length_source,
+        "length_source_record_counts": src_counts,
+        "auroc_orientation": ("AUROC(pos=shift scores, neg=in-dist "
+                              "scores); raw score, no abs/sign search; "
+                              "<0.5 = in-dist scores higher (reported "
+                              "verbatim)"),
+        "binning_rule": ("pooled-length DECILES (9 equal-count quantile "
+                         "cuts on the union of both corpora's lengths); "
+                         "matched stratum = receipts whose length falls "
+                         "in a decile bin populated by BOTH corpora. ONE "
+                         "fixed rule, not searched."),
+        "n_full": {in_label: len(in_l), shift_label: len(sh_l)},
+        "full_auroc_unmatched": full,
+        "pooled_decile_edges": edges,
+        "matched_stratum_status": matched_status,
+        "n_matched_stratum": {in_label: len(m_in), shift_label: len(m_sh)},
+        "matched_stratum_auroc_with_ci": matched,
+        "nearest_length_1to1_view": nn_view,
+        "nearest_length_1to1_status": nn_status,
+        "verdict": verdict,
+    }
+
+
+def s5_all_pairs(per_corpus_recs):
+    """Every ORDERED pair among the corpora actually present in the
+    cache. Honest scope statement is attached (single available shift
+    pair on the box; NOT the paper's CORD->SROIE)."""
+    labels = sorted(per_corpus_recs.keys())
+    pairs = {}
+    for a in labels:
+        for b in labels:
+            if a == b:
+                continue
+            key = f"{a}__vs__{b}"
+            pairs[key] = s5_matched_length_auroc(
+                a, per_corpus_recs[a], b, per_corpus_recs[b])
+    return {
+        "corpora_present": labels,
+        "honest_scope": (
+            "S5 runs on whatever corpora are decoded on THIS box - here "
+            "cord_dev (OCR-derived CORD validation split, n~100) vs "
+            "wildreceipt (n~472). This is NOT the paper's CORD->SROIE "
+            "pair: SROIE has NO fetcher in these repos and cannot be "
+            "replicated here. S5 answers the matched-length confound "
+            "question for THIS single available shift pair only, at "
+            "small matched-n; it is explicitly NOT a generalizable "
+            "result and NOT a CORD->SROIE / paper-level result."),
+        "pairs": pairs,
+        "interpretation_rule": (
+            "Per pair see verdict.rule. Negative stands unless "
+            "beam_margin is RESCUED by that pre-stated rule. Given the "
+            "prior length-confound-removed numbers (c_seq AUROC ~0.976 "
+            "vs beam_margin ~0.809) and the negative S1-S4, a rescue is "
+            "a priori unlikely; reported either way, NOT tuned."),
+    }
+
+
+# ---------------------------------------------------------------------------
 # Driver
 # ---------------------------------------------------------------------------
 
@@ -546,13 +953,71 @@ def _self_test():
     sp = s4["pooled"]["H3_margin_variance"].get(
         "spearman_marginvar_vs_difficulty")
     assert sp is None or finite(sp), s4
-    print("SELF-TEST OK: S1-S4 return finite, sign-defined values on "
-          "synthetic input (no SEVERE.json written).")
+
+    # --- AUROC function: known-ordering => 1.0, reversed => 0.0,
+    #     random ties => ~0.5 (stdlib, in-memory, writes NOTHING) ---
+    assert auroc([3, 4, 5], [0, 1, 2]) == 1.0, "AUROC known-order != 1.0"
+    assert auroc([0, 1, 2], [3, 4, 5]) == 0.0, "AUROC reversed != 0.0"
+    assert auroc([1, 1, 1, 1], [1, 1, 1, 1]) == 0.5, "all-ties != 0.5"
+    rng2 = random.Random(SEED)
+    pos = [rng2.randint(0, 5) for _ in range(400)]
+    neg = [rng2.randint(0, 5) for _ in range(400)]
+    a_rand = auroc(pos, neg)
+    assert 0.42 < a_rand < 0.58, f"random-ties AUROC {a_rand} not ~0.5"
+
+    # --- matched-stratum logic on SYNTHETIC two-length-distribution
+    #     data: in-dist short (lengths ~10), shift long (lengths ~40),
+    #     overlapping band ~20-30. Full length AUROC must be near-perfect;
+    #     in the matched overlap it must collapse toward 0.5. beam_margin
+    #     here carries NO real shift signal, so it must NOT be 'rescued':
+    #     verdict.negative_stands must be True (or None if uncomputable),
+    #     never False. This validates the binning + verdict path. ---
+    rng3 = random.Random(SEED)
+
+    def mk(label, lo, hi, n):
+        rs = []
+        for i in range(n):
+            L = rng3.uniform(lo, hi)
+            rs.append({
+                "receipt_id": f"{label}:{i}", "corpus": label,
+                "c_seq": rng3.random(),
+                "beam_margin": rng3.gauss(0.0, 1.0),
+                "arith_pass": False, "verdict": "fail",
+                "correct": False,
+                "pred_len_proxy": int(round(L))})
+        return rs
+    in_recs = mk("indist", 5, 28, 90)
+    sh_recs = mk("shift", 22, 55, 90)
+    s5 = s5_all_pairs({"indist": in_recs, "shift": sh_recs})
+    pr = s5["pairs"]["indist__vs__shift"]
+    fa = pr["full_auroc_unmatched"]["length"]["sep_strength"]
+    assert fa is not None and fa > 0.85, f"full length sep {fa} not strong"
+    msa = pr["matched_stratum_auroc_with_ci"]
+    if msa is not None:
+        ml = msa["length"]["sep_strength"]
+        assert ml is not None and ml < fa, (
+            f"matched length sep {ml} did not collapse below full {fa}")
+    vd = pr["verdict"]["negative_stands"]
+    assert vd in (True, None), (
+        f"synthetic no-margin-signal data must not 'rescue' margin; "
+        f"negative_stands={vd}")
+    # skip-on-no-length path: records with no length and no proxy.
+    no_len = [{"receipt_id": f"x:{i}", "corpus": "x", "c_seq": 0.5,
+               "beam_margin": 0.1, "arith_pass": False, "verdict": "f",
+               "correct": False, "pred_len_proxy": None} for i in range(20)]
+    s5b = s5_all_pairs({"x": no_len, "shift": sh_recs})
+    assert "SKIPPED" in s5b["pairs"]["x__vs__shift"]["status"], \
+        "no-length pair must be SKIPPED, not fabricated"
+    print("SELF-TEST OK: S1-S4 return finite/sign-defined values; AUROC "
+          "passes known-order(1.0)/reversed(0.0)/random-ties(~0.5); S5 "
+          "matched-stratum collapses the length confound and does NOT "
+          "rescue a no-signal beam_margin; no-length pair is SKIPPED. "
+          "(no SEVERE.json written)")
 
 
 def parse_args():
     ap = argparse.ArgumentParser(
-        description="Severe tests S1-S4 (cache-only, CPU, no GPU)")
+        description="Severe tests S1-S5 (cache-only, CPU, no GPU)")
     ap.add_argument("--checkpoint", required=False,
                     help="KIE checkpoint id/path (to locate the cache "
                          "file; same value run_parallel.sh passed to "
@@ -632,6 +1097,7 @@ def main():
         "S3_power_minimum_detectable_effect": s3_power_mde(pooled),
         "S4_split_stability": s4_split_stability(per_corpus, pooled),
     }
+    payload["S5"] = s5_all_pairs(per_corpus)
 
     # write_result-equivalent guard: refuse without a real computed_on.
     if "computed_on" not in payload:
